@@ -1,0 +1,10 @@
+BreezeLab.jl
+
+The initial ENA readers, forcing, surface fluxes, diagnostics, case assembly,
+analysis scripts, and tests were adapted from Gregory L. Wagner's BreezyLASSO.jl:
+https://github.com/glwagner/BreezyLASSO.jl
+Source revision: 69ca861992cc51bea03ad7271f9bdd18263a1c34
+
+BreezeLab introduces a separate package identity, explicit ENA protocol selection,
+input validation, provenance for overrides, and bootstrap documentation/tests.
+Scientific input data retain their upstream provenance; they are fetched separately.

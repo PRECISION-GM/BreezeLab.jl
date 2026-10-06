@@ -1,0 +1,44 @@
+name = "BreezeLab"
+uuid = "95b707ca-5eb7-4d90-9406-35d7ad170877"
+authors = ["Gregory L. Wagner <greg@aeolus.earth>"]
+version = "0.1.0"
+
+[deps]
+Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
+Breeze = "660aa2fb-d4c8-4359-a52c-9c057bc511da"
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
+ClimaComms = "3a4d1b5c-c61d-41fd-a00a-5873ba7a1b0d"
+CloudMicrophysics = "6a9e3e04-43cd-43ba-94b9-e8782df3c71b"
+Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
+JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
+KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
+NCDatasets = "85f8d34a-cbdd-5861-8df4-14fed0d494ab"
+Oceananigans = "9e8cae18-63c1-5223-a75c-80ca9d6e9a09"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+RRTMGP = "a01a1ee8-cea4-48fc-987c-fc7878d79da1"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+SHA = "ea8e919c-243c-51af-8825-aaa63cd721ce"
+Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
+TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
+
+[sources]
+Breeze = {url = "https://github.com/NumericalEarth/Breeze.jl", rev = "5264d3c"}
+Oceananigans = {url = "https://github.com/CliMA/Oceananigans.jl", rev = "847e125"}
+
+[compat]
+Breeze = "0.11"
+CUDA = "5.9, 6"
+CairoMakie = "0.15, 0.16"
+CloudMicrophysics = "0.41"
+JLD2 = "0.5, 0.6"
+NCDatasets = "0.14"
+Oceananigans = "0.113"
+RRTMGP = "0.22, 0.23, 1"
+julia = "1.11"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]

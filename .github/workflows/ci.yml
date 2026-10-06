@@ -1,0 +1,31 @@
+name: CPU checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      JULIA_NUM_PRECOMPILE_TASKS: '2'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1.12'
+      - uses: julia-actions/cache@v2
+      - name: Instantiate pinned environment
+        run: julia --project -e 'using Pkg; Pkg.instantiate()'
+      - name: Fetch pinned public inputs
+        run: julia --project scripts/fetch_inputs.jl
+      - name: Test
+        run: julia --project -e 'using Pkg; Pkg.test(; allow_reresolve=false)'
+      - name: CPU simulation and output smoke
+        run: julia --project scripts/smoke_test.jl
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cpu-smoke
+          path: output/cpu_smoke/
+          if-no-files-found: ignore
