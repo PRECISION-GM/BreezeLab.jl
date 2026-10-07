@@ -19,6 +19,11 @@ are 0.58, 1.97 and 3.14 hours. Initial wall-time requests of 1.5, 3.5 and 5 hour
 allow overhead and evolving microphysics cost; re-estimate from the one-hour pilot.
 Peak H100 memory was 3.6–7.2 GiB. These are short-run measurements, not guarantees.
 
+Use **H100 or A100** GPUs for subsequent tests and production, according to availability
+and measured performance; do not restrict scheduling to H100s or select T4s for new work.
+Benchmark A100 throughput and memory before applying production wall-time estimates.
+On shared A100 nodes, request only the resources needed and preserve other campaigns.
+
 - [ ] Verify a stopped/restarted run against an uninterrupted run, including aerosol,
   radiation/forcing state and output continuity; record any state not restored.
 - [ ] Run a one-hour simulated-time pilot on the full public domain, initially 1M and
