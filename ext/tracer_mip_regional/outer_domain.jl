@@ -39,6 +39,14 @@ function initialize_child_from_parent!(nest; balancer = true)
     return nest
 end
 
+# Hydrometeor fields of a hand-built parent, or `nothing` when it carries none (synthetic parents).
+function parent_condensates_of(parent)
+    μ = parent.microphysical_variables
+    names = (:qᶜˡ, :qʳ, :qᶜⁱ, :qˢ)
+    any(n -> haskey(μ, n), names) || return nothing
+    return NamedTuple{names}(map(n -> get(μ, n, nothing), names))
+end
+
 """
     tracer_mip_outer_simulation(arch; case = :aug07, parent = :era5, era5_dir, stop_time = 24hours, kwargs...)
 
@@ -112,12 +120,12 @@ function BreezeLab.tracer_mip_outer_simulation(arch;
             # mirror NumericalEarth: materialize the child's terrain before the model is built
             materialize_terrain!(grid, terrain)
         end
-        nest = nested_atmosphere_model(parent_atmosphere, grid;
+        nest = nested_atmosphere_model(parent_atmosphere, grid; parent_condensates = parent_condensates_of(parent_atmosphere),
                                        base_pressure = FT(get(synthetic_kw, :surface_pressure, 101300.0)), nest_kw...)
         initialize_child_from_parent!(nest; balancer)
         nest, parent_atmosphere
     elseif parent isa PrescribedAtmosphere
-        nest = nested_atmosphere_model(parent, grid; nest_kw...)
+        nest = nested_atmosphere_model(parent, grid; parent_condensates = parent_condensates_of(parent), nest_kw...)
         initialize_child_from_parent!(nest; balancer)
         nest, parent
     else
