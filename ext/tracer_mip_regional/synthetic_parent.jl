@@ -12,7 +12,7 @@ struct SyntheticTestParent end
 Base.summary(::SyntheticTestParent) = "SyntheticTestParent (idealized, software testing only)"
 
 """
-    synthetic_parent_atmosphere(child_grid; times = 0:3600:7200, padding, Nz = 48, z_top = 24e3,
+    synthetic_parent_atmosphere(child_grid; times = 0:3600:7200, padding, spacing = 0.25, Nz = 48, z_top = 24e3,
                                 surface_pressure = 101300, surface_temperature = 300, lapse_rate = 6.5e-3,
                                 tropopause = 15e3, surface_specific_humidity = 0.016, humidity_scale_height = 2500,
                                 u = 3, v = 2)
@@ -22,13 +22,16 @@ dry gas constant; qᵛ(z) = q₀ exp(−z/H_q); uniform winds (u, v); no condens
 """
 function synthetic_parent_atmosphere(child_grid; times = collect(0.0:3600.0:7200.0),
                                      padding = default_horizontal_padding(ERA5HourlyPressureLevels()),
-                                     Nx = 12, Ny = 12, Nz = 48, z_top = 24e3,
+                                     spacing = 0.25, Nz = 48, z_top = 24e3,
                                      surface_pressure = 101300.0, surface_temperature = 300.0, lapse_rate = 6.5e-3,
                                      tropopause = 15e3, surface_specific_humidity = 0.016, humidity_scale_height = 2500.0,
                                      u = 3.0, v = 2.0)
     arch = child_grid.architecture
     FT = eltype(child_grid)
     box = BoundingBox(child_grid; padding)
+    # ERA5-like spacing: parent nodes must bracket the child domain, so the half-cell must stay below `padding`
+    Nx = max(5, ceil(Int, (box.longitude[2] - box.longitude[1]) / spacing))
+    Ny = max(5, ceil(Int, (box.latitude[2] - box.latitude[1]) / spacing))
     parent_grid = LatitudeLongitudeGrid(arch, FT; size = (Nx, Ny, Nz), halo = (5, 5, 5),
                                         longitude = box.longitude, latitude = box.latitude, z = (0, z_top),
                                         topology = (Bounded, Bounded, Bounded))
