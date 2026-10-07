@@ -1,0 +1,88 @@
+# TRACER–DP-SCREAM pinned inputs and reference outputs (fetch: julia data_wrangling/fetch_manifest.jl cases/tracer_dp_scream/inputs.toml data/tracer_dp_scream)
+# Sources: E3SM public inputdata server (IOP forcing used by scmlib DPxx_SCREAM_SCRIPTS/run_dpxx_scream_TRACER.csh at 2dc3f1073a5d03b5f32617e79d68fb20a63cfb43)
+#          and Zenodo record 15271730 (version 2 of concept 15133178, CC-BY-4.0, Oware 2025), pinned 2026-10-07.
+case = "tracer_dp_scream"
+source = "https://web.lcrc.anl.gov/public/e3sm/inputdata/atm/cam/scam/iop/ + https://zenodo.org/records/15271730"
+retrieved_date = "2026-10-07"
+paper_doi = "10.1029/2025JD044113"
+zenodo_record = "10.5281/zenodo.15271730"
+zenodo_concept = "10.5281/zenodo.15133178"
+scmlib_revision = "2dc3f1073a5d03b5f32617e79d68fb20a63cfb43"
+dp_scream_e3sm_git_version = "1d551ea2b0"
+
+[[files]]
+filename = "TRACER_iopfile_4scam.nc"
+url = "https://web.lcrc.anl.gov/public/e3sm/inputdata/atm/cam/scam/iop/TRACER_iopfile_4scam.nc"
+bytes = 13028360
+sha256 = "1a95b3b9619e1cd29044f24354c90ad06db04d89f9cf5f11fd7d754b94c9e70e"
+description = "ARM VARANAL v1 ERA5-constrained IOP forcing, hou60v1varanaecmwfX12.c1 (doi 10.5439/1860369), hourly 2022-07-01 00 UTC to 2022-09-30 23 UTC, 40 pressure levels; server Last-Modified 2026-06-24 (post-dates the paper)"
+
+[[files]]
+filename = "DP-SCREAM 0.5km_August_5_to_August_15_run.nc"
+url = "https://zenodo.org/api/records/15271730/files/DP-SCREAM%200.5km_August_5_to_August_15_run.nc/content"
+bytes = 1133989
+sha256 = "f83c5a815a89557130b10c31be731f73e73af777a172f722faba00df85903bda"
+md5_zenodo = "8a5e0ac951090c7936ff14a9aeb5161e"
+
+[[files]]
+filename = "DP-SCREAM 3km run initialized on August 6_T0000.nc"
+url = "https://zenodo.org/api/records/15271730/files/DP-SCREAM%203km%20run%20initialized%20on%20August%206_T0000.nc/content"
+bytes = 464417
+sha256 = "a8129ef6cc747ec1b083cb233c33c022eca2f305a2bae5ef0d3500989c4c9d23"
+md5_zenodo = "84af9b978ae6b7c49bf59613e2ad02b0"
+
+[[files]]
+filename = "DP-SCREAM 3km run initialized on August 6_T0600.nc"
+url = "https://zenodo.org/api/records/15271730/files/DP-SCREAM%203km%20run%20initialized%20on%20August%206_T0600.nc/content"
+bytes = 327689
+sha256 = "40b73df2d2e1ad8b4531adab2a2d1706cf4260c6669d4b9ed3530c7b879509ed"
+md5_zenodo = "9916402df62b059ec66796ffb0e3cb1d"
+
+[[files]]
+filename = "DP-SCREAM 3km run initialized on August 6_T1200.nc"
+url = "https://zenodo.org/api/records/15271730/files/DP-SCREAM%203km%20run%20initialized%20on%20August%206_T1200.nc/content"
+bytes = 327689
+sha256 = "9b047ffa40ab5df40d74cb5b2079f469fe1f13f126deff0bb2abc4990fc91991"
+md5_zenodo = "e81603477d61526d19b86653b8812306"
+
+[[files]]
+filename = "DP-SCREAM 3km run initialized on August 6_T1800.nc"
+url = "https://zenodo.org/api/records/15271730/files/DP-SCREAM%203km%20run%20initialized%20on%20August%206_T1800.nc/content"
+bytes = 327689
+sha256 = "760fede4522742eebc22523777b6c4426745de6ab43f442c6a520a9ed80b0ed5"
+md5_zenodo = "f9d46d6dbb3ca9187fd4acff13bdaae4"
+
+[[files]]
+filename = "DP-SCREAM 3km_3month_run.nc"
+url = "https://zenodo.org/api/records/15271730/files/DP-SCREAM%203km_3month_run.nc/content"
+bytes = 11877760
+sha256 = "7fdeb4a2cb546c02f14e114cc169d809d7c9de8368635bd722abf1f05d48962b"
+md5_zenodo = "89c07a295d0627688c41a32e9ee54a3c"
+
+[[files]]
+filename = "DP-SCREAM 3km_August.nc"
+url = "https://zenodo.org/api/records/15271730/files/DP-SCREAM%203km_August.nc/content"
+bytes = 4239710
+sha256 = "ae9667dc48def0248bfb534bbe1b2eb4eeeb6db8f42fb0aa4397b8aa76d0b80b"
+md5_zenodo = "dfcc8214d24be55907292122ceb0e0a1"
+
+[[files]]
+filename = "DP-SCREAM 3km_August_5_to_August_15_run.nc"
+url = "https://zenodo.org/api/records/15271730/files/DP-SCREAM%203km_August_5_to_August_15_run.nc/content"
+bytes = 1408430
+sha256 = "10d0417179c18b16c04b22ee94ddd7204ac7da0f7538e9795bf74586b45d12b5"
+md5_zenodo = "b7eee6c71ebffbbee6bf98eaafd4a4bb"
+
+[[files]]
+filename = "DP-SCREAM 3km_bf_run_August.nc"
+url = "https://zenodo.org/api/records/15271730/files/DP-SCREAM%203km_bf_run_August.nc/content"
+bytes = 4239708
+sha256 = "d626d4bad0735cd021d7dd2296870addf9cba64c3b90650f7c421d70580c5a65"
+md5_zenodo = "dc39eef3c7429f6766e79e37f6a36dda"
+
+[[files]]
+filename = "DP-SCREAM 3km_mix_incr_run_August.nc"
+url = "https://zenodo.org/api/records/15271730/files/DP-SCREAM%203km_mix_incr_run_August.nc/content"
+bytes = 4239714
+sha256 = "7f106d2573ea346e197def08ca63f1b9788dbaae097067fa56b0c25d021714c2"
+md5_zenodo = "61547af988909d7274890373cf78f8ac"

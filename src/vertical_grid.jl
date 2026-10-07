@@ -59,6 +59,26 @@ function lasso_ena_vertical_faces(; kwargs...)
 end
 
 """
+    uniform_then_stretched_faces(; Nz, top, Δz, uniform_top)
+
+Exactly `Nz + 1` interfaces: uniform `Δz` from the surface to `uniform_top`, then the
+remaining cells stretched with a constant growth ratio so that the top face lands at `top`.
+"""
+function uniform_then_stretched_faces(; Nz, top, Δz, uniform_top)
+    N_uniform = round(Int, uniform_top / Δz)
+    N_stretch = Nz - N_uniform
+    N_stretch ≥ 1 || throw(ArgumentError("Nz = $Nz leaves no stretched cells above $uniform_top m"))
+    faces = collect(0.0:Δz:(N_uniform * Δz))
+    r = geometric_growth_ratio((top - N_uniform * Δz) / Δz, N_stretch)
+    for n in 1:N_stretch
+        push!(faces, faces[end] + Δz * r^n)
+    end
+    faces[end] = top
+    length(faces) == Nz + 1 || error("vertical grid construction produced $(length(faces) - 1) cells, expected $Nz")
+    return faces
+end
+
+"""
     uniform_vertical_faces(Nz, top)
 
 Uniformly spaced cell interfaces from 0 to `top`, for quick low-resolution tests.

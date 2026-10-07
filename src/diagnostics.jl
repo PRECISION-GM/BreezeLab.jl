@@ -40,6 +40,59 @@ function liquid_water_path(model; species=:cloud)
     return Field(Integral(ρ * q, dims=3))
 end
 
+"""
+    ice_water_path(model)
+
+2D field of the vertically integrated total ice mass, `∫ ρ qⁱ dz` [kg m⁻²] (P3 schemes).
+"""
+function ice_water_path(model)
+    μ = model.microphysical_fields
+    haskey(μ, :qⁱ) || throw(ArgumentError("ice_water_path needs a microphysics scheme with qⁱ"))
+    return Field(Integral(reference_density(model) * μ.qⁱ, dims=3))
+end
+
+"""
+    precipitable_water(model)
+
+2D field of the column water vapor, `∫ ρ qᵛ dz` [kg m⁻²].
+"""
+precipitable_water(model) = Field(Integral(reference_density(model) * model.microphysical_fields.qᵛ, dims=3))
+
+"""
+    total_condensate(model)
+
+Cloud liquid plus total ice mass fraction (cloud liquid alone for warm schemes).
+"""
+function total_condensate(model)
+    μ = model.microphysical_fields
+    return haskey(μ, :qⁱ) ? μ.qᶜˡ + μ.qⁱ : μ.qᶜˡ
+end
+
+"""
+    total_cloud_fraction_profile(model; threshold=1e-5)
+
+Horizontal fraction of cells whose cloud liquid plus ice mass fraction exceeds `threshold`
+at every level (the counterpart of EAMxx `TOT_CLOUD_FRAC` up to its diagnostic definition).
+"""
+function total_cloud_fraction_profile(model; threshold=1e-5)
+    grid = model.grid
+    indicator = KernelFunctionOperation{Center, Center, Center}(cell_indicator, grid, total_condensate(model), threshold)
+    return Field(Average(indicator, dims=(1, 2)))
+end
+
+"""
+    surface_ice_flux(model)
+
+2D field of the downward ice mass flux through the surface [kg m⁻² s⁻¹] (positive downward):
+P3 `-ρqⁱ wⁱ` with the mass-weighted ice fall speed at the bottom face.
+"""
+function surface_ice_flux(model)
+    μ = model.microphysical_fields
+    haskey(μ, :wⁱ) || throw(ArgumentError("surface_ice_flux needs P3's ice fall speed wⁱ"))
+    op = KernelFunctionOperation{Center, Center, Nothing}(p3_surface_rain_flux, model.grid, μ.ρqⁱ, μ.wⁱ)
+    return Field(op)
+end
+
 @inline column_indicator(i, j, k, grid, lwp, threshold) = ifelse(@inbounds(lwp[i, j, 1]) > threshold, 1, 0)
 @inline cell_indicator(i, j, k, grid, q, threshold) = ifelse(@inbounds(q[i, j, k]) > threshold, 1, 0)
 

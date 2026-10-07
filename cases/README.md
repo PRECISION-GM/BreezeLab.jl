@@ -5,6 +5,7 @@
 | [eastern_north_atlantic.jl](eastern_north_atlantic.jl) | Runnable public Covert ENA case; edit the readable settings, then run with `julia --project cases/eastern_north_atlantic.jl` |
 | [sea_starr.jl](sea_starr.jl) | Specification only; model assembly is not implemented and direct execution fails explicitly |
 | [tracer_mip.jl](tracer_mip.jl) | Specification only; model assembly is not implemented and direct execution fails explicitly |
+| [tracer_dp_scream.jl](tracer_dp_scream.jl) | Runnable periodic LES driven by the DP-SCREAM TRACER IOP forcing (`tracer_dp_scream` constructor); inputs pinned in `tracer_dp_scream/inputs.toml`; see [docs/cases/tracer_dp_scream.md](../docs/cases/tracer_dp_scream.md) |
 
 The ENA example runs from top to bottom: call the exported
 `eastern_north_atlantic(; arch, microphysics, ...)` constructor, save provenance,
