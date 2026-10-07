@@ -399,7 +399,7 @@ function build_case(data_dir;
         RadiativeTransferModel(grid, AllSkyOptics(), constants;
                                surface_temperature = Tₛ,
                                surface_albedo, surface_emissivity, background_atmosphere,
-                               solar_position = ApparentSolarPosition(coordinate=(longitude, latitude), epoch),
+                               solar_position = ApparentSolarPosition(; coordinate=(longitude, latitude), epoch),
                                schedule = TimeInterval(radiation_interval),
                                liquid_effective_radius = ConstantRadiusParticles(liquid_effective_radius),
                                ice_effective_radius = ConstantRadiusParticles(ice_effective_radius))

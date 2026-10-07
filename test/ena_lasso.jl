@@ -293,6 +293,21 @@ end
     end
 end
 
+@testset "LASSO protocol defaults build with RRTMGP on the CPU" begin
+    # The production radiation path (RRTMGP LW+SW, SST surface temperature, SAM emissivity,
+    # 14 μm effective radius, nrad*dt schedule) is constructed and updated once on a tiny grid;
+    # the Covert CPU tests use :simple radiation and never reached this branch.
+    case = ena_simulation(LASSO_FIXTURE; protocol=:lasso_ena_official, member=LASSO_MEMBER, epoch=LASSO_EPOCH,
+                          dimensions=LASSO_DIMS, FT=Float32, Nx=4, Ny=4, Lx=400, Ly=400, microphysics=:one_moment,
+                          aerosol_replenishment=nothing, write_output=false, progress_interval=100)
+    @test case.config.radiation == "rrtmgp" && case.config.radiation_interval == 60.0
+    @test case.config.surface_emissivity == 0.95 && case.config.liquid_effective_radius == 14e-6
+    @test !isnothing(case.model.radiation)
+    @test case.model.radiation.solar_position.epoch == LASSO_EPOCH
+    Oceananigans.TimeSteppers.update_state!(case.model)
+    @test all(isfinite, interior(case.model.radiation.flux_divergence))
+end
+
 @testset "ena_lasso constructor wrapper" begin
     err = caught(() -> ena_lasso(joinpath(LASSO_FIXTURE, "absent"); member=LASSO_MEMBER, epoch=LASSO_EPOCH))
     @test err isa ArgumentError
