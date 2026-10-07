@@ -50,7 +50,8 @@ const DPS_NS_FIXTURE = joinpath(FIXTURES, "dp_scream_ns_excerpt.nc")
         @test inputs.window == (1, 4) && inputs.paths.iop == abspath(IOP_FIXTURE)
         snd = inputs.soundings[1]
         @test length(inputs.soundings) == 1
-        @test all(isnan, snd.z) && issorted(snd.p; rev=true) && snd.p[1] == 102500 && snd.surface_pressure ≈ 100867.34 atol=0.01
+        @test all(isnan, snd.z) && issorted(snd.p; rev=true) && snd.p[1] == 102500
+        @test isapprox(snd.surface_pressure, 100867.34; atol=0.01)
         k = findfirst(==(50000), snd.p)
         @test isapprox(snd.θ[k], iop_potential_temperature(268.12, 50000.0); rtol=1e-3)
         @test snd.q[k] == Float64(iop.profiles.q[findfirst(==(50000), iop.levels), 1])      # no unit conversion: specific humidity
@@ -66,7 +67,8 @@ const DPS_NS_FIXTURE = joinpath(FIXTURES, "dp_scream_ns_excerpt.nc")
         @test issorted(days) && allunique(days)
         @test inputs.lsf[2].tls == inputs.lsf[1].tls && inputs.lsf[2].day ≈ inputs.lsf[3].day - 1 / 86400
         @test inputs.lsf[3].day == 217.0 + 1 / 24
-        @test length(inputs.sfc.day) == 7 && inputs.sfc.sst[1] ≈ 305.01 atol=0.01 && inputs.sfc.sensible_heat_flux[2] == inputs.sfc.sensible_heat_flux[1]
+        @test length(inputs.sfc.day) == 7 && inputs.sfc.sensible_heat_flux[2] == inputs.sfc.sensible_heat_flux[1]
+        @test isapprox(inputs.sfc.sst[1], 305.01; atol=0.01)
         @test all(iszero, inputs.sfc.kinematic_stress)
         linear = iop_sam_inputs(iop; start=DateTime(2022, 8, 5), stop=DateTime(2022, 8, 5, 3), hold=false)
         @test length(linear.lsf) == 4 && length(linear.sfc.day) == 4
@@ -147,7 +149,7 @@ const DPS_NS_FIXTURE = joinpath(FIXTURES, "dp_scream_ns_excerpt.nc")
             # surface: prescribed energy/vapor fluxes and bulk drag
             bcs = case.model.momentum.ρu.boundary_conditions.bottom
             @test bcs.condition isa Breeze.BoundaryConditions.BulkDragFunction
-            @test case.surface_temperature[1, 1, 1] ≈ 305.01 atol=0.01
+            @test isapprox(case.surface_temperature[1, 1, 1], 305.01; atol=0.01)
             # initial state from the IOP sounding: lowest level near the 1000-hPa record temperature
             T = Array(interior(case.model.temperature))
             @test all(isfinite, T) && 300 < T[1, 1, 1] < 306 && T[1, 1, end] < 230
