@@ -74,6 +74,10 @@ ext = Base.get_extension(BreezeLab, :BreezeLabNumericalEarthExt)
         @test all(isfinite, interior(case.land.temperature))
         u = Array(interior(child.velocities.u))
         @test abs(mean(u) - 3) < 1.5                            # the parent's uniform 3 m/s zonal wind persists
+        # rain-to-land shim: the coupler's rain diagnostic is Breeze's (sign-flipped) bottom precipitation flux
+        Jʳⁿ = case.model.interfaces.exchanger.atmosphere.state.Jʳⁿ
+        @test Jʳⁿ isa Field && !isnothing(Jʳⁿ.operand)
+        @test all(interior(Jʳⁿ) .>= 0)
         acc = case.accumulators
         @test all(f -> all(isfinite, interior(f)), acc.fields)
         T_land = Array(interior(case.land.temperature))

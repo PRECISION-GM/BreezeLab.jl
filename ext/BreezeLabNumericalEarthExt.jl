@@ -29,6 +29,25 @@ using Breeze.Microphysics.PredictedParticleProperties: CloudDroplets
 using Dates: DateTime, Hour, Second
 using Printf: @sprintf
 
+# Rain-to-land shim. NumericalEarth d07eb240's Breeze extension imports
+# `Breeze.AtmosphereModels.surface_precipitation_flux`, renamed `bottom_precipitation_flux` before the
+# pinned Breeze, so the binding is undefined and `applicable(surface_precipitation_flux, …)` throws at
+# coupling time. Supply it: Breeze's diagnostic is the bottom-face advective flux (positive upward),
+# NumericalEarth's `Jʳⁿ` is positive downward (kg m⁻² s⁻¹), hence the sign flip. Remove once upstream
+# follows the rename. The child's rain then reaches the slab bucket as intended.
+surface_precipitation_flux_shim(model, microphysics) =
+    Field(-1 * Breeze.AtmosphereModels.bottom_precipitation_flux(model, microphysics).operand)
+
+function __init__()
+    ne_ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
+    if isnothing(ne_ext)
+        @warn "NumericalEarthBreezeExt is not loaded; the surface_precipitation_flux shim was not installed"
+    elseif !isdefined(ne_ext, :surface_precipitation_flux)
+        Core.eval(ne_ext, :(const surface_precipitation_flux = $surface_precipitation_flux_shim))
+    end
+    return nothing
+end
+
 include("tracer_mip_regional/coastal_surface.jl")
 include("tracer_mip_regional/synthetic_parent.jl")
 include("tracer_mip_regional/outer_domain.jl")
