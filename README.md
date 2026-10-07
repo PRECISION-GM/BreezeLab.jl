@@ -63,6 +63,8 @@ then follow [the LASSO instructions](docs/cases/ena.md#lasso-ena).
 
 - `src/eastern_north_atlantic.jl`: exported constructor used by examples and tests.
 - `src/ena_protocols.jl`: experiment definitions and input validation.
+- `src/iop_forcing.jl`, `src/dp_scream_output.jl`, `src/tracer_dp_scream.jl`: the E3SM/ARM IOP forcing
+  reader, the Zenodo DP-SCREAM output reader, and the `tracer_dp_scream` periodic constructor.
 - `src/case_setup.jl`: shared Breeze model assembly, output, and provenance.
 - Other `src/` files: reusable SAM readers, forcing operators, grids, surface fluxes,
   initial conditions, and diagnostics.
@@ -92,7 +94,18 @@ julia data_wrangling/fetch_manifest.jl cases/seastarr/inputs.toml data/seastarr_
 julia data_wrangling/fetch_manifest.jl cases/tracer_mip/inputs.toml data/tracer_mip_416423a
 ```
 
-These stage source files; SEA STARR and TRACER case adapters are not yet implemented.
+These stage source files; SEA STARR and TRACER-MIP case adapters are not yet implemented.
+
+The periodic **TRACER–DP-SCREAM** case (a Breeze LES driven by the published DP-SCREAM
+TRACER forcing; neither TRACER-MIP nor ENA-SCREAM) is runnable:
+
+```sh
+julia data_wrangling/fetch_manifest.jl cases/tracer_dp_scream/inputs.toml data/tracer_dp_scream
+julia --project cases/tracer_dp_scream.jl
+```
+
+See [docs/cases/tracer_dp_scream.md](docs/cases/tracer_dp_scream.md) for the pinned sources,
+what DP-SCREAM actually did, and the intentional physics/resolution differences.
 
 1. Reproduce one official LASSO-ENA ensemble member's forcing and grid, then compare
    Breeze diagnostics to its SAM reference and ARM observations.

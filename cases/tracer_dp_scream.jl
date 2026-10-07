@@ -138,8 +138,9 @@ if haskey(references, "DP-SCREAM 3 km (August run)")
     sel = dp_scream_window(ref, utc[1], utc[end])
     th = [Dates.value(ref.time[n] - start) / 3.6e6 for n in sel]
     zref = vec(mean(ref.Z3[:, sel], dims=2)) ./ 1e3
+    ascending = sortperm(zref)
     ax2 = Axis(fig2[2, 1], ylabel = "Height (km)", xlabel = "Hours since $(start) UTC", title = "DP-SCREAM 3 km TOT_CLOUD_FRAC")
-    hm2 = heatmap!(ax2, th, zref, permutedims(ref.TOT_CLOUD_FRAC[:, sel]), colormap = :Blues, colorrange = (0, 1))
+    hm2 = heatmap!(ax2, th, zref[ascending], permutedims(ref.TOT_CLOUD_FRAC[ascending, sel]), colormap = :Blues, colorrange = (0, 1))
     ylims!(ax2, 0, 20)
     Colorbar(fig2[2, 2], hm2)
 end

@@ -35,7 +35,7 @@ const DPS_NS_FIXTURE = joinpath(FIXTURES, "dp_scream_ns_excerpt.nc")
         # file-level sanity used by the adapter: below-surface levels repeat the lowest level above the surface
         @test iop.profiles.T[end, 1] == iop.profiles.T[end - 1, 1]
         # the "net" shortwave labels hold upwelling fluxes: albedo ≈ 0.15, not 0.85
-        @test iop_surface_albedo(iop; start=DateTime(2022, 8, 5), stop=DateTime(2022, 8, 5, 3)) ≈ 0 atol=1e-12 skip=true
+        @test_throws ErrorException iop_surface_albedo(iop; start=DateTime(2022, 8, 5), stop=DateTime(2022, 8, 5, 3))  # night: no daylit records
         @test fractional_day_of_year(DateTime(2022, 8, 5)) == 217.0
         @test fractional_day_of_year(DateTime(2022, 8, 1, 6)) == 213.25
         @test iop_potential_temperature(300.0, 1e5) == 300.0
@@ -115,7 +115,7 @@ const DPS_NS_FIXTURE = joinpath(FIXTURES, "dp_scream_ns_excerpt.nc")
             case = tracer_dp_scream(; iop_path=IOP_FIXTURE, start=DateTime(2022, 8, 5), stop=DateTime(2022, 8, 5, 3),
                                     arch=CPU(), FT=Float32, Nx=4, Ny=4, Δx=500.0,
                                     z_faces=collect(range(0, 22000, length=25)), microphysics=:p3_n75,
-                                    stop_time=4.0, Δt=1.0, max_Δt=1.0, output_dir=output,
+                                    stop_time=4.0, Δt=1.0, max_Δt=1.0, output_dir=output, surface_albedo=0.15,
                                     timeseries_interval=1.0, profile_interval=4.0, slice_interval=4.0,
                                     checkpoint_interval=2.0, progress_interval=100)
             @test case.preset === :tracer_dp_scream
@@ -128,7 +128,7 @@ const DPS_NS_FIXTURE = joinpath(FIXTURES, "dp_scream_ns_excerpt.nc")
             @test case.config.surface == "prescribed_heat_fluxes_bulk_drag"
             @test isapprox(case.config.drag_coefficient, neutral_drag_coefficient(22000 / 24 / 2, 0.1))
             @test case.config.radiation == "rrtmgp" && case.config.radiation_interval == 300.0
-            @test 0.1 < case.config.surface_albedo < 0.2
+            @test case.config.surface_albedo == 0.15 && case.protocol_overrides.surface_albedo_source == "override"
             @test isapprox(case.config.latitude, 29.75) && isapprox(case.config.longitude, -95.45)
             @test case.config.checkpoint_interval == 2.0
             @test occursin("no Coriolis", case.config.label) && occursin("not a DP-SCREAM reproduction", case.config.label)
@@ -136,10 +136,14 @@ const DPS_NS_FIXTURE = joinpath(FIXTURES, "dp_scream_ns_excerpt.nc")
             # large-scale transport enters exactly once: thermodynamic tendencies on the energy and
             # vapor keys, no LargeScaleVerticalAdvection, no geostrophic/Coriolis/nudging momentum forcing
             forcing = case.model.forcing
-            @test !haskey(forcing, :ρu) && !haskey(forcing, :ρv)
-            @test haskey(forcing, :ρθ) && haskey(forcing, :ρqᵛ)
+            components(f) = f isa Oceananigans.Forcings.MultipleForcings ? [inner(g) for g in f.forcings] : [inner(f)]
+            everything = reduce(vcat, [components(f) for f in values(forcing)])
+            @test haskey(forcing, :ρqᵛ) && any(f -> f isa LargeScaleMoistureForcing, components(forcing.ρqᵛ))
+            @test any(f -> f isa LargeScaleEnergyForcing, everything)
+            @test !any(f -> f isa LargeScaleVerticalAdvection, everything)                # transport enters once
+            @test !any(f -> f isa TimeVaryingGeostrophicForcing || f isa MeanProfileNudging, everything)
+            @test all(f -> f isa SAMSponge, components(forcing.ρu)) && all(f -> f isa SAMSponge, components(forcing.ρv))
             @test isnothing(case.model.coriolis)
-            @test !any(f -> inner(f) isa LargeScaleVerticalAdvection, values(forcing))
             # surface: prescribed energy/vapor fluxes and bulk drag
             bcs = case.model.momentum.ρu.boundary_conditions.bottom
             @test bcs.condition isa Breeze.BoundaryConditions.BulkDragFunction
@@ -174,7 +178,7 @@ const DPS_NS_FIXTURE = joinpath(FIXTURES, "dp_scream_ns_excerpt.nc")
             resumed = tracer_dp_scream(; iop_path=IOP_FIXTURE, start=DateTime(2022, 8, 5), stop=DateTime(2022, 8, 5, 3),
                                        arch=CPU(), FT=Float32, Nx=4, Ny=4, Δx=500.0,
                                        z_faces=collect(range(0, 22000, length=25)), microphysics=:p3_n75,
-                                       stop_time=6.0, Δt=1.0, max_Δt=1.0, output_dir=output,
+                                       stop_time=6.0, Δt=1.0, max_Δt=1.0, output_dir=output, surface_albedo=0.15,
                                        timeseries_interval=1.0, profile_interval=4.0, slice_interval=4.0,
                                        checkpoint_interval=2.0, progress_interval=100)
             run!(resumed.simulation; pickup=true)
@@ -183,7 +187,7 @@ const DPS_NS_FIXTURE = joinpath(FIXTURES, "dp_scream_ns_excerpt.nc")
         end
         @test_throws ArgumentError tracer_dp_scream(; iop_path=IOP_FIXTURE, start=DateTime(2022, 8, 5), stop=DateTime(2022, 8, 5, 3),
                                                      arch=CPU(), Nx=4, Ny=4, z_faces=collect(range(0, 22000, length=25)),
-                                                     stop_time=1e6, write_output=false)
+                                                     stop_time=1e6, surface_albedo=0.15, write_output=false)
         @test_throws ArgumentError tracer_dp_scream(; iop_path="/nonexistent/iop.nc", arch=CPU())
         settings = tracer_dp_scream_settings(IOP_FIXTURE; start=DateTime(2022, 8, 5), stop=DateTime(2022, 8, 5, 3))
         @test settings.records == 4 && settings.duration_seconds == 10800 && settings.doi == "10.5439/1860369"
