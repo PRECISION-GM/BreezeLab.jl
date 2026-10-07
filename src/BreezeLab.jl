@@ -31,7 +31,7 @@ export
     # initial state
     SoundingProfiles, saturation_partition, InitialPerturbation, initial_state_columns, perturbation_array,
     # case
-    ena_simulation, ena_protocol_settings, lasso_ena_simulation, build_case, lasso_aerosol_modes, write_provenance, read_sam_grd, faces_from_centers, epoch_from_day_of_year,
+    eastern_north_atlantic, ena_simulation, ena_protocol_settings, lasso_ena_simulation, build_case, lasso_aerosol_modes, write_provenance, read_sam_grd, faces_from_centers, epoch_from_day_of_year,
     covert_public_bin_vertical_faces, AerosolReplenishment, DiagnosticCCNProjection,
     # diagnostics
     cloud_liquid, rain_mass_fraction, liquid_water_path, cloud_fraction, cloud_fraction_profile,
@@ -51,5 +51,6 @@ include("initial_conditions.jl")
 include("diagnostics.jl")
 include("case_setup.jl")
 include("ena_protocols.jl")
+include("eastern_north_atlantic.jl")
 
 end # module

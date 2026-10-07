@@ -1,6 +1,5 @@
-# Exercise the readable case entry point, including its saved diagnostic outputs.
+# Exercise the exported case constructor and its saved diagnostic outputs.
 using JLD2
-include(joinpath(@__DIR__, "..", "cases", "eastern_north_atlantic.jl"))
 
 function test_ena_execution(arch, FT, microphysics)
     mktempdir() do output
@@ -8,6 +7,8 @@ function test_ena_execution(arch, FT, microphysics)
                                       Nx=8, Ny=8, z_faces=collect(range(0, 6000, length=25)),
                                       stop_time=4.0, timeseries_interval=1.0,
                                       profile_interval=4.0, slice_interval=4.0)
+        @test case.model.clock.time == 0
+        @test case.model.clock.iteration == 0
         write_provenance(joinpath(output, "provenance.toml"), case)
         run!(case.simulation)
         @test case.model.clock.time ≈ 4.0

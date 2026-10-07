@@ -42,6 +42,7 @@ julia --project cases/eastern_north_atlantic.jl
 ```
 
 The default case is 256×256×192 for six simulated hours and is a substantial run.
+The example builds the case, runs it, and plots saved cloud-water and rain diagnostics.
 Edit the settings in [the readable case file](cases/eastern_north_atlantic.jl), or use
 [the CLI](cases/cli/run_case.jl) for parameter sweeps and protocol/input selection.
 For Slurm, adapt the partition/resources in `execution/submit_gpu.sbatch`, create
@@ -58,6 +59,7 @@ then follow [the LASSO instructions](docs/cases/ena.md#lasso-ena).
 
 ## Package layout
 
+- `src/eastern_north_atlantic.jl`: exported constructor used by examples and tests.
 - `src/ena_protocols.jl`: experiment definitions and input validation.
 - `src/case_setup.jl`: shared Breeze model assembly, output, and provenance.
 - Other `src/` files: reusable SAM readers, forcing operators, grids, surface fluxes,
@@ -70,7 +72,9 @@ then follow [the LASSO instructions](docs/cases/ena.md#lasso-ena).
 - `analysis/`: Julia plotting and animation tools inherited from BreezyLASSO.
 - `test/`: `Pkg.test()` regressions, including case execution and downloads;
   historical investigation scripts live under `test/diagnostics/`.
-- `docs/`: case formulations, reproduction requirements, and historical port notes.
+- `docs/`: a manually generated Documenter/Literate manual that executes the case
+  examples, plus formulations, reproduction requirements, and historical port notes.
+  See [documentation build instructions](docs/README.md).
 
 The Julia entry point is `ena_simulation(data_dir; protocol, kwargs...)`.
 `ena_protocol_settings(data_dir; protocol)` inspects defaults without allocating a

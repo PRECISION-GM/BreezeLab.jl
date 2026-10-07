@@ -18,8 +18,11 @@ julia --project -e 'using Pkg; Pkg.test(; allow_reresolve=false, test_args=["gpu
 ```
 
 GitHub-hosted CPU CI does not claim GPU coverage. `ena_execution.jl` checks the
-actual case builder, completed time/steps, finite fields, expected diagnostic fields,
+exported case constructor (including its initially unadvanced clock), completed time/steps, finite fields, expected diagnostic fields,
 consistent saved iterations, and final output time. Temporary outputs are cleaned up.
+Tests do not include executable case scripts. The full example and its analysis are
+exercised by the [manual Documenter/Literate build](../docs/README.md), with an optional
+CPU smoke mode.
 
 [diagnostics/](diagnostics/) contains historical investigation scripts: tendency
 scans, stage traces, rain-number/runaway probes, mass-budget probes, limiter fuzzing,
