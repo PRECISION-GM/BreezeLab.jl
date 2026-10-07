@@ -52,7 +52,7 @@ what `DiagnosticCCNProjection` acts on), recorded as `prognostic_aerosol = true`
 
 Before Breeze PR 959, sedimentation moved condensate mass but not its static-energy content;
 rain piling into the surface cell warmed it by ℒ Δqʳ/cᵖ and the P3-N75 GPU smoke test ran
-away to T > 320 K within minutes of drizzle onset (isolated with `scripts/p3_runaway_probe.jl`:
+away to T > 320 K within minutes of drizzle onset (isolated with `test/diagnostics/p3_runaway_probe.jl`:
 hot cell at k = 1, Δs ≈ 0 while qʳ jumped). Until 28 September 2026 this package supplied the
 missing flux itself (`SedimentationEnthalpyForcing` on `ρs`, `sedimentation_enthalpy = true` in
 the provenance of every earlier run). PR 959 ("Unify sedimentation transport and correct
@@ -72,7 +72,7 @@ evaluating cell, so the two cells sharing a face apply different fluxes whenever
 is active, and P3's fast sedimentation across the sharp rain gradient above the surface kept
 it active. Evidence retained: in otherwise identical 45-minute P3-N75 GPU probes the surface
 cell reached qʳ = 9.5 g kg⁻¹ with the bounded scheme versus < 0.03 g kg⁻¹ with plain WENO,
-and the forcing-free rain-shaft budget `scripts/mass_budget_probe.jl` (8×8×60 column, 2 min)
+and the forcing-free rain-shaft budget `test/diagnostics/mass_budget_probe.jl` (8×8×60 column, 2 min)
 gives a residual of −0.134 % of the initial rain for bounded WENO versus −0.048 % for plain
 WENO (the plain residual is the explicit-Euler outflow estimate's own error).
 
@@ -97,8 +97,8 @@ On that evidence the production pin was moved to these revisions (see *Dependenc
 ### Float32 WENO-Z weights overflow on number concentrations (Oceananigans fix)
 
 Every Float32 P3-aer2 run went non-finite at iteration 1 (GPU jobs 836/837/847/848 and the
-8×8 CPU reproduction in `scripts/p3_float32_first_step_probe.jl`), while Float64 ran for
-tens of minutes. `scripts/p3_float32_stage_probe.jl` located it: with every forcing off, the
+8×8 CPU reproduction in `test/diagnostics/p3_float32_first_step_probe.jl`), while Float64 ran for
+tens of minutes. `test/diagnostics/p3_float32_stage_probe.jl` located it: with every forcing off, the
 stage-2 tendencies of `ρnᵃ` and `ρnᶜˡ` are NaN in the cloud layer, the P3 bundle at those
 cells is finite in both precisions, and the **advection** of `nᵃ` is NaN wherever activation
 at stage 1 has cut the aerosol number from 4.6×10⁸ to 2.8×10⁸ kg⁻¹ within the stencil.
@@ -117,7 +117,7 @@ the same P3 configuration survives on the 260-level LASSO grid (Δz = 25 m). The
 probes reproduce it on the Covert grid at Δt = 0.5 **and** 0.25 s: the rain number in the
 lowest cell grows by a factor 100 every 30 s of simulated time (a dt-independent rate,
 so a rate term, not a time-stepping instability) while its mass stays ~5×10⁻⁷ kg kg⁻¹.
-`scripts/p3_rain_number_probe.jl` shows the chain: cells just above the surface carry rain
+`test/diagnostics/p3_rain_number_probe.jl` shows the chain: cells just above the surface carry rain
 mass but no rain number, so P3's slope clamp diagnoses 2-mm drops there and lets the mass
 fall at 9.3 m s⁻¹ and the number at 5.4 m s⁻¹ — a sedimentation Courant number of 0.47 at
 10 m, above the 5/18 up to which the bounds-preserving limiter guarantees its bounds. In the
@@ -138,7 +138,7 @@ fix, job 865).
 
 With the positivity limiter, the full 256² Covert-grid P3-N75 run still went non-finite at
 iteration 105 (52 s), in two cells at cloud top, while the same configuration at 32² ran
-45 minutes. The per-stage trace (`scripts/p3_stage_trace_gpu.jl`, restoring the exact
+45 minutes. The per-stage trace (`test/diagnostics/p3_stage_trace_gpu.jl`, restoring the exact
 pre-stage state and recomputing every term) showed the rain-number advection tendency NaN
 with finite P3 rates, and the limiter factor θ NaN in one cell whose rain number is exactly
 zero below a decaying tail of ε₂-multiples (2×10⁻¹⁹, 4.7×10⁻²⁹, 0, …): its minimum
@@ -197,18 +197,21 @@ The six members of the last production set (`*_posmom_s60_theta`) rerun unchange
 the pins, with a new output tag:
 
 ```sh
-MOMENTS=positive SLICE_INTERVAL=60 TAG=theta_pr959 scripts/production_runs.sh
-GRID=lasso MOMENTS=positive SLICE_INTERVAL=60 TAG=theta_pr959 scripts/production_runs.sh
+MOMENTS=positive SLICE_INTERVAL=60 TAG=theta_pr959 execution/production_runs.sh
+GRID=lasso MOMENTS=positive SLICE_INTERVAL=60 TAG=theta_pr959 execution/production_runs.sh
 ```
 
 The first job on a compute node precompiles the new Manifest into `~/.julia-compute`;
-`sbatch scripts/smoke_tests_gpu.sbatch` is the cheap GPU check to run first.
+`sbatch test/diagnostics/smoke_tests_gpu.sbatch` is the cheap GPU check to run first.
 
 ## Layout
 
 ```
 src/            package (readers, grids, forcings, radiation, surface, initial state, case driver, diagnostics)
-scripts/        fetch_inputs.jl, run_case.jl, smoke_tests.jl, Slurm submit scripts
+cases/          readable case scripts; cli/run_case.jl for command-line runs
+data_wrangling/  input acquisition scripts
+test/diagnostics/ historical debugging probes and long staged smokes
+execution/      Slurm submit scripts
 test/           unit + regression tests (synthetic fixtures; Covert files used when present)
 analysis/       plot_results.jl (separate environment)
 data/           inputs (not versioned except README and MANIFEST)
@@ -219,11 +222,11 @@ results/        figures and lightweight summaries committed from runs
 
 ```julia
 julia --project -e 'using Pkg; Pkg.instantiate()'
-julia --project scripts/fetch_inputs.jl                # public Covert files + checksums
+julia --project data_wrangling/fetch_covert_inputs.jl                # public Covert files + checksums
 julia --project -e 'using Pkg; Pkg.test()'
-julia --project scripts/smoke_tests.jl cpu             # staged smoke tests
-sbatch scripts/smoke_tests_gpu.sbatch                  # same on one GPU
-sbatch scripts/submit_gpu.sbatch --preset covert_public_bin --microphysics p3_n75 --Nx 256 --Ny 256
+julia --project test/diagnostics/smoke_tests.jl cpu             # staged smoke tests
+sbatch test/diagnostics/smoke_tests_gpu.sbatch                  # same on one GPU
+sbatch execution/submit_gpu.sbatch cases/cli/run_case.jl --arch gpu --data data/covert2022_bin --preset covert_public_bin --microphysics p3_n75 --Nx 256 --Ny 256
 ```
 
 Every run writes `provenance.toml` (TOML; input checksums including `grd` when present, Breeze

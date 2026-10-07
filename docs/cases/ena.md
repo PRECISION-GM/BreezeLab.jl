@@ -53,7 +53,7 @@ must be supplied explicitly, because SAM's `day0` does not identify the year.
 For the candidate above, **after confirming its date, inputs, and grid**:
 
 ```sh
-julia --project scripts/run_case.jl \
+julia --project cases/cli/run_case.jl \
   --protocol lasso_ena_official \
   --data data/lasso/20170718era5s1n0d25x100_sbmwrm-aer2-flxsst \
   --epoch 2017-07-18T06:00:00 \

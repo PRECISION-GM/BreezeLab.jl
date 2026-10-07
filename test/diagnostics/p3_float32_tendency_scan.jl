@@ -1,14 +1,14 @@
 # Where does the Float32 P3-aer2 first-step NaN originate? Scan the stage-1 tendencies Gⁿ of
 # the freshly initialized model for non-finite values, then evaluate the advection and each
 # forcing term of the affected scalar at the first bad cell.
-#   julia --project scripts/p3_float32_tendency_scan.jl [Float32|Float64]
+#   julia --project test/diagnostics/p3_float32_tendency_scan.jl [Float32|Float64]
 using BreezeLab, Breeze, Oceananigans, Printf
 using Oceananigans.TimeSteppers: update_state!
 using Oceananigans.Forcings: MultipleForcings
 using Breeze.AtmosphereModels: AtmosphereModels as AM, div_ρUc
 
 FT = length(ARGS) ≥ 1 && ARGS[1] == "Float64" ? Float64 : Float32
-data = joinpath(@__DIR__, "..", "data", "covert2022_bin")
+data = joinpath(@__DIR__, "..", "..", "data", "covert2022_bin")
 case = lasso_ena_simulation(data; preset=:covert_public_bin, arch=CPU(), FT, Nx=8, Ny=8, Lx=280, Ly=280,
                             z_faces=lasso_ena_vertical_faces(), microphysics=:p3_aer2, stop_time=2.0,
                             Δt=0.5, max_Δt=0.5, write_output=false, aerosol_replenishment=:diagnostic_ccn)

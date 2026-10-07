@@ -3,7 +3,7 @@
 # formed) the previous stage's tendency Gⁿ and the prognostic state are scanned; on the first
 # non-finite value the pre-stage snapshot column is printed and the P3 process rates at that
 # cell are evaluated on the CPU in Float64 and Float32.
-#   PROBE_GRID=covert PROBE_MOMENTS=positive PROBE_NX=256 julia --project scripts/p3_stage_trace_gpu.jl <Float32|Float64> <dt> [minutes] [microphysics]
+#   PROBE_GRID=covert PROBE_MOMENTS=positive PROBE_NX=256 julia --project test/diagnostics/p3_stage_trace_gpu.jl <Float32|Float64> <dt> [minutes] [microphysics]
 using BreezeLab, Breeze, Oceananigans, Oceananigans.Units, CUDA, Printf, Statistics
 using Oceananigans: Callback, UpdateStateCallsite
 using Breeze.AtmosphereModels: AtmosphereModels as AM
@@ -23,7 +23,7 @@ z_faces = get(ENV, "PROBE_GRID", "covert") == "covert" ? covert_public_bin_verti
 switches = Dict{Symbol, Any}()
 get(ENV, "PROBE_MOMENTS", "positive") == "positive" ? (switches[:moment_advection] = :positive) : (switches[:moment_advection] = :plain)
 scheme === :p3_aer2 && (switches[:aerosol_replenishment] = :diagnostic_ccn)
-data = joinpath(@__DIR__, "..", "data", "covert2022_bin")
+data = joinpath(@__DIR__, "..", "..", "data", "covert2022_bin")
 case = lasso_ena_simulation(data; preset=:covert_public_bin, arch=GPU(), FT, Nx=N, Ny=N, Lx=35N, Ly=35N, z_faces,
                             microphysics=scheme, stop_time=minutes*60, Δt, max_Δt=Δt, write_output=false,
                             progress_interval=1minute, switches...)

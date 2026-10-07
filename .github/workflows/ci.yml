@@ -15,19 +15,9 @@ jobs:
         with:
           version: '1.12'
       - uses: julia-actions/cache@v2
-      - name: ARM downloader safety checks (offline)
-        run: julia --startup-file=no test/arm_download.jl
       - name: Instantiate pinned environment
         run: julia --project -e 'using Pkg; Pkg.instantiate()'
       - name: Fetch pinned public inputs
-        run: julia --project scripts/fetch_inputs.jl
-      - name: Test
+        run: julia --project data_wrangling/fetch_covert_inputs.jl
+      - name: Package tests (physics, downloaders, CPU case execution and output)
         run: julia --project -e 'using Pkg; Pkg.test(; allow_reresolve=false)'
-      - name: CPU simulation and output smoke
-        run: julia --project scripts/smoke_test.jl
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: cpu-smoke
-          path: output/cpu_smoke/
-          if-no-files-found: ignore

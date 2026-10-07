@@ -1,6 +1,6 @@
 # Run independently of the simulation environment: julia test/arm_download.jl
 using Test, Tar, TOML
-include(joinpath(@__DIR__, "..", "scripts", "fetch_arm_inputs.jl"))
+include(joinpath(@__DIR__, "..", "data_wrangling", "fetch_arm_inputs.jl"))
 
 @testset "ARM archive download safety and provenance" begin
     name = "enalasso_samin_20170718era5s1n0d25x100_sbmwrm-aer2-flxsstC1.m0.20170718.000000.tar"

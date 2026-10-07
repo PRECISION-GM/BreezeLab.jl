@@ -1,9 +1,9 @@
 # Staged smoke tests (CPU or GPU): forcing-only, dry dynamics, cloudy 1M / P3-N75 / P3-aer2.
-#   julia --project scripts/smoke_tests.jl [cpu|gpu]
+#   julia --project test/diagnostics/smoke_tests.jl [cpu|gpu]
 using BreezeLab, Breeze, Oceananigans, Oceananigans.Units, CUDA, Printf, Statistics
 
 arch = length(ARGS) ≥ 1 && lowercase(ARGS[1]) == "gpu" ? GPU() : CPU()
-data = joinpath(@__DIR__, "..", "data", "covert2022_bin")
+data = joinpath(@__DIR__, "..", "..", "data", "covert2022_bin")
 small = (; Nx=32, Ny=32, Lx=1120, Ly=1120, z_faces=lasso_ena_vertical_faces(), FT=Float32, write_output=false, progress_interval=5minutes, max_Δt=10.0)
 
 finite(model) = all(f -> all(isfinite, Array(interior(f))), values(Oceananigans.prognostic_fields(model)))

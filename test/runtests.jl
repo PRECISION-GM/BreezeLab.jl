@@ -8,6 +8,7 @@ using Statistics
 using Random
 using TOML
 using Dates: DateTime
+using CUDA
 
 const FIXTURES = joinpath(@__DIR__, "fixtures")
 const COVERT_DIR = joinpath(@__DIR__, "..", "data", "covert2022_bin")
@@ -103,7 +104,7 @@ test_grid(; Nx=8, Ny=8, Nz=24, Lz=6000) =
             @test prm["caseid"] == "256x256x192" && prm["dx"] == 35.0 && prm["nstop"] * prm["dt"] == 21600
         end
     else
-        @info "Covert public inputs not present in data/; skipping the regression fixture (run scripts/fetch_inputs.jl)"
+        @info "Covert public inputs not present in data/; skipping the regression fixture (run data_wrangling/fetch_covert_inputs.jl)"
     end
 end
 
@@ -573,3 +574,6 @@ end
 end # BreezeLab
 
 include("ena_protocols.jl")
+include("arm_download.jl")
+include("manifest_download.jl")
+include("ena_execution.jl")

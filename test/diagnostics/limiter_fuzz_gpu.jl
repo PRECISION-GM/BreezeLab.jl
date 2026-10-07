@@ -1,7 +1,7 @@
 # Fuzz Oceananigans' bounds-preserving limiter on the GPU with fields of tiny Float32 values
 # (down to the subnormal range) interleaved with zeros, for three upper bounds, and compare
 # with the CPU evaluation of the same fields.
-#   julia --project scripts/limiter_fuzz_gpu.jl
+#   julia --project test/diagnostics/limiter_fuzz_gpu.jl
 using Oceananigans, CUDA, Random, Printf
 using Oceananigans.Advection: materialize_advection, compute_bounds_preserving_limiter!
 using Oceananigans.BoundaryConditions: fill_halo_regions!

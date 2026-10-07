@@ -1,6 +1,6 @@
 # Run one LASSO-ENA / Covert case from the command line.
 #
-#   julia --project scripts/run_case.jl --data data/covert2022_bin --protocol covert_public_bin \
+#   julia --project cases/cli/run_case.jl --data data/covert2022_bin --protocol covert_public_bin \
 #         --microphysics p3_n75 --arch gpu --Nx 256 --Ny 256 --hours 6 --output output/p3_n75
 #
 # Every run writes <output>/provenance.toml (inputs + checksums + configuration).

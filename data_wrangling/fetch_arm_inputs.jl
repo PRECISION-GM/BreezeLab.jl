@@ -67,7 +67,7 @@ end
 
 function main(args)
     if args == ["--help"]
-        println("Usage: julia scripts/fetch_arm_inputs.jl FILENAME OUTPUT_DIR")
+        println("Usage: julia data_wrangling/fetch_arm_inputs.jl FILENAME OUTPUT_DIR")
         println("Load ARM_USERNAME and ARM_TOKEN through your local secret configuration, not command history or Git.")
         println("Downloads one samin tar plus checksum/provenance; does not extract it.")
         return

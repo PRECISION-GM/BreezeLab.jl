@@ -1,5 +1,5 @@
 # Download public case references/inputs from a reviewed, checksum-pinned manifest.
-# Usage: julia scripts/fetch_manifest.jl cases/seastarr/inputs.toml data/seastarr_22241697
+# Usage: julia data_wrangling/fetch_manifest.jl cases/seastarr/inputs.toml data/seastarr_22241697
 using Downloads, SHA, TOML
 
 function fetch_manifest(manifest_path, output)
@@ -29,6 +29,6 @@ function fetch_manifest(manifest_path, output)
 end
 
 if abspath(PROGRAM_FILE) == @__FILE__
-    length(ARGS) == 2 || error("Usage: julia scripts/fetch_manifest.jl MANIFEST OUTPUT_DIR")
+    length(ARGS) == 2 || error("Usage: julia data_wrangling/fetch_manifest.jl MANIFEST OUTPUT_DIR")
     fetch_manifest(ARGS...)
 end

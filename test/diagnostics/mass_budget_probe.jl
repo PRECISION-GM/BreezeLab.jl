@@ -2,7 +2,7 @@
 # issue): a rain shaft in a quiescent P3 column, no radiation/surface/large-scale forcing. Total
 # vapor + cloud + rain mass may change only by the rain leaving through the bottom face; the
 # residual (with an explicit-Euler estimate of the outflow) is printed for bounded and plain WENO.
-#   julia --project scripts/mass_budget_probe.jl
+#   julia --project test/diagnostics/mass_budget_probe.jl
 using BreezeLab, Breeze, Oceananigans, Oceananigans.Units, Statistics, Printf
 using Breeze.Thermodynamics: saturation_specific_humidity, PlanarLiquidSurface
 using Breeze.Microphysics.PredictedParticleProperties: CloudDroplets

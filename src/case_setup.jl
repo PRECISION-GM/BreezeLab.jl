@@ -112,10 +112,10 @@ limits only the upwind reconstruction of the evaluating cell, so the two cells s
 face can apply different fluxes when its limiter fires and mass is not conserved there. With
 P3's fast sedimentation this piled phantom rain into the surface cell of the 45-minute
 GPU probes (surface `qʳ` reached 9.5 g kg⁻¹, versus < 0.03 g kg⁻¹ with plain WENO), and the
-forcing-free rain-shaft budget in `scripts/mass_budget_probe.jl` records the residual.
+forcing-free rain-shaft budget in `test/diagnostics/mass_budget_probe.jl` records the residual.
 Oceananigans `main` (pinned since the `glw/weno-z-float32-overflow` revision) stores the limiter as a cell field and rescales every face
 reconstruction with its own cell's factor, which restores conservation (validated by
-`scripts/mass_budget_probe.jl` and the GPU smokes). `bounded_condensates = false` (plain WENO for the
+`test/diagnostics/mass_budget_probe.jl` and the GPU smokes). `bounded_condensates = false` (plain WENO for the
 condensate masses) is retained as a diagnostic sensitivity only.
 """
 function scalar_advection_schemes(order, microphysics, moisture_name; bounded_condensates=true, positive_moments=true, energy_name=:ρs)

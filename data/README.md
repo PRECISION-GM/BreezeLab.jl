@@ -3,7 +3,7 @@
 This directory is not versioned (see `.gitignore`). Populate it with
 
 ```
-julia --project scripts/fetch_inputs.jl
+julia --project data_wrangling/fetch_covert_inputs.jl
 ```
 
 which downloads pinned revisions of the *public* SAM configuration files of Covert, Mechem & Zhang (2022,
@@ -22,7 +22,7 @@ Extract it as `data/lasso/<run-id>/` so that `snd`, `lsf`, `sfc`, `prm` (and `gr
 that directory, then select `ena_simulation(...; protocol=:lasso_ena_official, epoch=...)`.
 See [the protocol instructions](../docs/cases/ena.md#lasso-ena). Record the run id, DOI
 (10.5439/2572661), download date and `sha256sum` of the archive in your own provenance
-file. `scripts/run_case.jl` records extracted input-file checksums automatically;
+file. `cases/cli/run_case.jl` records extracted input-file checksums automatically;
 add the original archive checksum, DOI, and run ID to your experiment record.
 
 ### Direct ARM API download
@@ -32,7 +32,7 @@ can download an exact filename without a browser order. Load `ARM_USERNAME` and
 `ARM_TOKEN` from your existing local secret configuration, then run:
 
 ```sh
-julia scripts/fetch_arm_inputs.jl \
+julia data_wrangling/fetch_arm_inputs.jl \
   enalasso_samin_20170718era5s1n0d25x100_sbmwrm-aer2-flxsstC1.m0.20170718.000000.tar \
   data/lasso/archives
 ```

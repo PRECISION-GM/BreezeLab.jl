@@ -4,7 +4,7 @@
 # stage produced — and (2) the previous stage's tendencies Gⁿ. When one of them goes
 # non-finite, the pre-stage snapshot is used to evaluate the P3 tendency bundle at that cell
 # in Float32 and Float64.
-#   julia --project scripts/p3_float32_stage_probe.jl [Float32|Float64] [off-switches]
+#   julia --project test/diagnostics/p3_float32_stage_probe.jl [Float32|Float64] [off-switches]
 using BreezeLab, Breeze, Oceananigans, Oceananigans.Units, Printf
 using Oceananigans: Callback, UpdateStateCallsite
 using Oceananigans.TimeSteppers: time_step!
@@ -17,7 +17,7 @@ off = length(ARGS) ≥ 2 ? split(ARGS[2], ",") : String[]
 "all" ∈ off && (off = ["vadv", "thermo", "nudging", "sponge", "geo", "upper", "radiation", "surface", "closure", "proj"])
 Δt = 0.5
 scheme = :p3_aer2
-data = joinpath(@__DIR__, "..", "data", "covert2022_bin")
+data = joinpath(@__DIR__, "..", "..", "data", "covert2022_bin")
 
 switches = Dict{Symbol, Any}()
 "vadv" ∈ off && (switches[:vertical_advection] = nothing)

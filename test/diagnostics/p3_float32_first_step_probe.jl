@@ -2,7 +2,7 @@
 # for 20 minutes. Reproduce on a small CPU grid: take one fixed step, locate the first
 # non-finite cell, print its pre-step state, and evaluate the P3 tendency bundle at that
 # state in Float32 and Float64 so a precision-specific overflow shows up directly.
-#   julia --project scripts/p3_float32_first_step_probe.jl [Float32|Float64] [dt] [microphysics] [off-switches]
+#   julia --project test/diagnostics/p3_float32_first_step_probe.jl [Float32|Float64] [dt] [microphysics] [off-switches]
 # off-switches: comma-separated subset of vadv,thermo,nudging,sponge,geo,upper,radiation,surface,
 # closure,proj (proj = no diagnostic-CCN projection), or "all" for every one of them.
 using BreezeLab, Breeze, Oceananigans, Oceananigans.Units, Printf
@@ -15,7 +15,7 @@ FT = length(ARGS) ≥ 1 && ARGS[1] == "Float64" ? Float64 : Float32
 scheme = length(ARGS) ≥ 3 ? Symbol(ARGS[3]) : :p3_aer2
 off = length(ARGS) ≥ 4 ? split(ARGS[4], ",") : String[]
 "all" ∈ off && (off = ["vadv", "thermo", "nudging", "sponge", "geo", "upper", "radiation", "surface", "closure", "proj"])
-data = joinpath(@__DIR__, "..", "data", "covert2022_bin")
+data = joinpath(@__DIR__, "..", "..", "data", "covert2022_bin")
 
 switches = Dict{Symbol, Any}()
 "vadv" ∈ off && (switches[:vertical_advection] = nothing)

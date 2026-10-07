@@ -1,4 +1,4 @@
-# Data (downloaded by scripts/fetch_inputs.jl; never commit ARM-restricted archives)
+# Data (downloaded by data_wrangling/fetch_covert_inputs.jl; never commit ARM-restricted archives)
 data/*
 !data/README.md
 !data/MANIFEST.txt

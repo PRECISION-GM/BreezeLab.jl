@@ -1,6 +1,6 @@
 # Probe the P3-N75 GPU/Float32 blow-up seen in the smoke tests: run the 32²×260 cloudy stage with
 # per-minute diagnostics and report the first non-finite prognostic.
-#   julia --project scripts/p3_stability_probe.jl <cpu|gpu> <Float32|Float64> <max_dt> [minutes] [microphysics] [off-switches]
+#   julia --project test/diagnostics/p3_stability_probe.jl <cpu|gpu> <Float32|Float64> <max_dt> [minutes] [microphysics] [off-switches]
 # off-switches: comma-separated subset of vadv,thermo,nudging,sponge,geo,upper,radiation,surface,closure
 # PROBE_GRID=covert selects the 192-level Covert grid (10 m to 1.5 km) instead of the 260-level LASSO grid
 using BreezeLab, Breeze, Oceananigans, Oceananigans.Units, CUDA, Printf, Statistics
@@ -18,7 +18,7 @@ scheme_arg = length(ARGS) ≥ 5 ? ARGS[5] : "p3_n75"
 # "p3_aer2" runs with the SBM diagCCN projection; "p3_aer2_noproj" without it
 scheme = Symbol(replace(scheme_arg, "_noproj" => ""))
 off = length(ARGS) ≥ 6 ? split(ARGS[6], ",") : String[]
-data = joinpath(@__DIR__, "..", "data", "covert2022_bin")
+data = joinpath(@__DIR__, "..", "..", "data", "covert2022_bin")
 
 switches = Dict{Symbol, Any}()
 "vadv" ∈ off && (switches[:vertical_advection] = nothing)

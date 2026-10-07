@@ -8,17 +8,17 @@ cd "$(dirname "$0")/.."
 # FLOAT (default Float32, the preset precision). A single Float32/Float64 pair of chaotic LES
 # probes differed late in the run; that is not evidence of a precision artefact, so both
 # precisions are run as a controlled pair (FLOAT=Float64 for the second member).
-# PARTITION (default gpua100largex4; PARTITION_1M / PARTITION_N75 / PARTITION_AER2 override
-# one run), one GPU per run; TIME (default 72:00:00): the 32²×260 Float32 smokes step at
-# ~0.05 s, so the 43 200 fixed steps of the 12.6-million-cell grid need a day or more.
-# RUNS (default "one_moment p3_n75 p3_aer2") selects the members; CPUS (4) and MEM (100G) per run.
+# PARTITION=gpu-prod (H100) or gpu-p4de-2c (A100) on wpcluster; per-member overrides
+# PARTITION_1M / PARTITION_N75 / PARTITION_AER2 select each partition.
+# TIME is a conservative allocation ceiling, not a measured runtime prediction.
+# RUNS selects members; each requests one GPU with CPUS and MEM.
 # GRID=lasso runs on the 260-level LASSO grid (Δz = 25 m to 6 km) instead of the 192-level Covert
 # grid of the prm/grd files (output suffix _lassogrid); MOMENTS=positive selects the positivity-only
 # limiter for the number/volume moments (suffix _posmom); SLICE_INTERVAL=<seconds> overrides the
 # 10-minute slice cadence (suffix _s<seconds>), e.g. 60 for smooth animations.
 MODE=${MODE:-fixed}
 FLOAT=${FLOAT:-Float32}
-PARTITION=${PARTITION:-gpua100largex4}
+PARTITION=${PARTITION:-gpu-prod}
 TIME=${TIME:-72:00:00}
 RUNS=${RUNS:-"one_moment p3_n75 p3_aer2"}
 common="--data data/covert2022_bin --preset covert_public_bin --Nx 256 --Ny 256 --float $FLOAT"
@@ -39,7 +39,7 @@ if [ -n "${TAG:-}" ]; then suffix="${suffix}_${TAG}"; fi
 submit() {  # submit <partition> <job name> <microphysics> [extra run_case options]
     local partition=$1 name=$2 microphysics=$3; shift 3
     sbatch --partition="$partition" --time="$TIME" --gres=gpu:1 --cpus-per-task="${CPUS:-4}" --mem="${MEM:-100G}" --job-name="$name" \
-        scripts/submit_gpu.sbatch $common --microphysics "$microphysics" "$@" --output "output/covert_public_bin_$microphysics$suffix"
+        execution/submit_gpu.sbatch cases/cli/run_case.jl --arch gpu $common --microphysics "$microphysics" "$@" --output "output/covert_public_bin_$microphysics$suffix"
 }
 for run in $RUNS; do
     case $run in

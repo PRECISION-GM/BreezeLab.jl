@@ -25,34 +25,31 @@ Breeze and Oceananigans revisions required by the imported implementation.
 
 ```sh
 julia --project -e 'using Pkg; Pkg.instantiate()'
-julia --project scripts/fetch_inputs.jl
+julia --project data_wrangling/fetch_covert_inputs.jl
 julia --project -e 'using Pkg; Pkg.test(; allow_reresolve=false)'
-julia --project scripts/smoke_test.jl
 ```
 
 The fetch script downloads pinned public inputs and writes their revisions/checksums
-to `data/MANIFEST.txt`. The CPU smoke runs four simulated seconds on an 8×8×24 grid
-with one-moment microphysics. It writes `output/cpu_smoke/summary.toml`, provenance,
-and JLD2 profiles, time series, and slices. This checks execution and output, not
-cloud-physics fidelity. First-time compilation can take several minutes.
+to `data/MANIFEST.txt`. `Pkg.test()` includes four-second CPU simulations on an
+8×8×24 grid for one-moment, P3-N75 and aerosol-coupled P3, and verifies their JLD2
+outputs. These check execution and output, not cloud-physics fidelity. First-time
+compilation can take several minutes. See [test/](test/) for optional GPU checks.
 
 Run the public Covert configuration on an NVIDIA GPU:
 
 ```sh
-julia --project scripts/run_case.jl \
-  --protocol covert_public_bin --data data/covert2022_bin \
-  --arch gpu --float Float32 --output output/covert_public_bin
+julia --project cases/eastern_north_atlantic.jl
 ```
 
 The default case is 256×256×192 for six simulated hours and is a substantial run.
-For Slurm, adapt the partition/resources in `scripts/submit_gpu.sbatch`, create
-`output/` before submitting, and pass the same protocol/data arguments:
+Edit the settings in [the readable case file](cases/eastern_north_atlantic.jl), or use
+[the CLI](cases/cli/run_case.jl) for parameter sweeps and protocol/input selection.
+For Slurm, adapt the partition/resources in `execution/submit_gpu.sbatch`, create
+`output/` before submitting, and pass the case script:
 
 ```sh
 mkdir -p output
-sbatch scripts/submit_gpu.sbatch \
-  --protocol covert_public_bin --data data/covert2022_bin \
-  --output output/covert_public_bin
+sbatch --partition=gpu-prod execution/submit_gpu.sbatch cases/eastern_north_atlantic.jl
 ```
 
 For an official LASSO experiment, obtain the selected bundle from the
@@ -65,10 +62,14 @@ then follow [the LASSO instructions](docs/cases/ena.md#lasso-ena).
 - `src/case_setup.jl`: shared Breeze model assembly, output, and provenance.
 - Other `src/` files: reusable SAM readers, forcing operators, grids, surface fluxes,
   initial conditions, and diagnostics.
-- `scripts/`: fetch/run/smoke entry points and inherited GPU/P3 diagnostic tools.
+- `cases/`: readable experiment entry points and MIP specifications; the general CLI
+  lives under `cases/cli/`. See [case status](cases/README.md).
+- `data_wrangling/`: input acquisition and manifests; see the
+  [NumericalEarth observation-extension design](data_wrangling/README.md).
+- `execution/`: Slurm launchers and batch submission helpers.
 - `analysis/`: Julia plotting and animation tools inherited from BreezyLASSO.
-- `test/`: synthetic input/physics tests, protocol checks, and public-input tests
-  enabled when the Covert data are downloaded.
+- `test/`: `Pkg.test()` regressions, including case execution and downloads;
+  historical investigation scripts live under `test/diagnostics/`.
 - `docs/`: case formulations, reproduction requirements, and historical port notes.
 
 The Julia entry point is `ena_simulation(data_dir; protocol, kwargs...)`.
@@ -81,8 +82,8 @@ See the [dated production-readiness assessment and concrete TODOs](docs/producti
 for ENA, SEA STARR, and TRACER-MIP. Public MIP inputs/references are checksum-pinned:
 
 ```sh
-julia scripts/fetch_manifest.jl cases/seastarr/inputs.toml data/seastarr_22241697
-julia scripts/fetch_manifest.jl cases/tracer_mip/inputs.toml data/tracer_mip_416423a
+julia data_wrangling/fetch_manifest.jl cases/seastarr/inputs.toml data/seastarr_22241697
+julia data_wrangling/fetch_manifest.jl cases/tracer_mip/inputs.toml data/tracer_mip_416423a
 ```
 
 These stage source files; SEA STARR and TRACER case adapters are not yet implemented.

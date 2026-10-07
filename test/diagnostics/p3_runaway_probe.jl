@@ -1,7 +1,7 @@
 # Catch the P3 runaway (rain/temperature explosion) at its onset: snapshot the state every
 # 30 s, and when the maximum temperature exceeds the initial maximum by > 2 K, print the
 # hottest cell's current and previous state and evaluate the P3 tendency bundle there.
-#   julia --project scripts/p3_runaway_probe.jl <cpu|gpu> <Float32|Float64> <max_dt> [minutes] [microphysics] [off-switches]
+#   julia --project test/diagnostics/p3_runaway_probe.jl <cpu|gpu> <Float32|Float64> <max_dt> [minutes] [microphysics] [off-switches]
 using BreezeLab, Breeze, Oceananigans, Oceananigans.Units, CUDA, Printf, Statistics
 using Breeze.AtmosphereModels: AtmosphereModels as AM
 using Breeze.Thermodynamics: StaticEnergyState, MoistureMassFractions
@@ -13,7 +13,7 @@ max_Δt = parse(Float64, ARGS[3])
 minutes = length(ARGS) ≥ 4 ? parse(Float64, ARGS[4]) : 45.0
 scheme = length(ARGS) ≥ 5 ? Symbol(ARGS[5]) : :p3_n75
 off = length(ARGS) ≥ 6 ? split(ARGS[6], ",") : String[]
-data = joinpath(@__DIR__, "..", "data", "covert2022_bin")
+data = joinpath(@__DIR__, "..", "..", "data", "covert2022_bin")
 switches = Dict{Symbol, Any}()
 "vadv" ∈ off && (switches[:vertical_advection] = nothing)
 "thermo" ∈ off && (switches[:thermodynamic_tendencies] = false)

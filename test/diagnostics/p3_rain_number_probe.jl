@@ -1,7 +1,7 @@
 # Track the P3 rain-number runaway seen on the 192-level Covert grid: every 30 s locate the
 # cell with the largest ρnʳ; once it exceeds a threshold, print the local column and the full
 # P3 process-rate breakdown at that cell (Float64 CPU evaluation of the same scheme).
-#   PROBE_GRID=covert julia --project scripts/p3_rain_number_probe.jl <cpu|gpu> <Float32|Float64> <dt> [minutes] [microphysics]
+#   PROBE_GRID=covert julia --project test/diagnostics/p3_rain_number_probe.jl <cpu|gpu> <Float32|Float64> <dt> [minutes] [microphysics]
 using BreezeLab, Breeze, Oceananigans, Oceananigans.Units, CUDA, Printf, Statistics
 using Breeze.AtmosphereModels: AtmosphereModels as AM
 using Breeze.Thermodynamics: StaticEnergyState, MoistureMassFractions, ThermodynamicConstants,
@@ -15,7 +15,7 @@ minutes = length(ARGS) ≥ 4 ? parse(Float64, ARGS[4]) : 45.0
 scheme = length(ARGS) ≥ 5 ? Symbol(ARGS[5]) : :p3_n75
 threshold = 1e7      # ρnʳ [m⁻³] beyond which the column is reported
 reports = Ref(0)
-data = joinpath(@__DIR__, "..", "data", "covert2022_bin")
+data = joinpath(@__DIR__, "..", "..", "data", "covert2022_bin")
 z_faces = get(ENV, "PROBE_GRID", "covert") == "covert" ? covert_public_bin_vertical_faces() : lasso_ena_vertical_faces()
 extra = scheme === :p3_aer2 ? (; aerosol_replenishment=:diagnostic_ccn) : NamedTuple()
 get(ENV, "PROBE_MOMENTS", "plain") == "positive" && (extra = merge(extra, (; moment_advection=:positive)))
