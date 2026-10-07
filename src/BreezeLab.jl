@@ -35,7 +35,14 @@ export
     covert_public_bin_vertical_faces, AerosolReplenishment, DiagnosticCCNProjection,
     # diagnostics
     cloud_liquid, rain_mass_fraction, liquid_water_path, cloud_fraction, cloud_fraction_profile,
-    surface_rain_flux, cloud_boundaries, ProgressMessenger
+    surface_rain_flux, cloud_boundaries, ProgressMessenger,
+    # TRACER-MIP (regional nested coastal control; the regional constructor lives in the NumericalEarth extension)
+    tracer_mip_protocol, tracer_mip_case_window, acpc_vertical_faces, tracer_mip_horizontal_extent, tracer_mip_grid,
+    TracerMIPAerosolProfile, tracer_mip_aerosol_profile, aerosol_shape, surface_number_mixing_ratios,
+    mode_number_mixing_ratios, total_number_mixing_ratio, aerosol_profile_table, tracer_mip_p3_aerosol_modes,
+    PrescribedAerosolProfile,
+    ProcessRateAccumulators, accumulate_process_rates!, reset_process_accumulators!, process_rate_output_callback,
+    PROCESS_RATE_NAMES, PROCESS_RATE_UNITS, tracer_mip_outer_simulation
 
 using Oceananigans
 using Oceananigans.Units
@@ -53,5 +60,12 @@ include("diagnostics.jl")
 include("case_setup.jl")
 include("ena_protocols.jl")
 include("eastern_north_atlantic.jl")
+include("tracer_mip/protocol.jl")
+include("tracer_mip/aerosol_profiles.jl")
+include("tracer_mip/prescribed_aerosol.jl")
+include("tracer_mip/process_diagnostics.jl")
+
+# Regional (ERA5-nested, land/sea-coupled) constructor: implemented in the NumericalEarth extension.
+function tracer_mip_outer_simulation end
 
 end # module

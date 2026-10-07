@@ -37,3 +37,8 @@ results/
 analysis/Manifest.toml
 docs/Manifest.toml
 docs/src/generated/
+
+# Agent-local build/run artifacts
+depot/
+logs/
+runs/

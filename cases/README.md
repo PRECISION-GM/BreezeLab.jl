@@ -4,7 +4,7 @@
 | --- | --- |
 | [eastern_north_atlantic.jl](eastern_north_atlantic.jl) | Runnable public Covert ENA case; edit the readable settings, then run with `julia --project cases/eastern_north_atlantic.jl` |
 | [sea_starr.jl](sea_starr.jl) | Specification only; model assembly is not implemented and direct execution fails explicitly |
-| [tracer_mip.jl](tracer_mip.jl) | Specification only; model assembly is not implemented and direct execution fails explicitly |
+| [tracer_mip.jl](tracer_mip.jl) | Regional nested coastal control under implementation (branch `tracer-mip`): protocol metadata, grids and aerosol profiles are implemented and tested; see [docs/cases/tracer_mip.md](../docs/cases/tracer_mip.md) |
 
 The ENA example runs from top to bottom: call the exported
 `eastern_north_atlantic(; arch, microphysics, ...)` constructor, save provenance,
