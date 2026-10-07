@@ -28,6 +28,9 @@ validated protocol in this package.
 
 ## LASSO-ENA
 
+See [the ENA-LASSO audit](ena_lasso.md) for the adopted member, the bundle validation
+rules and the SAM-vs-Breeze physics differences recorded against the SAM source.
+
 Sources: [ARM bundle browser](https://lasso-ena.svcs.arm.gov/latest/bundle_browser.html),
 [LASSO-ENA dataset](https://doi.org/10.5439/2572661), and
 [LASSO SAM source](https://code.arm.gov/lasso/lasso-ena-codes/lasso_sam_sbm)

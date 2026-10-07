@@ -242,7 +242,8 @@ function build_case(data_dir;
     day0 = isnothing(day0) ? soundings[1].day : day0
     epoch = isnothing(epoch) ? epoch_from_day_of_year(day0) : epoch
 
-    sounding = soundings[1]
+    # setdata.f90 interpolates the bracketing snd records to day0 (a record at day0 is used as is)
+    sounding = initial_sounding(soundings, day0)
     profiles = SoundingProfiles(sounding; exclude_subsurface_levels, moisture_basis)
 
     #####
@@ -427,13 +428,16 @@ function build_case(data_dir;
 
     columns = initial_state_columns(profiles, z_centers, pᵣ; constants=constants64)
     ϵ = perturbation_array(Nx, Ny, z_centers, perturbation)
-    δT = perturbation.amplitude_T
-    δq = perturbation.amplitude_q
     column(values) = reshape(values, 1, 1, Nz)
+    # Per-level amplitudes of the selected setperturb.f90 case (5: ±0.1 K, ±0.025 g/kg below
+    # 600 m; 0: ±0.02 (6 - k) K in the five lowest levels, no moisture perturbation).
+    δT_levels, δq_levels = perturbation_amplitudes(perturbation, z_centers)
+    δT = column(δT_levels)
+    δq = column(δq_levels)
     # setperturb.f90 adds ±δq to SAM's dry-basis vapor; with moisture_basis = :mixing_ratio the
     # perturbation is applied to r = q/qᵈ (qᵈ = 1 - q - qᶜ, with qᶜ the condensate held fixed)
     # and converted back, otherwise to q directly.
-    perturbed_moisture(q, ϵ, qᶜ=0.0) = moisture_basis === :mixing_ratio ?
+    perturbed_moisture(q, ϵ, δq, qᶜ=0.0) = moisture_basis === :mixing_ratio ?
         (r = q / (1 - q - qᶜ) + δq * ϵ; max(0, r * (1 - qᶜ) / (1 + r))) : max(0, q + δq * ϵ)
 
     u₀ = repeat(column(columns.u .- uᶠ), Nx, Ny, 1)
@@ -444,13 +448,13 @@ function build_case(data_dir;
             # SAM HUJI-SBM `micro_init`: all condensate bins empty, qᵗ all vapor, cloud forms
             # through the scheme's own activation/condensation in the first steps.
             T₀ = column(columns.T_condensate_free) .+ δT .* ϵ
-            qᵛ₀ = perturbed_moisture.(column(columns.qᵗ), ϵ)
+            qᵛ₀ = perturbed_moisture.(column(columns.qᵗ), ϵ, δq)
             set!(model; T=T₀, qᵛ=qᵛ₀, u=u₀, v=v₀)
         elseif p3_initialization === :equilibrium
             # Deliberate P3 choice: warm-phase equilibrium partition (identical to the 1M
             # control's first saturation adjustment), with an in-cloud droplet number.
             T₀ = column(columns.T) .+ δT .* ϵ
-            qᵛ₀ = perturbed_moisture.(column(columns.qᵛ), ϵ, column(columns.qᶜˡ))
+            qᵛ₀ = perturbed_moisture.(column(columns.qᵛ), ϵ, δq, column(columns.qᶜˡ))
             qᶜˡ₀ = repeat(column(columns.qᶜˡ), Nx, Ny, 1)
             if !isnothing(microphysics_model.aerosol)
                 isnothing(initial_droplet_number) &&
@@ -466,7 +470,7 @@ function build_case(data_dir;
     else
         Π = columns.T ./ columns.θˡ
         θ₀ = column(columns.θˡ) .+ δT .* ϵ ./ column(Π)
-        qᵗ₀ = perturbed_moisture.(column(columns.qᵗ), ϵ)
+        qᵗ₀ = perturbed_moisture.(column(columns.qᵗ), ϵ, δq)
         set!(model; θ=θ₀, qᵗ=qᵗ₀, u=u₀, v=v₀)
     end
 
@@ -525,8 +529,8 @@ function build_case(data_dir;
     inputs = (; snd=snd_path, lsf=lsf_path, sfc=sfc_path, prm=isfile(prm_path) ? prm_path : nothing,
                 grd=isfile(grd_path) ? grd_path : nothing)
 
-    return (; simulation, model, grid, config, inputs, namelist, soundings, lsf, sfc, profiles,
-              forcing_profiles, surface_series, columns, surface_temperature=Tₛ)
+    return (; simulation, model, grid, config, inputs, namelist, soundings, sounding, lsf, sfc, profiles,
+              forcing_profiles, surface_series, columns, surface_temperature=Tₛ, forcing)
 end
 
 # Mean-profile alternative (Breeze SubsidenceForcing): snapshot of wls at the first record,
@@ -634,6 +638,9 @@ function write_provenance(path, case; extra=NamedTuple())
         "protocol" => string(get(case, :protocol, "custom")),
         "protocol_dimensions" => toml_value(get(case, :protocol_dimensions, nothing)),
         "protocol_overrides" => toml_value(get(case, :protocol_overrides, NamedTuple())),
+        "protocol_member" => string(get(case, :protocol_member, "none")),
+        "bundle" => toml_value(get(case, :bundle, "none")),
+        "staging" => toml_value(get(case, :staging, "none")),
         "inputs" => inputs,
         "software" => software,
         "config" => Dict{String, Any}(string(k) => toml_value(v) for (k, v) in pairs(case.config)),
@@ -650,6 +657,7 @@ toml_value(::Nothing) = "nothing"
 toml_value(x::Tuple) = [toml_value(v) for v in x]
 toml_value(x::AbstractVector) = [toml_value(v) for v in x]
 toml_value(x::NamedTuple) = Dict{String, Any}(string(k) => toml_value(v) for (k, v) in pairs(x))
+toml_value(x::AbstractDict) = Dict{String, Any}(string(k) => toml_value(v) for (k, v) in x)
 toml_value(x) = string(x)
 
 # A pinned dependency's git revision (from the active Manifest) and the dirty state of a

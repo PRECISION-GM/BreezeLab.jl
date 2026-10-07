@@ -11,6 +11,7 @@ using Dates: DateTime
 using CUDA
 
 const FIXTURES = joinpath(@__DIR__, "fixtures")
+const LASSO_FIXTURE = joinpath(FIXTURES, "lasso_bundle")   # synthetic SAM-style bundle, not an ARM archive
 const COVERT_DIR = joinpath(@__DIR__, "..", "data", "covert2022_bin")
 const HAVE_COVERT = isfile(joinpath(COVERT_DIR, "snd")) && isfile(joinpath(COVERT_DIR, "lsf")) &&
                     isfile(joinpath(COVERT_DIR, "sfc")) && isfile(joinpath(COVERT_DIR, "prm"))
@@ -574,6 +575,8 @@ end
 end # BreezeLab
 
 include("ena_protocols.jl")
+include("ena_lasso.jl")
+include("arm_observations.jl")
 include("arm_download.jl")
 include("manifest_download.jl")
 include("ena_execution.jl")

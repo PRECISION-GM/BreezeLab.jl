@@ -284,6 +284,35 @@ function record_heights(record::SAMLargeScaleForcing, sounding::SAMSounding)
 end
 
 """
+    initial_sounding(soundings, day; tolerance=1e-6)
+
+The sounding SAM's `setdata.f90` initializes from: the two consecutive `snd` records
+bracketing `day` (= `day0`), interpolated linearly in time (levels, θ, q, u, v and the
+surface pressure; pressure-level records keep their `NaN` heights). A record within
+`tolerance` days of `day` is returned as is, and a single-record file is used as is (SAM
+itself needs two records). `day` outside the records is an error, as in SAM.
+"""
+function initial_sounding(soundings::Vector{<:SAMSounding}, day; tolerance=1e-6)
+    length(soundings) == 1 && return soundings[1]
+    for record in soundings
+        abs(record.day - day) ≤ tolerance && return record
+    end
+    for n in 1:length(soundings)-1
+        a, b = soundings[n], soundings[n+1]
+        if a.day ≤ day ≤ b.day
+            length(a.z) == length(b.z) ||
+                error("snd records at days $(a.day) and $(b.day) have different level counts; SAM assumes one layout")
+            w = (day - a.day) / (b.day - a.day)
+            blend(x, y) = @. (1 - w) * x + w * y
+            z = all(isfinite, a.z) && all(isfinite, b.z) ? blend(a.z, b.z) : copy(a.z)
+            return SAMSounding(convert(typeof(a.day), day), blend(a.surface_pressure, b.surface_pressure),
+                               z, blend(a.p, b.p), blend(a.θ, b.θ), blend(a.q, b.q), blend(a.u, b.u), blend(a.v, b.v))
+        end
+    end
+    error("day $day is beyond the sounding time range $(first(soundings).day)–$(last(soundings).day); SAM's setdata.f90 aborts here too")
+end
+
+"""
     interpolate_profile(x, y, xq)
 
 Piecewise-linear interpolation of `y(x)` at query points `xq`, with constant

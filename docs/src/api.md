@@ -7,4 +7,8 @@ modify the simulation, attach additional diagnostics, and then call `run!`.
 eastern_north_atlantic
 ena_simulation
 ena_protocol_settings
+ena_lasso
+inspect_lasso_bundle
+validate_lasso_bundle
+parse_lasso_member
 ```
