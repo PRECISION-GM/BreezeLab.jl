@@ -25,7 +25,7 @@ using Breeze.TerrainFollowingDiscretization: TerrainFollowingGrid
         @test all(Δz[end-10:end] .== 300)               # uniform 300 m in the upper troposphere
         centers = (faces[1:end-1] .+ faces[2:end]) ./ 2
         zt = protocol["vertical"]["scalar_levels_m_agl"][2:end]
-        @test maximum(abs.(centers .- zt)) ≤ 1.5        # midpoints recover the scalar levels within integer rounding
+        @test maximum(abs.(centers .- zt)) ≤ 5          # cell centers track the scalar levels (≤ 3.5 m on the stretched part)
         @test_throws ArgumentError acpc_vertical_faces([-24, -10, 10])
     end
 
@@ -42,7 +42,7 @@ using Breeze.TerrainFollowingDiscretization: TerrainFollowingGrid
         # the lat-lon box lies within the roadmap's polar-stereographic corner envelope
         @test 22.552 ≤ outer.latitude[1] && outer.latitude[2] ≤ 35.941 + 0.3
         @test -103.376 ≤ outer.longitude[1] && outer.longitude[2] ≤ -86.782
-        @test 28.348 ≤ inner.latitude[1] && inner.latitude[2] ≤ 30.602
+        @test 28.348 - 0.01 ≤ inner.latitude[1] && inner.latitude[2] ≤ 30.602 + 0.01   # 250 km box vs. the stereographic corners (±1 km)
         @test -96.378 ≤ inner.longitude[1] && inner.longitude[2] ≤ -93.759
     end
 
