@@ -35,7 +35,11 @@ const DPS_NS_FIXTURE = joinpath(FIXTURES, "dp_scream_ns_excerpt.nc")
         # file-level sanity used by the adapter: below-surface levels repeat the lowest level above the surface
         @test iop.profiles.T[end, 1] == iop.profiles.T[end - 1, 1]
         # the "net" shortwave labels hold upwelling fluxes: albedo ≈ 0.15, not 0.85
-        @test_throws ErrorException iop_surface_albedo(iop; start=DateTime(2022, 8, 5), stop=DateTime(2022, 8, 5, 3))  # night: no daylit records
+        # 00 UTC = 19 CDT: the first record's hour-mean downwelling SW (53 W/m²) is still daylit, so the
+        # upwelling/downwelling ratio is defined (0.17 here; 0.154 over the full window); 02–03 UTC is night
+        albedo = iop_surface_albedo(iop; start=DateTime(2022, 8, 5), stop=DateTime(2022, 8, 5, 3))
+        @test 0.1 < albedo < 0.25
+        @test_throws ErrorException iop_surface_albedo(iop; start=DateTime(2022, 8, 5, 2), stop=DateTime(2022, 8, 5, 3))
         @test fractional_day_of_year(DateTime(2022, 8, 5)) == 217.0
         @test fractional_day_of_year(DateTime(2022, 8, 1, 6)) == 213.25
         @test iop_potential_temperature(300.0, 1e5) == 300.0
@@ -81,7 +85,7 @@ const DPS_NS_FIXTURE = joinpath(FIXTURES, "dp_scream_ns_excerpt.nc")
         zc = Array(znodes(grid, Center()))
         pᵣ = 100867.34 .* exp.(-zc ./ 7500)
         profiles = LargeScaleForcingProfiles(grid, inputs.lsf, zc, pᵣ; day0=inputs.day0)
-        @test profiles.times[1] == 0 && profiles.times[3] == 3600 && profiles.times[2] == 3599
+        @test profiles.times[1] == 0 && profiles.times[3] == 3600 && isapprox(profiles.times[2], 3599; atol=1e-6)
         @test profiles.tls[1, 1, grid.Nz, Time(0.0)] == 0 && profiles.qls[1, 1, grid.Nz, Time(0.0)] == 0  # above 50 hPa
         @test profiles.tls[1, 1, 1, Time(1800.0)] == profiles.tls[1, 1, 1, Time(0.0)]                     # held within the hour
         @test profiles.tls[1, 1, 1, Time(3600.0)] != profiles.tls[1, 1, 1, Time(0.0)]
@@ -115,7 +119,7 @@ const DPS_NS_FIXTURE = joinpath(FIXTURES, "dp_scream_ns_excerpt.nc")
         @test isapprox(neutral_drag_coefficient(25.0, 0.1), (0.4 / log(250))^2)
         mktempdir() do output
             case = tracer_dp_scream(; iop_path=IOP_FIXTURE, start=DateTime(2022, 8, 5), stop=DateTime(2022, 8, 5, 3),
-                                    arch=CPU(), FT=Float32, Nx=4, Ny=4, Δx=500.0,
+                                    arch=CPU(), FT=Float32, Nx=8, Ny=8, Δx=500.0,
                                     z_faces=collect(range(0, 22000, length=25)), microphysics=:p3_n75,
                                     stop_time=4.0, Δt=1.0, max_Δt=1.0, output_dir=output, surface_albedo=0.15,
                                     timeseries_interval=1.0, profile_interval=4.0, slice_interval=4.0,
@@ -178,7 +182,7 @@ const DPS_NS_FIXTURE = joinpath(FIXTURES, "dp_scream_ns_excerpt.nc")
             @test length(checkpoints) == 1                                                  # cleanup keeps the latest
             # pickup: a fresh case continues from the checkpoint to a later stop time
             resumed = tracer_dp_scream(; iop_path=IOP_FIXTURE, start=DateTime(2022, 8, 5), stop=DateTime(2022, 8, 5, 3),
-                                       arch=CPU(), FT=Float32, Nx=4, Ny=4, Δx=500.0,
+                                       arch=CPU(), FT=Float32, Nx=8, Ny=8, Δx=500.0,
                                        z_faces=collect(range(0, 22000, length=25)), microphysics=:p3_n75,
                                        stop_time=6.0, Δt=1.0, max_Δt=1.0, output_dir=output, surface_albedo=0.15,
                                        timeseries_interval=1.0, profile_interval=4.0, slice_interval=4.0,
@@ -188,7 +192,7 @@ const DPS_NS_FIXTURE = joinpath(FIXTURES, "dp_scream_ns_excerpt.nc")
             @test all(f -> all(isfinite, Array(interior(f))), values(Oceananigans.prognostic_fields(resumed.model)))
         end
         @test_throws ArgumentError tracer_dp_scream(; iop_path=IOP_FIXTURE, start=DateTime(2022, 8, 5), stop=DateTime(2022, 8, 5, 3),
-                                                     arch=CPU(), Nx=4, Ny=4, z_faces=collect(range(0, 22000, length=25)),
+                                                     arch=CPU(), Nx=8, Ny=8, z_faces=collect(range(0, 22000, length=25)),
                                                      stop_time=1e6, surface_albedo=0.15, write_output=false)
         @test_throws ArgumentError tracer_dp_scream(; iop_path="/nonexistent/iop.nc", arch=CPU())
         settings = tracer_dp_scream_settings(IOP_FIXTURE; start=DateTime(2022, 8, 5), stop=DateTime(2022, 8, 5, 3))
