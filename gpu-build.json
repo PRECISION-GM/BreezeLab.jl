@@ -1,0 +1,15 @@
+{
+  "source_commit": "3330f3cf98a62766bf139ce04276745d00cadd48",
+  "job_id": "165",
+  "gpu": "NVIDIA H100 80GB HBM3",
+  "partition": "gpu-prod",
+  "completed_utc": "2026-10-07T23:03:50.086277+00:00",
+  "mode": "full GPU example",
+  "stop_time_seconds": 21600,
+  "grid": [
+    256,
+    256,
+    192
+  ],
+  "microphysics": "p3_n75"
+}
