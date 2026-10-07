@@ -19,6 +19,7 @@ using Oceananigans
 using Oceananigans.Units
 using Oceananigans.Units: Time
 using Oceananigans.Fields: interior, interpolate!
+using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Grids: znode, znodes
 using Oceananigans.Simulations: Callback
 using Oceananigans.Utils: launch!
