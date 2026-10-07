@@ -1,0 +1,22 @@
+# Source files only; this manifest does not establish an executable case.
+case = "tracer_mip"
+source = "https://github.com/ARM-Synergy/tracer-mip/tree/416423ac1c5ea7673a07dacf14622af74ebd3b3e"
+retrieved_date = "2026-10-07"
+
+[[files]]
+filename = "Roadmap.md"
+url = "https://raw.githubusercontent.com/ARM-Synergy/tracer-mip/416423ac1c5ea7673a07dacf14622af74ebd3b3e/Roadmap.md"
+bytes = 28015
+sha256 = "937b6fb69c8749edf2a2a2ccad96260b8c65e396f85cf0e1e8dcfacaa4aee49e"
+
+[[files]]
+filename = "TRACER-MIP-Roadmap-2025_March_20250719.pdf"
+url = "https://raw.githubusercontent.com/ARM-Synergy/tracer-mip/416423ac1c5ea7673a07dacf14622af74ebd3b3e/TRACER-MIP-Roadmap-2025_March_20250719.pdf"
+bytes = 6134765
+sha256 = "9e5841dc8e013e9ff2fbc2f603faf9c464ee866c085d97065159cba7af3624fe"
+
+[[files]]
+filename = "Pyplt.TRACER_Aerosol_Profiles_MIP.ipynb"
+url = "https://raw.githubusercontent.com/ARM-Synergy/tracer-mip/416423ac1c5ea7673a07dacf14622af74ebd3b3e/Pyplt.TRACER_Aerosol_Profiles_MIP.ipynb"
+bytes = 252203
+sha256 = "207304df64daaedd84164164aa9a6ada888101341019d21035fa8114c2c9f808"

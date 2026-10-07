@@ -1,0 +1,46 @@
+# Source files only; this manifest does not establish an executable case.
+case = "seastarr"
+source = "https://zenodo.org/records/22241697"
+retrieved_date = "2026-10-07"
+
+[[files]]
+filename = "SEA_STARR_CTRL_SCM_driver.nc"
+url = "https://zenodo.org/api/records/22241697/files/SEA_STARR_CTRL_SCM_driver.nc/content"
+bytes = 3308197
+sha256 = "cae69b07bc48fc50c11f971a9f853c0110fc942b8cabfba37f3a4aaa9516175a"
+zenodo_checksum = "md5:80cd959c968010976dacbd4d142444da"
+
+[[files]]
+filename = "SEA_STARR_N100_SCM_driver.nc"
+url = "https://zenodo.org/api/records/22241697/files/SEA_STARR_N100_SCM_driver.nc/content"
+bytes = 3308197
+sha256 = "c042aeec522117acd1968737be73021520f33d3c72f3b2567754a8aef3d1cb76"
+zenodo_checksum = "md5:5891bec389d73bcf3cd7af1352940cf9"
+
+[[files]]
+filename = "SEA_STARR_N030_SCM_driver.nc"
+url = "https://zenodo.org/api/records/22241697/files/SEA_STARR_N030_SCM_driver.nc/content"
+bytes = 3308197
+sha256 = "6c2fcd62b35ece199c8a0f2d1a5fdc01d4431b24e273dc57dfbe19c546651ab8"
+zenodo_checksum = "md5:fbbbf19aba671b4408b4a48a32c781d2"
+
+[[files]]
+filename = "SEA_STARR_Standard_Variables.xlsx"
+url = "https://zenodo.org/api/records/22241697/files/SEA_STARR_Standard_Variables.xlsx/content"
+bytes = 85852
+sha256 = "44b4fc2285a9518883980d03e9b3f9c07439c350ebbb7c2f6e813990887de319"
+zenodo_checksum = "md5:30dfabb4aed7581b28ec39fd310b67cc"
+
+[[files]]
+filename = "SEA_STARR_Model_Setup_Specifications.pdf"
+url = "https://zenodo.org/api/records/22241697/files/SEA_STARR_Model_Setup_Specifications.pdf/content"
+bytes = 69536
+sha256 = "af26ebcd1e0c9b3102d2905eadd981bb14c398782fce3a17959c10df8572646f"
+zenodo_checksum = "md5:e2f0765a6b2f697485fdfdc4d3cd0f42"
+
+[[files]]
+filename = "SEA_STARR_Raw_Trajectories.nc"
+url = "https://zenodo.org/api/records/22241697/files/SEA_STARR_Raw_Trajectories.nc/content"
+bytes = 32937717
+sha256 = "81041a0851912666e7ad2534784294ca5be7b7190935b61e721c1eea13bc7271"
+zenodo_checksum = "md5:ba0069a8a7a9531d8cb9c72c2795357a"

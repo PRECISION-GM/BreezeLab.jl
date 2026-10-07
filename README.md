@@ -77,6 +77,16 @@ model. The legacy `lasso_ena_simulation(...; preset=...)` remains for imported s
 
 ## Next milestones
 
+See the [dated production-readiness assessment and concrete TODOs](docs/production-readiness.md)
+for ENA, SEA STARR, and TRACER-MIP. Public MIP inputs/references are checksum-pinned:
+
+```sh
+julia scripts/fetch_manifest.jl cases/seastarr/inputs.toml data/seastarr_22241697
+julia scripts/fetch_manifest.jl cases/tracer_mip/inputs.toml data/tracer_mip_416423a
+```
+
+These stage source files; SEA STARR and TRACER case adapters are not yet implemented.
+
 1. Reproduce one official LASSO-ENA ensemble member's forcing and grid, then compare
    Breeze diagnostics to its SAM reference and ARM observations.
 2. Add SEASTARR and TRACER-MIP as separately documented experiments using shared
