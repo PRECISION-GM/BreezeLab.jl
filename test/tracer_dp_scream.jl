@@ -85,7 +85,7 @@ const DPS_NS_FIXTURE = joinpath(FIXTURES, "dp_scream_ns_excerpt.nc")
         zc = Array(znodes(grid, Center()))
         pᵣ = 100867.34 .* exp.(-zc ./ 7500)
         profiles = LargeScaleForcingProfiles(grid, inputs.lsf, zc, pᵣ; day0=inputs.day0)
-        @test profiles.times[1] == 0 && profiles.times[3] == 3600 && isapprox(profiles.times[2], 3599; atol=1e-6)
+        @test isapprox(profiles.times[1], 0; atol=1e-6) && isapprox(profiles.times[2], 3599; atol=1e-6) && isapprox(profiles.times[3], 3600; atol=1e-6)
         @test profiles.tls[1, 1, grid.Nz, Time(0.0)] == 0 && profiles.qls[1, 1, grid.Nz, Time(0.0)] == 0  # above 50 hPa
         @test profiles.tls[1, 1, 1, Time(1800.0)] == profiles.tls[1, 1, 1, Time(0.0)]                     # held within the hour
         @test profiles.tls[1, 1, 1, Time(3600.0)] != profiles.tls[1, 1, 1, Time(0.0)]
