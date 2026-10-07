@@ -39,6 +39,7 @@ export
 
 using Oceananigans
 using Oceananigans.Units
+using CUDA # Register Oceananigans' GPU() constructor for the default case architecture.
 using Breeze
 
 include("sam_input_files.jl")

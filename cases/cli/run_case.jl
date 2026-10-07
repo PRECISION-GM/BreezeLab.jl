@@ -23,7 +23,7 @@ end
 
 opts = parse_args(ARGS)
 getopt(k, default) = get(opts, k, default)
-allowed = Set(["data", "protocol", "preset", "arch", "float", "seed", "epoch", "dimensions", "microphysics", "Nx", "Ny", "Lx", "Ly", "hours", "radiation", "surface", "nudging", "vertical_advection", "p3_initialization", "aerosol_replenishment", "cfl", "max_dt", "lasso_grid", "moment_advection", "formulation", "profile_interval", "closure", "slice_interval", "output"])
+allowed = Set(["data", "protocol", "preset", "arch", "float", "seed", "epoch", "dimensions", "microphysics", "Nx", "Ny", "Lx", "Ly", "hours", "radiation", "surface", "nudging", "vertical_advection", "p3_initialization", "aerosol_replenishment", "cfl", "dt", "max_dt", "lasso_grid", "moment_advection", "formulation", "profile_interval", "closure", "slice_interval", "output"])
 unknown = setdiff(Set(keys(opts)), allowed)
 isempty(unknown) || error("unknown options: $(join(sort!(collect(unknown)), ", "))")
 
@@ -60,6 +60,7 @@ haskey(opts, "aerosol_replenishment") && (kw[:aerosol_replenishment] = opts["aer
                                           opts["aerosol_replenishment"] == "diagnostic_ccn" ? :diagnostic_ccn : parse(Float64, opts["aerosol_replenishment"]))
 haskey(opts, "cfl") && (kw[:cfl] = parse(Float64, opts["cfl"]))
 haskey(opts, "max_dt") && (kw[:max_Δt] = parse(Float64, opts["max_dt"]))
+haskey(opts, "dt") && (kw[:Δt] = parse(Float64, opts["dt"]))
 haskey(opts, "lasso_grid") && opts["lasso_grid"] == "true" && (kw[:z_faces] = lasso_ena_vertical_faces())
 haskey(opts, "moment_advection") && (kw[:moment_advection] = Symbol(opts["moment_advection"]))
 haskey(opts, "formulation") && (kw[:formulation] = Symbol(opts["formulation"]))   # LiquidIcePotentialTemperature (default) or StaticEnergy
