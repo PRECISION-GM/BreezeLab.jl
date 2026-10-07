@@ -47,8 +47,8 @@ using Breeze.TerrainFollowingDiscretization: TerrainFollowingGrid
     end
 
     @testset "grid construction (reduced size)" begin
-        grid = tracer_mip_grid(CPU(), :outer; Nx = 6, Ny = 4, FT = Float64)
-        @test size(grid) == (6, 4, 94)
+        grid = tracer_mip_grid(CPU(), :outer; Nx = 8, Ny = 6, FT = Float64)
+        @test size(grid) == (8, 6, 94)
         @test grid isa TerrainFollowingGrid
         @test grid.Lz ≈ 22181
         flat = tracer_mip_grid(CPU(), :inner; Nx = 5, Ny = 5, terrain_following = false, FT = Float32)

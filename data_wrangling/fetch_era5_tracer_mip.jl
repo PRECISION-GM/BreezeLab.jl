@@ -40,7 +40,7 @@ start, stop = tracer_mip_case_window(protocol, case)
 dates = collect((start - margin):Hour(1):(stop + margin))
 
 # Regions derived from the actual outer grid (Float32, CPU, reduced horizontal size: only the extent matters).
-grid = tracer_mip_grid(CPU(), :outer; protocol, Nx = 2, Ny = 2, terrain_following = false)
+grid = tracer_mip_grid(CPU(), :outer; protocol, Nx = 8, Ny = 8, terrain_following = false)   # ≥ halo cells; only the extent matters
 pressure_dataset = ERA5HourlyPressureLevels()
 parent_region = BoundingBox(grid; padding = default_horizontal_padding(pressure_dataset))
 child_region = BoundingBox(grid)
