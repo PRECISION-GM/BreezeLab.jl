@@ -49,8 +49,8 @@ function PrescribedAerosolProfile(profile::TracerMIPAerosolProfile; FT = Float32
     return PrescribedAerosolProfile{FT, typeof(activation), typeof(profile_FT)}(activation, profile_FT, surface_number)
 end
 
-convert_profile(FT, p::TracerMIPAerosolProfile{FT}) = p
-function convert_profile(FT, p::TracerMIPAerosolProfile)
+convert_profile(::Type{FT}, p::TracerMIPAerosolProfile{FT}) where FT = p
+function convert_profile(::Type{FT}, p::TracerMIPAerosolProfile) where FT
     modes = map(m -> TracerMIPAerosolMode{FT}(m.number_cm3, m.median_diameter, m.sigma), p.modes)
     return TracerMIPAerosolProfile{FT, typeof(modes)}(modes, p.reference_density, p.minimum_total_number,
                                                       p.floor_height, FT.(p.shape), p.multiplier)
