@@ -69,9 +69,9 @@ function read_iop_forcing(path; FT=Float64, profile_variables=IOP_PROFILE_VARIAB
     NCDataset(path) do ds
         bdate = Int(ds["bdate"][])
         base_time = DateTime(bdate ÷ 10000, (bdate ÷ 100) % 100, bdate % 100)
-        times = Float64.(nomissing(ds["tsec"][:], NaN))
+        times = Float64.(nomissing(vec(Array(ds["tsec"])), NaN))
         issorted(times) && allunique(times) || error("IOP times must be strictly increasing in $path")
-        levels = FT.(nomissing(ds["lev"][:], NaN))
+        levels = FT.(nomissing(vec(Array(ds["lev"])), NaN))
         latitude = FT(ds["lat"][1])
         longitude = FT(ds["lon"][1])
         read_profile(name) = FT.(nomissing(ds[String(name)][1, 1, :, :], NaN))

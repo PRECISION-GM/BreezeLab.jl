@@ -46,16 +46,16 @@ the global attributes, and the `case`/`git_version` strings recorded by EAMxx.
 """
 function read_dp_scream_output(path; utc_offset_hours=5, variables=DP_SCREAM_VARIABLES)
     NCDataset(path) do ds
-        raw = ds["time"].var[:]
+        raw = vec(Array(ds["time"].var))
         factor, origin = parse_cf_time_units(ds["time"].attrib["units"])
         local_time = [origin + Dates.Millisecond(round(Int, Float64(t) * factor)) for t in raw]
         time = local_time .+ Dates.Hour(utc_offset_hours)
-        lev = Float64.(nomissing(ds["lev"][:], NaN))
+        lev = Float64.(nomissing(vec(Array(ds["lev"])), NaN))
         found = Symbol[]; values = Any[]
         for name in variables
             haskey(ds, name) || continue
             push!(found, Symbol(name))
-            push!(values, Float64.(nomissing(ds[name][:], NaN)))
+            push!(values, Float64.(nomissing(Array(ds[name]), NaN)))
         end
         data = NamedTuple{Tuple(found)}(Tuple(values))
         attributes = Dict{String, String}(string(k) => string(v) for (k, v) in ds.attrib)

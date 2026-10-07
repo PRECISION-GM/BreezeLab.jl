@@ -25,11 +25,11 @@ function excerpt(src, dst, time_range; variables, attributes)
             for name in variables
                 v = ds[name]
                 dims = dimnames(v)
-                raw = v.var[:]  # undecoded values keep the file's own time encoding
+                raw = Array(v.var)  # undecoded values keep the file's own time encoding
                 sel = "time" in dims ? selectdim(raw, findfirst(==("time"), dims), time_range) : raw
                 attrib = Dict{String, Any}(k => a for (k, a) in v.attrib)
                 newvar = defVar(out, name, eltype(raw), dims; attrib)
-                newvar.var[:] = collect(sel)
+                newvar.var[ntuple(_ -> Colon(), ndims(sel))...] = collect(sel)
             end
         end
     end
