@@ -5,8 +5,12 @@ julia data_wrangling/fetch_covert_inputs.jl
 julia --project -e 'using Pkg; Pkg.test(; allow_reresolve=false)'
 ```
 
-`Pkg.test()` runs input/forcing/microphysics regressions, protocol checks, offline
-ARM downloader checks and ENA CPU execution/output tests for 1M, P3-N75 and P3-aer2.
+`Pkg.test()` runs input/forcing/microphysics regressions, protocol checks, the LASSO-ENA
+bundle parser/validator and adapter checks on a synthetic SAM-style bundle
+(`fixtures/lasso_bundle`: analytic forcing profiles, time-interpolated sounding, unit and
+tendency conversions, forcing assembly, provenance), ARM station-series readers on
+generated NetCDF files, offline ARM downloader checks and ENA CPU execution/output tests
+for 1M, P3-N75 and P3-aer2.
 CI fetches the pinned public Covert inputs first, so the ENA checks run on every push
 and PR. Without those inputs, the data-dependent checks are explicitly skipped;
 tests never silently download data or require ARM credentials.

@@ -23,7 +23,7 @@ end
 
 opts = parse_args(ARGS)
 getopt(k, default) = get(opts, k, default)
-allowed = Set(["data", "protocol", "preset", "arch", "float", "seed", "epoch", "dimensions", "microphysics", "Nx", "Ny", "Lx", "Ly", "hours", "radiation", "surface", "nudging", "vertical_advection", "p3_initialization", "aerosol_replenishment", "cfl", "dt", "max_dt", "lasso_grid", "moment_advection", "formulation", "profile_interval", "closure", "slice_interval", "output"])
+allowed = Set(["data", "protocol", "preset", "arch", "float", "seed", "epoch", "member", "dimensions", "microphysics", "Nx", "Ny", "Lx", "Ly", "hours", "radiation", "surface", "nudging", "vertical_advection", "p3_initialization", "aerosol_replenishment", "cfl", "dt", "max_dt", "lasso_grid", "moment_advection", "formulation", "profile_interval", "closure", "slice_interval", "output"])
 unknown = setdiff(Set(keys(opts)), allowed)
 isempty(unknown) || error("unknown options: $(join(sort!(collect(unknown)), ", "))")
 
@@ -45,6 +45,8 @@ if haskey(opts, "dimensions")
     kw[:dimensions] = dims
 end
 haskey(opts, "epoch") && (kw[:epoch] = DateTime(opts["epoch"]))
+haskey(opts, "member") && (kw[:member] = opts["member"])      # LASSO run ID, e.g. 20170718era5d25x100_sbmwrm-aer2-flxsst
+preset === :lasso_ena_official && !haskey(opts, "member") && error("--member <LASSO run ID> is required with --protocol lasso_ena_official")
 haskey(opts, "microphysics") && (kw[:microphysics] = Symbol(opts["microphysics"]))   # otherwise the preset decides
 haskey(opts, "Nx") && (kw[:Nx] = parse(Int, opts["Nx"]))
 haskey(opts, "Ny") && (kw[:Ny] = parse(Int, opts["Ny"]))
