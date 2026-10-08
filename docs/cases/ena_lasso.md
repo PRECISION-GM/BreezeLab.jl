@@ -17,6 +17,48 @@ run when it was written (7 October 2026).
 | Token meanings (LASSO-ENA *Simulation Ensembles*, tables 8–10) | `era5`/`merra2`: forcing reanalysis sampled over a 5° box with the default wind-only nudging; `era5s1n0`: the same forcing sampled over a 1° box, default nudging (`n0`); `n1`/`n2`: enhanced T/qv nudging above the inversion / above 2 km; `d25x100`: 25 km wide (256 columns) at 100 m, 8 km top; `sbmwrm`: warm-phase HUJI spectral bin; `morr`: Morrison; `aer1/2/3`: low/medium/high aerosol; `flxsst`: fluxes computed online from the reanalysis SST. So the adopted member differs from the plan's candidate only in the forcing sampling region (5° instead of 1°); nudging, microphysics, aerosol and surface treatment are the same. |
 | Availability | Listed but **not staged online**: `armlive/saveData` and `armlive/livedata/saveData` return HTTP 404 (empty body) for the samin tar and even the small samstat file, while a control request for a known-online ENA observation file succeeds with the same credentials. Staging requires an ARM order (bundle browser / Data Discovery); nothing was ordered by the agent. |
 
+## 1b. The staged bundle (ARM order 284988, staged 8 October 2026 05:06 UTC)
+
+`data/lasso/20170718era5d25x100_sbmwrm-aer2-flxsst/` (`stage_lasso_bundle.jl`; archive SHA-256
+`b7594c2d…`, 53 739 520 B; `samstat` `f5cb2bed…`, `sam2d` `4a4c6682…` under `data/lasso/archives/`).
+Bundle README: SAM v6.10.3 plus LASSO modifications, `model_source_git_hash f83adf58`
+(the public branch head audited above is `12d0244`; the member was produced by the earlier
+revision), `stagesam_ena 8404ad7`. Facts read from the files:
+
+| item | value |
+| --- | --- |
+| `day0`, `dt`, `nstop` | 199.0 (2017-07-18 00:00 UTC), 1 s, 86400 (24 h) |
+| `nrad`, `tauls` | 30 (30 s), 7200 s (`n0` wind nudging, whole column) |
+| `snd` | 3 records (199.0, 199.5, 200.0), 1077 **height** levels to 10 755 m (`p = -999.9`, unused) |
+| `lsf` | 37 records (198.75–200.25), 431 height levels to 10 762 m, 9 columns (`read_in_geostrophic_wind = .true.`) |
+| `sfc` | 37 samples (198.75–200.25): SST 295.15 → 295.10 K, ERA5 H/LE for reference, `TAU = -999.9` |
+| `grd` | 260 scalar levels 12.5 … 8087.5 m (25 m to 6012.5 m, then stretched); Breeze centres differ from SAM levels by ≤ 4 m in the stretched part |
+| dimensions | `caseid` is a name → `dimensions = (256, 256, 260)` passed explicitly (`lasso_documented_dimensions`) |
+| `&SGS_TKE dosmagor = .false.` | prognostic 1.5-order TKE in SAM; Breeze Smagorinsky–Lilly (recorded) |
+| `UNIFORM_SFC_FLX = .false.` | per-column `oceflx` in SAM → adapter `surface_flux_law = :sam_oceflx` (Large & Pond drag exactly; Stanton `0.0327√cdn` and Dalton `0.0346√cdn` fitted to Breeze's `a₀ + a₁U + a₂/U` within 0.4 % over 2–15 m s⁻¹; `umin = 1` m s⁻¹; residual: Breeze's log-profile height shift and Li et al. stability vs SAM's two Monin–Obukhov iterations and the stable-branch Stanton `0.018√cdn`) |
+| `fcor = 9.19626e-5` | used directly as the f-plane parameter (SAM does so); it equals `2Ω sin φ` with the sidereal Ω, 0.27 % above SAM's own `4π/86400 sin φ` |
+| `compute_reffc = .true.` | SAM diagnoses the liquid effective radius from the SBM spectrum; Breeze prescribes 10 μm (recorded departure) |
+| `perturb_type = 5`, `timelargescale = 0`, `ug = vg = 0`, `nxco2 = 1`, `doseasons = .false.` | supported as is |
+| aerosol | aer2 modes with the SBM cap emulation (`aerosol_supersaturation_cap = 0.003`): 10.8 % of mode 1 and 91.0 % of mode 2 activatable, 2.384×10⁸ kg⁻¹ (≈ 286 cm⁻³) in total; fully soluble chemistry |
+
+`validate_lasso_bundle` reports 0 problems and 8 recorded warnings (CPU job 241;
+`analysis/check_lasso_bundle.jl`), and tiny CPU cases built on the full 260-level column step
+finitely.
+
+## 1c. Short GPU integration (plan step 6, first part)
+
+Slurm job 243 on A100 `GPU-c764cc9c` (gpu-p4de-2c-2), source `fa26811`, `cases/cli/run_case.jl`
+with the documented command and `--hours 1 --profile_interval 600 --slice_interval 1800`:
+3600 steps of 1 s in 44.1 min (0.69 s per step, RRTMGP every 30 steps), finite throughout,
+cloud fraction 1 from t = 10 min, LWP 53 → 91 → 61 g m⁻², max |w| ≤ 2.9 m s⁻¹, max
+`qᶜˡ` 1.6 g kg⁻¹, rain 0.002 mm d⁻¹, T ∈ [252.3, 295.6] K. Aerosol check (`runs/lasso_aer2_1h_job243/checks/`):
+`nᵃ + nᶜˡ` equals the capped total everywhere (2.384×10⁸ kg⁻¹), `nᵃ` constant outside
+cloud, in-cloud `nᶜˡ`/CF ≈ 2.1–2.7×10⁸ kg⁻¹ (≈ 250–320 cm⁻³), i.e. the activation still
+reaches the cap (the Breeze ratchet, now bounded by the SBM's own maximum). The full
+24-h run (job 249, `runs/lasso_aer2_24h_job249/`) was queued for the next physically idle
+A100 at 06:25 UTC; its comparison with `samstat`/`sam2d` and the ARM observations
+(`analysis/compare_sam_reference.jl`, `analysis/compare_ena_observations.jl`) is plan step 7.
+
 ## 2. What `protocol = :lasso_ena_official` does
 
 `inspect_lasso_bundle` / `validate_lasso_bundle` (`src/lasso_bundle.jl`) read the five
@@ -105,6 +147,6 @@ the retrieval uncertainty; matching snapshots is not the criterion.
 - Separate run script (`cases/ena_lasso.jl`), constructor (`ena_lasso`), staging/freeze
   tooling (`data_wrangling/stage_lasso_bundle.jl`), launcher (`execution/submit_ena_lasso.sbatch`),
   comparison tooling and this audit: done; CPU tests in `Pkg.test()`.
-- Real-bundle GPU baseline, figures and comparison report: **blocked** on ARM staging the
-  adopted member's `samin` (and `samstat`/`sam2d`) files; see the status file for the exact
-  queries and responses. The Covert benchmark runs are not relabelled as LASSO.
+- Real-bundle validation and the 1-h GPU integration: done (sections 1b, 1c). The 24-h
+  baseline and its SAM/ARM comparison: queued/pending; see the status file. The Covert
+  benchmark runs are not relabelled as LASSO.
