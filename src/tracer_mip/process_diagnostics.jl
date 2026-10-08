@@ -55,6 +55,7 @@ struct ProcessRateAccumulators{F, M, C}
     model :: M
     constants :: C
     pending_reset :: Base.RefValue{Bool}   # set by the output-schedule callback, applied before the next accumulation
+    last_iteration :: Base.RefValue{Int}   # guards against accumulating twice for one model step (e.g. at initialization)
 end
 
 """
@@ -64,7 +65,7 @@ Allocate the twelve TRACER-MIP process-rate accumulators for a Breeze `Atmospher
 """
 function ProcessRateAccumulators(model)
     fields = NamedTuple{PROCESS_RATE_NAMES}(ntuple(_ -> CenterField(model.grid), length(PROCESS_RATE_NAMES)))
-    return ProcessRateAccumulators(fields, model, model.thermodynamic_constants, Ref(false))
+    return ProcessRateAccumulators(fields, model, model.thermodynamic_constants, Ref(false), Ref(model.clock.iteration))
 end
 
 @inline function mip_process_rates(p3, ρ, ℳ, 𝒰, constants, surface_temperature)
@@ -149,6 +150,9 @@ end
 # by `process_rate_output_callback` on the previous iteration is applied first, so the writer that ran
 # after the callbacks on that iteration saw the complete interval.
 function (acc::ProcessRateAccumulators)(simulation)
+    iter = simulation.model.clock.iteration
+    iter == acc.last_iteration[] && return nothing       # no step completed since the last accumulation
+    acc.last_iteration[] = iter
     if acc.pending_reset[]
         reset_process_accumulators!(acc)
         acc.pending_reset[] = false
