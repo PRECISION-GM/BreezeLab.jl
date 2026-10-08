@@ -37,6 +37,10 @@ Nx = parse(Int, get(ENV, "TRACER_MIP_NX", "750"))
 Ny = parse(Int, get(ENV, "TRACER_MIP_NY", "750"))
 stop_time = parse(Float64, get(ENV, "TRACER_MIP_STOP_HOURS", "24")) * 3600
 parent = Symbol(get(ENV, "TRACER_MIP_PARENT", "era5"))
+# Pilot/diagnostic knobs (protocol values by default): radiation rrtmgp|none, terrain etopo|flat, Δt in seconds.
+radiation = get(ENV, "TRACER_MIP_RADIATION", "rrtmgp") == "none" ? nothing : :rrtmgp
+terrain_choice = get(ENV, "TRACER_MIP_TERRAIN", "etopo")
+Δt = parse(Float64, get(ENV, "TRACER_MIP_DT", "3"))
 era5_dir = get(ENV, "TRACER_MIP_ERA5_DIR", joinpath(pkgdir(BreezeLab), "data", "era5"))
 output_dir = get(ENV, "TRACER_MIP_OUTPUT_DIR", joinpath(pkgdir(BreezeLab), "output", "tracer_mip_outer_$(case)" * (parent === :era5 ? "" : "_EXPLORATORY_$(parent)")))
 output_interval = 1hour             # Grid-1: 60-min full output
@@ -45,7 +49,8 @@ mkpath(output_dir)
 
 # ## Build
 
-run_case = tracer_mip_outer_simulation(arch; case, parent, era5_dir, Nx, Ny, stop_time)
+extra = terrain_choice == "flat" ? (; terrain = nothing) : NamedTuple()
+run_case = tracer_mip_outer_simulation(arch; case, parent, era5_dir, Nx, Ny, stop_time, radiation, Δt, extra...)
 parent === :era5 || @warn "EXPLORATORY run with synthetic boundaries: software test of the machinery, not a TRACER-MIP control"
 simulation = run_case.simulation
 child = run_case.child
@@ -102,12 +107,13 @@ simulation.output_writers[:slices] = JLD2Writer(child, slices; schedule = TimeIn
 wall = Ref(time_ns())
 function progress(sim)
     ρ = child.dynamics.total_density
-    @info @sprintf("iter %6d  t = %s  Δt = %s  wall %s | max|u| %.1f max|w| %.2f  T ∈ [%.1f, %.1f]  ρ ∈ [%.3f, %.3f]  max qᶜˡ %.2e  max nᶜˡ %.2e",
+    p = Breeze.AtmosphereModels.dynamics_pressure(child.dynamics)
+    @info @sprintf("iter %6d  t = %s  Δt = %s  wall %s | max|u| %.1f max|w| %.2f  T ∈ [%.1f, %.1f]  ρ ∈ [%.3f, %.3f]  p ∈ [%.0f, %.0f]  max qᶜˡ %.2e  max nᶜˡ %.2e",
                    iteration(sim), prettytime(sim), prettytime(sim.Δt), prettytime(1e-9 * (time_ns() - wall[])),
                    maximum(abs, u), maximum(abs, w), minimum(child.temperature), maximum(child.temperature),
-                   minimum(ρ), maximum(ρ), maximum(μ.qᶜˡ), maximum(μ.nᶜˡ))
+                   minimum(ρ), maximum(ρ), minimum(p), maximum(p), maximum(μ.qᶜˡ), maximum(μ.nᶜˡ))
 end
-add_callback!(simulation, progress, TimeInterval(5minutes))
+add_callback!(simulation, progress, TimeInterval(parse(Float64, get(ENV, "TRACER_MIP_PROGRESS_SECONDS", "300"))))
 Oceananigans.Diagnostics.erroring_NaNChecker!(simulation)
 
 # ## Provenance
