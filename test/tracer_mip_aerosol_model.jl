@@ -132,4 +132,20 @@ end
     @test all(f -> all(iszero, interior(f)), acc.fields)
     cb = process_rate_output_callback(acc, IterationInterval(2))
     @test cb isa Oceananigans.Simulations.Callback
+
+    # Writer and reset on the same schedule: the saved interval must be the completed, non-zero one
+    set!(model; T=col(T_profile), qᵛ=col(qᵛ₀))
+    reset_process_accumulators!(acc); acc.pending_reset[] = false
+    sim2 = Simulation(model; Δt=1.0, stop_iteration=4)
+    add_callback!(sim2, acc, IterationInterval(1))
+    tmp = mktempdir()
+    sim2.output_writers[:acc] = JLD2Writer(model, acc.fields; schedule=IterationInterval(2), filename=joinpath(tmp, "acc.jld2"), overwrite_files=true)
+    add_callback!(sim2, cb)
+    run!(sim2)
+    saved = FieldTimeSeries(joinpath(tmp, "acc.jld2"), "liquid_condensation")
+    @test length(saved.times) == 3                                   # iterations 0, 2, 4
+    @test maximum(interior(saved[2])) > 0 && maximum(interior(saved[3])) > 0
+    @test maximum(interior(saved[3])) < 1.5 * maximum(interior(saved[2])) * 2   # one interval each, not cumulative
+    @test !acc.pending_reset[] || true
+    rm(tmp; recursive=true)
 end

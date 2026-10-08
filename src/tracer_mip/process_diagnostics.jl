@@ -54,6 +54,7 @@ struct ProcessRateAccumulators{F, M, C}
     fields :: F           # NamedTuple of CenterFields keyed by PROCESS_RATE_NAMES
     model :: M
     constants :: C
+    pending_reset :: Base.RefValue{Bool}   # set by the output-schedule callback, applied before the next accumulation
 end
 
 """
@@ -63,7 +64,7 @@ Allocate the twelve TRACER-MIP process-rate accumulators for a Breeze `Atmospher
 """
 function ProcessRateAccumulators(model)
     fields = NamedTuple{PROCESS_RATE_NAMES}(ntuple(_ -> CenterField(model.grid), length(PROCESS_RATE_NAMES)))
-    return ProcessRateAccumulators(fields, model, model.thermodynamic_constants)
+    return ProcessRateAccumulators(fields, model, model.thermodynamic_constants, Ref(false))
 end
 
 @inline function mip_process_rates(p3, ρ, ℳ, 𝒰, constants, surface_temperature)
@@ -144,8 +145,16 @@ function accumulate_process_rates!(acc::ProcessRateAccumulators, Δt)
     return nothing
 end
 
-# Callback form: accumulate over the step that just completed (the simulation's Δt).
-(acc::ProcessRateAccumulators)(simulation) = accumulate_process_rates!(acc, simulation.Δt)
+# Callback form: accumulate over the step that just completed (the simulation's Δt). A reset requested
+# by `process_rate_output_callback` on the previous iteration is applied first, so the writer that ran
+# after the callbacks on that iteration saw the complete interval.
+function (acc::ProcessRateAccumulators)(simulation)
+    if acc.pending_reset[]
+        reset_process_accumulators!(acc)
+        acc.pending_reset[] = false
+    end
+    return accumulate_process_rates!(acc, simulation.Δt)
+end
 
 """
     reset_process_accumulators!(acc)
@@ -162,8 +171,8 @@ end
 """
     process_rate_output_callback(acc, schedule)
 
-A callback on the output `schedule` that zeroes the accumulators after the writer on the same
-schedule has saved them; register it *after* the output writer so Oceananigans runs it later
-in the step (writers run before callbacks of the same iteration).
+A callback on the output `schedule` that *requests* a reset of the accumulators: Oceananigans runs
+callbacks before output writers within a step, so the accumulators are zeroed only at the start of
+the next accumulation, after the writer on the same schedule has saved the completed interval.
 """
-process_rate_output_callback(acc::ProcessRateAccumulators, schedule) = Callback(sim -> reset_process_accumulators!(acc), schedule)
+process_rate_output_callback(acc::ProcessRateAccumulators, schedule) = Callback(sim -> (acc.pending_reset[] = true), schedule)
