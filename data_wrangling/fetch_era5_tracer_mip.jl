@@ -18,7 +18,13 @@
 using BreezeLab: tracer_mip_protocol, tracer_mip_case_window, tracer_mip_grid, file_sha256
 using NumericalEarth
 using NumericalEarth.DataWrangling: Metadata, MetadataSet, BoundingBox, default_horizontal_padding, metadata_path
-using NumericalEarth.DataWrangling.ERA5: ERA5HourlyPressureLevels, ERA5HourlySingleLevel, ERA5HourlyLand
+using NumericalEarth.DataWrangling.ERA5: ERA5HourlyPressureLevels, ERA5HourlySingleLevel, ERA5HourlyLand, ERA5
+# Upstream gap (NumericalEarth d07eb240): the CDS splitter looks up NetCDF short names with
+# `nc_varnames(dataset)`, which has no ERA5-Land method, so soil variables raise a KeyError. Supply the
+# land mapping that NumericalEarth itself defines; remove once upstream adds it.
+if !hasmethod(ERA5.nc_varnames, Tuple{ERA5.ERA5LandDataset})
+    ERA5.nc_varnames(::ERA5.ERA5LandDataset) = ERA5.ERA5Land_netcdf_variable_names
+end
 using CopernicusClimateDataStore   # activates the ERA5 download extension
 using Oceananigans: CPU
 using Downloads: Downloads
