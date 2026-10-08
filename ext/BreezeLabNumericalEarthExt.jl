@@ -39,11 +39,11 @@ surface_precipitation_flux_shim(model, microphysics) =
     Field(-1 * Breeze.AtmosphereModels.bottom_precipitation_flux(model, microphysics).operand)
 
 function __init__()
-    ne_ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
-    if isnothing(ne_ext)
-        @warn "NumericalEarthBreezeExt is not loaded; the surface_precipitation_flux shim was not installed"
-    elseif !isdefined(ne_ext, :surface_precipitation_flux)
-        Core.eval(ne_ext, :(const surface_precipitation_flux = $surface_precipitation_flux_shim))
+    # Define the name where NumericalEarth's import points (`Breeze.AtmosphereModels`), at run time, so
+    # it works regardless of extension load order and is never baked into a precompile image.
+    AM = Breeze.AtmosphereModels
+    if !isdefined(AM, :surface_precipitation_flux)
+        Core.eval(AM, :(surface_precipitation_flux(model, microphysics) = $(surface_precipitation_flux_shim)(model, microphysics)))
     end
     return nothing
 end
