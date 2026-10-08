@@ -69,7 +69,7 @@ end
 
 """
     ena_lasso(bundle_dir=lasso_bundle_directory(member); member=DEFAULT_LASSO_MEMBER, epoch,
-              dimensions=:documented, arch=GPU(), FT=Float32, output_dir, output_prefix="ena_lasso", kwargs...)
+              dimensions=:documented, arch=nothing, FT=Float32, output_dir, output_prefix="ena_lasso", kwargs...)
 
 Build the official LASSO-ENA member `member` from its staged `samin` bundle without running
 it. Returns the [`ena_simulation`](@ref) case extended with `staging` (the `bundle.toml`
@@ -82,7 +82,9 @@ input-file checksums.
 - `dimensions = :documented` uses [`lasso_documented_dimensions`](@ref) for the member's
   domain token (recorded in provenance as such); pass a tuple to be fully explicit, or
   `nothing` when the namelist carries `nx_gl/ny_gl/nz_gl`.
-- A missing bundle raises an `ArgumentError` with [`lasso_bundle_missing_message`](@ref).
+- A missing bundle raises an `ArgumentError` with [`lasso_bundle_missing_message`](@ref),
+  before the architecture is touched (`arch = nothing` becomes `GPU()` only afterwards, so the
+  staging message also appears on machines without a GPU).
 
 Everything else (`Nx`, `Ny`, `z_faces`, `microphysics`, `stop_time`, …) is an explicit,
 provenance-recorded override of the protocol defaults, exactly as in `ena_simulation`.
@@ -91,7 +93,7 @@ function ena_lasso(bundle_dir=nothing;
                    member = DEFAULT_LASSO_MEMBER,
                    epoch,
                    dimensions = :documented,
-                   arch = GPU(),
+                   arch = nothing,
                    FT = Float32,
                    output_dir = nothing,
                    output_prefix = "ena_lasso",
@@ -99,6 +101,7 @@ function ena_lasso(bundle_dir=nothing;
     m = member isa LassoMember ? member : parse_lasso_member(member)
     directory = isnothing(bundle_dir) ? lasso_bundle_directory(m) : bundle_dir
     lasso_bundle_available(directory) || throw(ArgumentError(lasso_bundle_missing_message(m, directory)))
+    arch = isnothing(arch) ? GPU() : arch
     dims = dimensions === :documented ? lasso_documented_dimensions(m) : dimensions
     output_dir = isnothing(output_dir) ? joinpath(pwd(), "output", "ena_lasso", m.id) : output_dir
     case = ena_simulation(directory; protocol=:lasso_ena_official, member=m, epoch, dimensions=dims,

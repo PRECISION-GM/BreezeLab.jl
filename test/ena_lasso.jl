@@ -141,7 +141,7 @@ end
                                ("nrad = 30" => "nrad = 30, nudging_uv_z1 = 500.", "nudging_uv_z1"),
                                ("nrad = 30" => "nrad = 30, fcor = 1.0e-4", "fcor"),
                                ("nrad = 30" => "nrad = 30, nxco2 = 2", "nxco2"),
-                               ("nrad = 30" => "nrad = 30, nrestart = 1", "nrestart"),
+                               ("nrestart = 0" => "nrestart = 1", "nrestart"),
                                ("nrad = 30" => "nrad = 30, doperpetual = .true.", "doperpetual"),
                                ("nrad = 30" => "nrad = 30, LAND = .true.", "land"),
                                ("LES = .true." => "LES = .false.", "les"),
@@ -195,7 +195,7 @@ end
 
 @testset "LASSO adapter: units, winds, forcing assembly" begin
     common = (; protocol=:lasso_ena_official, member=LASSO_MEMBER, epoch=LASSO_EPOCH, dimensions=LASSO_DIMS,
-                FT=Float64, Nx=4, Ny=4, Lx=400, Ly=400, microphysics=:one_moment, radiation=nothing,
+                FT=Float64, Nx=8, Ny=8, Lx=800, Ly=800, microphysics=:one_moment, radiation=nothing,
                 aerosol_replenishment=nothing, write_output=false, progress_interval=100)
     @test_throws ArgumentError ena_simulation(LASSO_FIXTURE; common..., epoch=nothing)
     @test_throws ArgumentError ena_simulation(LASSO_FIXTURE; common..., member=nothing)
@@ -213,7 +213,8 @@ end
     @test case.bundle.member.aerosol == "aer2"
     @test case.config.epoch == string(LASSO_EPOCH) && case.config.day0 == 199.0
     # the vertical grid is the grd file's: 30 levels, uniform 25 m below 600 m
-    @test grid.Nz == 30 && zc[1] == 12.5 && zc[24] == 587.5 && zc[end] ≈ 987.5 atol=1e-9   # top face at 987.5 + 50
+    @test grid.Nz == 30 && zc[1] == 12.5 && zc[24] == 587.5
+    @test isapprox(zc[end], 987.5; atol=1e-9)                  # top face at 987.5 + 50, so the top center is the SAM level
     # initial sounding: day0 is the first record; moisture is the dry mixing ratio converted to a mass fraction
     @test case.sounding === case.soundings[1]
     r₁ = interpolate_profile(record_heights(case.soundings[1]), case.soundings[1].q, zc[1])     # file mixing ratio at z(1)
@@ -253,11 +254,12 @@ end
     count_of(T, terms) = count(x -> x isa T, terms)
     @test count_of(LargeScaleVerticalAdvection, f.θ) == 1 && count_of(LargeScaleVerticalAdvection, f.E) == 0
     @test count_of(LargeScaleEnergyForcing, f.E) == 1 && count_of(UpperBoundaryEnergyRelaxation, f.E) == 1
-    @test count_of(LargeScaleMoistureForcing, f.qᵗ) == 1 && count_of(LargeScaleVerticalAdvection, f.qᵗ) == 1 &&
-          count_of(UpperBoundaryMoistureRelaxation, f.qᵗ) == 1
+    # the one-moment moisture prognostic is the equilibrium total water qᵉ (P3: qᵛ)
+    @test count_of(LargeScaleMoistureForcing, f.qᵉ) == 1 && count_of(LargeScaleVerticalAdvection, f.qᵉ) == 1 &&
+          count_of(UpperBoundaryMoistureRelaxation, f.qᵉ) == 1
     @test count_of(TimeVaryingGeostrophicForcing, f.u) == 1 && count_of(MeanProfileNudging, f.u) == 1 &&
           count_of(LargeScaleVerticalAdvection, f.u) == 1 && count_of(SAMSponge, f.u) == 1
-    @test count_of(SAMSponge, f.w) == 1 && !any(x -> x isa Breeze.SubsidenceForcing, (f.u..., f.θ..., f.qᵗ...))
+    @test count_of(SAMSponge, f.w) == 1 && !any(x -> x isa Breeze.SubsidenceForcing, (f.u..., f.θ..., f.qᵉ...))
     @test count_of(LargeScaleVerticalAdvection, f.qʳ) == 1    # every microphysical field is advected (subsidence.f90)
     # run and record provenance
     run!(case.simulation)
@@ -298,7 +300,7 @@ end
     # 14 μm effective radius, nrad*dt schedule) is constructed and updated once on a tiny grid;
     # the Covert CPU tests use :simple radiation and never reached this branch.
     case = ena_simulation(LASSO_FIXTURE; protocol=:lasso_ena_official, member=LASSO_MEMBER, epoch=LASSO_EPOCH,
-                          dimensions=LASSO_DIMS, FT=Float32, Nx=4, Ny=4, Lx=400, Ly=400, microphysics=:one_moment,
+                          dimensions=LASSO_DIMS, FT=Float32, Nx=8, Ny=8, Lx=800, Ly=800, microphysics=:one_moment,
                           aerosol_replenishment=nothing, write_output=false, progress_interval=100)
     @test case.config.radiation == "rrtmgp" && case.config.radiation_interval == 60.0
     @test case.config.surface_emissivity == 0.95 && case.config.liquid_effective_radius == 14e-6
@@ -328,7 +330,7 @@ end
         write(joinpath(staged, "bundle.toml"), "member = \"$LASSO_MEMBER\"\narchive_sha256 = \"test\"\n")
         output = joinpath(staged, "output")
         case = ena_lasso(staged; member=LASSO_MEMBER, epoch=LASSO_EPOCH, dimensions=LASSO_DIMS, arch=CPU(), FT=Float64,
-                         Nx=4, Ny=4, Lx=400, Ly=400, microphysics=:one_moment, radiation=nothing, aerosol_replenishment=nothing,
+                         Nx=8, Ny=8, Lx=800, Ly=800, microphysics=:one_moment, radiation=nothing, aerosol_replenishment=nothing,
                          stop_time=2.0, timeseries_interval=1.0, profile_interval=2.0, slice_interval=2.0,
                          output_dir=output, progress_interval=100)
         @test case.staging["archive_sha256"] == "test" && case.dimension_request == "(16, 16, 30)"
