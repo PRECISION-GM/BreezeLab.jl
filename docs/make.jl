@@ -109,6 +109,7 @@ makedocs(; root=@__DIR__,
          sitename=smoke ? "BreezeLab — CPU smoke build" : "BreezeLab",
          format=Documenter.HTML(prettyurls=false, edit_link="main"),
          checkdocs=:none, # The initial manual documents selected case APIs.
+         warnonly=[:cross_references], # the case pages link to repository files and run figures outside the manual
          pages=["Home" => "index.md",
                 "Campaign results" => "generated/campaign_results.md",
                 "Eastern North Atlantic" => [

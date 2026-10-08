@@ -5,7 +5,7 @@ interactions) is an LES/SCM intercomparison of a 66-hour Lagrangian stratocumulu
 transition under a biomass-burning smoke layer, driven by a composite of GEOS-5/SEVIRI
 trajectories (Diamond et al., in prep.). Official inputs: Zenodo record
 [22241697](https://zenodo.org/records/22241697) (DOI 10.5281/zenodo.22241697), pinned in
-[`cases/seastarr/inputs.toml`](../../cases/seastarr/inputs.toml). This page records, per plan
+`cases/seastarr/inputs.toml`. This page records, per plan
 step 1, what the setup PDF and the DEPHY driver NetCDF actually contain and how each quantity
 maps onto Breeze. It is an inventory of the inputs and of the implementation choices; it is
 **not** evidence that the Breeze CTRL reproduces any other model.

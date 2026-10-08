@@ -11,4 +11,6 @@ ena_lasso
 inspect_lasso_bundle
 validate_lasso_bundle
 parse_lasso_member
+sea_starr
+tracer_dp_scream
 ```

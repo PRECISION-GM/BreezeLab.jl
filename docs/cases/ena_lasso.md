@@ -1,6 +1,6 @@
 # ENA-LASSO: the official LASSO-ENA member in Breeze
 
-Companion to [ENA experiment definitions](ena.md). This page records, against the LASSO
+Companion to [ENA experiment definitions](ena_protocols.md). This page records, against the LASSO
 SAM source, what the `lasso_ena_official` adapter does and does not do, which inputs it
 requires explicitly, and every physics difference that matters for comparing Breeze with
 the SAM member. It is an audit, not a claim of reproduction: no official bundle had been
