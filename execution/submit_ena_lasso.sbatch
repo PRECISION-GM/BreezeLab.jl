@@ -18,12 +18,27 @@
 set -euo pipefail
 W=/shared/home/greg/breezelab-work/ena-lasso
 C=/shared/home/greg/breezelab-runs/20261006
-GPU_UUID=${1:?GPU UUID}
+GPU_UUID=${1:?GPU UUID or 'auto'}
 EXPERIMENT=${2:?experiment name}
 shift 2
 mkdir -p /shared/home/greg/breezelab-work/gpu-locks "$W/logs" "$W/runs"
-exec 9>"/shared/home/greg/breezelab-work/gpu-locks/$GPU_UUID.lock"
-flock -n 9 || { echo "GPU $GPU_UUID is locked by another campaign"; exit 1; }
+LOCKS=/shared/home/greg/breezelab-work/gpu-locks
+# `auto`: take the first GPU of this node that has no compute process and no held lock (the
+# campaigns share $LOCKS); the chosen UUID is pinned below exactly like an explicit one.
+if [ "$GPU_UUID" = auto ]; then
+    CHOSEN=""
+    for uuid in $(nvidia-smi --query-gpu=uuid --format=csv,noheader); do
+        [ -z "$(nvidia-smi -i "$uuid" --query-compute-apps=pid --format=csv,noheader)" ] || continue
+        exec 9>"$LOCKS/$uuid.lock"
+        if flock -n 9; then CHOSEN=$uuid; break; fi
+        exec 9>&-
+    done
+    [ -n "$CHOSEN" ] || { echo "No physically idle GPU on $(hostname) at $(date -u +%FT%TZ); exiting without running"; exit 1; }
+    GPU_UUID=$CHOSEN
+else
+    exec 9>"$LOCKS/$GPU_UUID.lock"
+    flock -n 9 || { echo "GPU $GPU_UUID is locked by another campaign"; exit 1; }
+fi
 [ -z "$(nvidia-smi -i "$GPU_UUID" --query-compute-apps=pid --format=csv,noheader)" ] || { echo "Selected GPU is busy"; exit 1; }
 export CUDA_VISIBLE_DEVICES="$GPU_UUID"
 GPU_NAME=$(nvidia-smi -i "$CUDA_VISIBLE_DEVICES" --query-gpu=name --format=csv,noheader)
