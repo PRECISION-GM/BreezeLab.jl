@@ -68,6 +68,9 @@ requests = (
     (label = "pressure_levels", dataset = pressure_dataset, names = pressure_variables, region = parent_region, dates = dates),
     (label = "single_levels",   dataset = single_dataset,   names = single_variables,   region = child_region,  dates = dates),
     (label = "land",            dataset = land_dataset,     names = land_variables,     region = child_region,  dates = [start]),
+    # NumericalEarth clips sub-surface pressure levels with the single-level geopotential at the PARENT (padded) box
+    (label = "single_levels_parent_box", dataset = single_dataset, names = (:geopotential, :skin_temperature, :mean_sea_level_pressure),
+     region = parent_region, dates = dates),
 )
 
 staged = Dict{String, Any}()
