@@ -28,44 +28,56 @@ validated protocol in this package.
 
 ## LASSO-ENA
 
+See [the ENA-LASSO audit](ena_lasso.md) for the adopted member, the bundle validation
+rules and the SAM-vs-Breeze physics differences recorded against the SAM source.
+
 Sources: [ARM bundle browser](https://lasso-ena.svcs.arm.gov/latest/bundle_browser.html),
 [LASSO-ENA dataset](https://doi.org/10.5439/2572661), and
 [LASSO SAM source](https://code.arm.gov/lasso/lasso-ena-codes/lasso_sam_sbm)
 (`lasso_ena_noice`, reference revision `12d02446a2147388dc89d828e6e0553106abea0f`).
 
-Obtain a `samin` bundle through an ARM account and extract `snd`, `lsf`, `sfc`, `prm`,
-and `grd` into one directory. Retain the run ID, archive checksum, download date, and
-reference output. An initial candidate is
-`20170718era5s1n0d25x100_sbmwrm-aer2-flxsst`; check availability and its actual metadata
-in the browser. Do not substitute the public Covert inputs.
+Obtain a `samin` bundle through an ARM account and stage it with
+`julia data_wrangling/stage_lasso_bundle.jl ARCHIVE.tar`, which extracts `snd`, `lsf`,
+`sfc`, `prm` and `grd` into `data/lasso/<run ID>/` and freezes the archive checksum, member
+tokens, DOI and SAM revision in `bundle.toml`. The adopted member is
+`20170718era5d25x100_sbmwrm-aer2-flxsst` (the plan's `…era5s1n0…` spectral-bin candidate
+does not exist at ARM; see [the audit](ena_lasso.md)). Do not substitute the public
+Covert inputs.
 
 The current adapter targets warm-cloud, ocean, SST-flux, wind-nudged LASSO members.
-It reads the grid from `grd`, horizontal spacing and timestep from `prm`, duration
-from `nstop*dt`, and radiation cadence from `nrad*dt`. Dimensions must be available
-as `nx_gl,ny_gl,nz_gl` or a numeric `Nx×Ny×Nz` case ID. An unsupported bundle is rejected;
-if the namelist omits dimensions, supply `--dimensions Nx,Ny,Nz` (Julia keyword
-`dimensions=(Nx, Ny, Nz)`) using the bundle's original domain configuration. This
-metadata is recorded in provenance and must agree with namelist dimensions when
-present. Use `Nx`, `Ny`, and `z_faces` overrides for grid sensitivities.
-The adapter checks whether geostrophic-wind columns agree with the namelist. The UTC start
-must be supplied explicitly, because SAM's `day0` does not identify the year.
+[`inspect_lasso_bundle`](ena_lasso.md) reads the grid from `grd`, horizontal spacing and
+timestep from `prm`, duration from `nstop*dt`, radiation cadence from `nrad*dt`, the
+nudging timescale, `perturb_type` and `compute_reffc`, and rejects every unsupported
+namelist setting with its reason. The member run ID, the UTC epoch (SAM's `day0` does not
+identify the year) and, when the namelist carries neither `nx_gl,ny_gl,nz_gl` nor a numeric
+`Nx×Ny×Nz` case ID, the dimensions must be given explicitly; they are recorded in
+provenance and checked against the bundle. Use `Nx`, `Ny`, and `z_faces` overrides for
+grid sensitivities.
 
-For the candidate above, **after confirming its date, inputs, and grid**:
+With the staged bundle, the readable script runs the member end to end:
+
+```sh
+julia --project cases/ena_lasso.jl        # member from ENA_LASSO_MEMBER, bundle from ENA_LASSO_BUNDLE
+```
+
+or, from the CLI, **after confirming the bundle's date, inputs and grid**:
 
 ```sh
 julia --project cases/cli/run_case.jl \
   --protocol lasso_ena_official \
-  --data data/lasso/20170718era5s1n0d25x100_sbmwrm-aer2-flxsst \
-  --epoch 2017-07-18T06:00:00 \
-  --arch gpu --float Float32 --output output/lasso_ena
+  --member 20170718era5d25x100_sbmwrm-aer2-flxsst \
+  --data data/lasso/20170718era5d25x100_sbmwrm-aer2-flxsst \
+  --epoch 2017-07-18T00:00:00 --dimensions 256,256,260 \
+  --arch gpu --float Float32 --output output/ena_lasso
 ```
 
-The API equivalent is:
+(the epoch above is the day-of-year of `day0` in the member's year; the adapter rejects a
+mismatch). The API equivalent is:
 
 ```julia
 using BreezeLab, Oceananigans, Dates
-case = ena_simulation(bundle_directory;
-    protocol=:lasso_ena_official, epoch=DateTime(2017, 7, 18, 6), arch=GPU())
+case = ena_lasso(; member="20170718era5d25x100_sbmwrm-aer2-flxsst",
+                   epoch=DateTime(2017, 7, 18, 0), arch=GPU())   # dimensions=:documented → 256×256×260
 write_provenance("provenance.toml", case)
 run!(case.simulation)
 ```

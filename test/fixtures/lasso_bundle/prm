@@ -1,0 +1,26 @@
+ &PARAMETERS
+ caseid ='era5d25x100_sbmwrm-aer2-flxsst',   ! synthetic fixture, not an ARM bundle
+ LES = .true., OCEAN = .true., LAND = .false.,
+ dosgs = .true., dodamping = .true., doupperbound = .true.,
+ docloud = .true., doprecip = .true.,
+ doradsimple = .false., dolongwave = .true., doshortwave = .true., doseasons = .false.,
+ dosurface = .true., dolargescale = .true., dosfcforcing = .true., docoriolis = .true., dofplane = .true.,
+ donudging_uv = .true., donudging_tq = .false., donudging_t = .false., donudging_q = .false.,
+ tauls = 7200.0,
+ SFC_FLX_FXD = .false., SFC_TAU_FXD = .false., UNIFORM_SFC_FLX = .true.,
+ READ_IN_GEOSTROPHIC_WIND = .true.,
+ latitude0 = 39.0916, longitude0 = -28.0257,
+ nrad = 30, ug = 0.0, vg = 0.0,
+ dx = 100., dy = 100., dt = 2.0,
+ day0 = 199.0,
+ nstop = 1800,
+ timelargescale = 0.,
+ perturb_type = 5,
+ nstat = 300, nprint = 300, nrestart = 0,
+ compute_reffc = .false., compute_reffi = .false.,
+/
+ &SGS_TKE
+ dosmagor = .true.
+/
+ &MICRO_HUJISBM
+/

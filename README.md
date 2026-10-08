@@ -12,7 +12,7 @@ The first implementation ports the ENA machinery from
 | Protocol | Inputs and forcing | Current status |
 | --- | --- | --- |
 | `covert_public_bin` | Public Covert et al. (2022) bin-repository inputs; prescribed surface fluxes, simple longwave radiation, no wind nudging | Runnable development benchmark. Its domain/duration differ from the published experiment, and its missing vertical grid is reconstructed. |
-| `lasso_ena_official` | Selected ARM `samin` bundle and grid; SST-based bulk fluxes, RRTMGP longwave/shortwave, mean-wind nudging | Breeze implementation of the LASSO forcing pathway; requires official inputs and validation against SAM. |
+| `lasso_ena_official` | Selected ARM `samin` bundle and grid; SST-based bulk fluxes, RRTMGP longwave/shortwave, mean-wind nudging | Breeze implementation of the LASSO forcing pathway with a validating bundle parser (`inspect_lasso_bundle`), the `ena_lasso` constructor and `cases/ena_lasso.jl`; the adopted member `20170718era5d25x100_sbmwrm-aer2-flxsst` is listed by ARM but not yet staged online, so no official run exists. See [the LASSO audit](docs/cases/ena_lasso.md). |
 
 Protocol selection is explicit. A missing LASSO bundle never falls back to the Covert
 case. Grid, physics, and duration overrides are recorded in each run's provenance.
@@ -57,12 +57,17 @@ sbatch --partition=gpu-prod execution/submit_gpu.sbatch cases/eastern_north_atla
 
 For an official LASSO experiment, obtain the selected bundle from the
 [ARM LASSO-ENA Bundle Browser](https://lasso-ena.svcs.arm.gov/latest/bundle_browser.html),
-then follow [the LASSO instructions](docs/cases/ena.md#lasso-ena).
+stage it with `julia data_wrangling/stage_lasso_bundle.jl ARCHIVE.tar`, then run
+`julia --project cases/ena_lasso.jl`; see [the LASSO instructions](docs/cases/ena.md#lasso-ena)
+and [the LASSO audit](docs/cases/ena_lasso.md). A missing bundle stops the script with
+staging instructions; the Covert inputs are never substituted.
 
 ## Package layout
 
 - `src/eastern_north_atlantic.jl`: exported constructor used by examples and tests.
-- `src/ena_protocols.jl`: experiment definitions and input validation.
+- `src/ena_protocols.jl`: experiment definitions and input validation;
+  `src/lasso_bundle.jl` and `src/ena_lasso.jl`: the LASSO-ENA bundle parser/validator and
+  member constructor; `src/arm_observations.jl`: ARM station-series readers.
 - `src/case_setup.jl`: shared Breeze model assembly, output, and provenance.
 - Other `src/` files: reusable SAM readers, forcing operators, grids, surface fluxes,
   initial conditions, and diagnostics.

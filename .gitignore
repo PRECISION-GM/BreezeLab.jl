@@ -37,3 +37,8 @@ results/
 analysis/Manifest.toml
 docs/Manifest.toml
 docs/src/generated/
+
+# Per-checkout Julia depot, Slurm logs and run outputs of the wpcluster campaign
+depot/
+logs/
+runs/

@@ -27,29 +27,34 @@ lowest LES cells.
 struct SoundingProfiles{FT}
     z :: Vector{FT}
     θ :: Vector{FT}
-    qᵗ :: Vector{FT}
+    qᵗ :: Vector{FT}          # the file's moisture (mixing ratio or mass fraction, see `convert_moisture`)
     u :: Vector{FT}
     v :: Vector{FT}
     surface_pressure :: FT
+    convert_moisture :: Bool  # true: `qᵗ` is a dry mixing ratio converted after interpolation
 end
 
 """
     SoundingProfiles(sounding; exclude_subsurface_levels=false, moisture_basis=:mixing_ratio)
 
-`moisture_basis = :mixing_ratio` (SAM's convention: kg per kg dry air) converts the file's
-`q` to Breeze mass fractions `q/(1 + q)`; `:mass_fraction` passes it through.
+`moisture_basis = :mixing_ratio` (SAM's convention: kg per kg dry air) interpolates the
+file's `q` to the requested height, as `setdata.f90` does, and converts the result to a
+Breeze mass fraction `q/(1 + q)`; `:mass_fraction` passes it through.
 """
 function SoundingProfiles(sounding::SAMSounding; exclude_subsurface_levels=false, moisture_basis=:mixing_ratio)
     z = record_heights(sounding)
     keep = exclude_subsurface_levels ? findall(≥(0), z) : eachindex(z)
-    qᵗ = moisture_basis === :mixing_ratio ? mass_fraction_from_mixing_ratio.(sounding.q[keep]) :
-         moisture_basis === :mass_fraction ? sounding.q[keep] :
-         throw(ArgumentError("moisture_basis must be :mixing_ratio or :mass_fraction"))
-    return SoundingProfiles(z[keep], sounding.θ[keep], qᵗ,
-                            sounding.u[keep], sounding.v[keep], sounding.surface_pressure)
+    moisture_basis in (:mixing_ratio, :mass_fraction) ||
+        throw(ArgumentError("moisture_basis must be :mixing_ratio or :mass_fraction"))
+    return SoundingProfiles(z[keep], sounding.θ[keep], sounding.q[keep],
+                            sounding.u[keep], sounding.v[keep], sounding.surface_pressure,
+                            moisture_basis === :mixing_ratio)
 end
 
-(p::SoundingProfiles)(name::Symbol, z) = interpolate_profile(p.z, getproperty(p, name), z)
+function (p::SoundingProfiles)(name::Symbol, z)
+    value = interpolate_profile(p.z, getproperty(p, name), z)
+    return name === :qᵗ && p.convert_moisture ? mass_fraction_from_mixing_ratio(value) : value
+end
 
 #####
 ##### Saturation partition of (θˡ, qᵗ, p) into (T, qᵛ, qᶜˡ) with Breeze's own thermodynamics
@@ -79,16 +84,39 @@ function saturation_partition(θˡ, qᵗ, p; constants=ThermodynamicConstants(Fl
 end
 
 """
-    InitialPerturbation(; amplitude_T=0.1, amplitude_q=0.025e-3, depth=600, seed=1234)
+    InitialPerturbation(; amplitude_T=0.1, amplitude_q=0.025e-3, depth=600, seed=1234, sam_perturb_type=5)
 
-Uniform random perturbations of the SAM LASSO-ENA `setperturb.f90` case 5: ±0.1 K in
-temperature and ±0.025 g/kg in vapor below 600 m.
+Uniform random perturbations of SAM's `setperturb.f90`. `sam_perturb_type = 5` (the
+LASSO-ENA namelist choice) applies ±`amplitude_T` in temperature and ±`amplitude_q` in vapor
+below `depth` (±0.1 K, ±0.025 g/kg below 600 m). `sam_perturb_type = 0` (SAM's default when a
+namelist omits `perturb_type`) applies ±0.02 (6 − k) K in the five lowest levels and no
+moisture perturbation; see [`perturbation_amplitudes`](@ref).
 """
 Base.@kwdef struct InitialPerturbation
     amplitude_T :: Float64 = 0.1
     amplitude_q :: Float64 = 0.025e-3
     depth :: Float64 = 600
     seed :: Int = 1234
+    sam_perturb_type :: Int = 5
+end
+
+"""
+    perturbation_amplitudes(perturbation, z_centers)
+
+Per-level amplitudes `(δT, δq)` [K, kg/kg] of the `setperturb.f90` case selected by
+`perturbation.sam_perturb_type`: case 5 applies `amplitude_T`/`amplitude_q` wherever
+`z ≤ depth`; case 0 applies `0.02 (6 - k)` K for `k ≤ 5` and no moisture perturbation.
+"""
+function perturbation_amplitudes(perturbation::InitialPerturbation, z_centers)
+    n = length(z_centers)
+    if perturbation.sam_perturb_type == 5
+        below = [z ≤ perturbation.depth for z in z_centers]
+        return (perturbation.amplitude_T .* below, perturbation.amplitude_q .* below)
+    elseif perturbation.sam_perturb_type == 0
+        return ([k ≤ 5 ? 0.02 * (6 - k) : 0.0 for k in 1:n], zeros(n))
+    else
+        throw(ArgumentError("sam_perturb_type must be 0 or 5 (the setperturb.f90 cases implemented), got $(perturbation.sam_perturb_type)"))
+    end
 end
 
 """
@@ -117,18 +145,20 @@ end
 """
     perturbation_array(Nx, Ny, z_centers, perturbation::InitialPerturbation)
 
-One deterministic array of uniform random numbers in [-1, 1] for every cell below
-`perturbation.depth` (zero above), drawn from `MersenneTwister(perturbation.seed)` in a
-fixed (i, j, k) order on the host. The *same* array multiplies both the temperature and
+One deterministic array of uniform random numbers in [-1, 1] for every cell of a level
+with a nonzero amplitude (see [`perturbation_amplitudes`](@ref); zero elsewhere), drawn
+from `MersenneTwister(perturbation.seed)` in a fixed (i, j, k) order on the host. The *same* array multiplies both the temperature and
 the vapor perturbation, as in `setperturb.f90` (one `rrr` per cell), and it is copied to
 the device by `set!`, so CPU and GPU runs start from identical states.
 """
 function perturbation_array(Nx, Ny, z_centers, perturbation::InitialPerturbation)
     rng = MersenneTwister(perturbation.seed)
+    δT, δq = perturbation_amplitudes(perturbation, z_centers)
+    active = [(δT[k] != 0) | (δq[k] != 0) for k in eachindex(z_centers)]
     ϵ = zeros(Nx, Ny, length(z_centers))
     for k in eachindex(z_centers), j in 1:Ny, i in 1:Nx
-        r = 2 * rand(rng) - 1
-        ϵ[i, j, k] = z_centers[k] ≤ perturbation.depth ? r : 0.0
+        r = 2 * rand(rng) - 1     # one draw per cell in every level, as setperturb.f90
+        ϵ[i, j, k] = active[k] ? r : 0.0
     end
     return ϵ
 end

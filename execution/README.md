@@ -15,6 +15,13 @@ Override wall time, CPU and memory requests for the measured case. The wrapper r
 the Julia script and arguments passed to it. For the general CLI, pass
 `cases/cli/run_case.jl --arch gpu --protocol ... --data ...`.
 
+`submit_ena_lasso.sbatch` launches the official LASSO-ENA member with the wpcluster
+UUID-pinning procedure (shared GPU lock directory, physical idleness check, per-CPU depot):
+`sbatch --partition=<p> --nodelist=<node> execution/submit_ena_lasso.sbatch <GPU UUID> <experiment>`
+runs `cases/ena_lasso.jl` into `runs/<experiment>_job<id>/`; extra arguments are passed to
+`cases/cli/run_case.jl` instead. `wpcluster_env.sh` sets the same Julia/depot environment
+for the login node.
+
 `production_runs.sh` is the inherited ENA parameter-sweep launcher. It submits all
 selected members without dependencies; `RUNS=p3_n75` selects just one. Its 72-hour
 default is a historical allocation ceiling, not a runtime estimate. Prefer the

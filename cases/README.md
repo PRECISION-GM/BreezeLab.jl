@@ -3,6 +3,7 @@
 | File | Status |
 | --- | --- |
 | [eastern_north_atlantic.jl](eastern_north_atlantic.jl) | Runnable public Covert ENA case; edit the readable settings, then run with `julia --project cases/eastern_north_atlantic.jl` |
+| [ena_lasso.jl](ena_lasso.jl) | Official LASSO-ENA member (`20170718era5d25x100_sbmwrm-aer2-flxsst` by default) from its staged `samin` bundle; fails fast with staging instructions when the bundle is absent. Requires the ARM archive (not yet staged online as of 7 October 2026). |
 | [sea_starr.jl](sea_starr.jl) | Specification only; model assembly is not implemented and direct execution fails explicitly |
 | [tracer_mip.jl](tracer_mip.jl) | Specification only; model assembly is not implemented and direct execution fails explicitly |
 

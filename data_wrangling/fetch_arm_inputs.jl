@@ -5,7 +5,13 @@ module ARMInputs
 using Dates, Downloads, SHA, TOML, Tar
 
 const SERVICE = "https://adc.arm.gov/armlive/saveData"
-const MAX_BYTES = 200 * 1024^2
+# Size cap for one file; `ARM_MAX_BYTES` raises it for the larger per-member reference
+# outputs (samstat/sam2d NetCDF). sam3d/sam3dmicro/samrest files are never accepted.
+const MAX_BYTES = parse(Int, get(ENV, "ARM_MAX_BYTES", string(200 * 1024^2)))
+# Accepted LASSO-ENA filenames, exactly as the ARM Live listing spells them: the samin
+# input bundle (tar, level m0) and the two per-member reference outputs (samstat domain
+# statistics and sam2d two-dimensional fields, NetCDF, level m1).
+const ACCEPTED_FILENAME = r"^enalasso_(samin_[A-Za-z0-9_-]+C1\.m0\.\d{8}\.\d{6}\.tar|(samstat|sam2d)_[A-Za-z0-9_-]+C1\.m1\.\d{8}\.\d{6}\.nc)$"
 
 urlencode(s) = join(isletter(Char(b)) && b < 128 || isdigit(Char(b)) || b in codeunits("-._~") ?
                     string(Char(b)) : "%" * uppercase(string(b; base=16, pad=2)) for b in codeunits(s))
@@ -23,12 +29,12 @@ function request_archive(url, output)
     return response.status
 end
 
-"""Download one exact ARM LASSO-ENA input archive; never extract or overwrite it."""
+"""Download one exact ARM LASSO-ENA file (samin archive or samstat/sam2d reference output); never extract or overwrite it."""
 function fetch_archive(filename, output_dir;
                        username=get(ENV, "ARM_USERNAME", ""), token=get(ENV, "ARM_TOKEN", ""),
                        request=request_archive)
-    occursin(r"^enalasso_samin_[A-Za-z0-9_-]+C1\.m0\.\d{8}\.\d{6}\.tar$", filename) ||
-        error("Expected an exact LASSO-ENA samin .tar filename from the bundle browser")
+    occursin(ACCEPTED_FILENAME, filename) ||
+        error("Expected an exact LASSO-ENA samin .tar (or samstat/sam2d .nc) filename from the ARM listing")
     (isempty(username) || isempty(token)) && error("Set ARM_USERNAME and ARM_TOKEN outside the repository")
     mkpath(output_dir)
     destination = abspath(joinpath(output_dir, filename))

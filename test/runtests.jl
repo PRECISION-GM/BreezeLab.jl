@@ -11,6 +11,7 @@ using Dates: DateTime
 using CUDA
 
 const FIXTURES = joinpath(@__DIR__, "fixtures")
+const LASSO_FIXTURE = joinpath(FIXTURES, "lasso_bundle")   # synthetic SAM-style bundle, not an ARM archive
 const COVERT_DIR = joinpath(@__DIR__, "..", "data", "covert2022_bin")
 const HAVE_COVERT = isfile(joinpath(COVERT_DIR, "snd")) && isfile(joinpath(COVERT_DIR, "lsf")) &&
                     isfile(joinpath(COVERT_DIR, "sfc")) && isfile(joinpath(COVERT_DIR, "prm"))
@@ -200,7 +201,32 @@ end
     @test conversion.N₁ == 276 && conversion.N₂ == 281
     @test modes[1].number_mixing_ratio ≈ 276e6 / 1.2
     @test modes[2].mean_radius == 0.066e-6 && modes[2].geometric_std == 1.78
+    @test modes[1].mass_fraction_soluble == 1 && modes[1].aerosol_density == 1790       # HUJI-SBM chemistry, fully soluble
+    @test conversion.maximum_supersaturation == 0 && conversion.activatable_fraction₂ == 1
     @test_throws ArgumentError lasso_aerosol_modes(; setting=:aer9, reference_density=1.2)
+    # Köhler closure of the modes: the accumulation mode's median activates near 0.1 %, the
+    # Aitken mode's near 0.7 %, so at the SBM cap (0.3 %) most of mode 2 and little of mode 1 can activate.
+    using Breeze.Microphysics.PredictedParticleProperties: activated_number, AerosolActivation
+    f₁ = activated_fraction(0.018e-6, 1.53, 0.003); f₂ = activated_fraction(0.066e-6, 1.78, 0.003)
+    @test 0.05 < f₁ < 0.12 && 0.85 < f₂ < 0.93
+    @test activated_fraction(0.066e-6, 1.78, 0.05) > 0.999 && activated_fraction(0.018e-6, 1.53, 1e-4) < 1e-3
+    # ... and agrees with Breeze's activated_number for the same mode
+    aerosol = AerosolActivation(modes...)
+    @test activated_number(modes[2], aerosol, 285.0, 0.003) / modes[2].number_mixing_ratio ≈ f₂ rtol=1e-3
+    capped, record = lasso_aerosol_modes(Float64; setting=:aer2, reference_density=1.2, maximum_supersaturation=0.003)
+    @test capped[1].number_mixing_ratio ≈ f₁ * 276e6 / 1.2 && capped[2].number_mixing_ratio ≈ f₂ * 281e6 / 1.2
+    @test record.maximum_supersaturation == 0.003 && record.activatable_fraction₁ ≈ f₁
+    @test 0.4 < (capped[1].number_mixing_ratio + capped[2].number_mixing_ratio) / (modes[1].number_mixing_ratio + modes[2].number_mixing_ratio) < 0.55
+    # Covert-consistent aerosol: the capped activatable number equals the observed 75 cm⁻³
+    cm, cr = covert_aerosol_modes(Float64; reference_density=1.2)
+    @test cm[1].number_mixing_ratio + cm[2].number_mixing_ratio ≈ 75e6 / 1.2
+    @test cm[1].mean_radius == 0.018e-6 && cm[2].geometric_std == 1.78 && cm[1].mass_fraction_soluble == 1
+    @test cr.setting == "covert_n75"
+    @test isapprox(cr.N₁ + cr.N₂, 75 / (cr.activatable_fraction₁ * 276 + cr.activatable_fraction₂ * 281) * 557; rtol=1e-6)   # total scaled so the capped activatable part is 75 cm⁻³
+    @test 0.2 < cr.scale_factor < 0.35
+    p3c, rec = BreezeLab.build_microphysics(Float64, :p3_covert_n75; droplet_number=75e6, surface_density=1.2)
+    @test rec.scheme == :p3_covert_n75 && rec.prognostic_aerosol && rec.target_droplet_number == 75e6
+    @test sum(m.number_mixing_ratio for m in p3c.aerosol.modes) ≈ 75e6 / 1.2
 end
 
 @testset "Forcing operators in a model" begin
@@ -434,7 +460,7 @@ end
 @testset "Scalar advection: bounded water masses, plain energy and moments" begin
     using Oceananigans.Advection: BoundsPreservingWENO
     is_bounded(scheme) = scheme isa BoundsPreservingWENO
-    for (scheme, moisture) in ((:p3_aer2, :qᵛ), (:p3_n75, :qᵛ), (:one_moment, :qᵗ))
+    for (scheme, moisture) in ((:p3_aer2, :qᵛ), (:p3_covert_n75, :qᵛ), (:p3_n75, :qᵛ), (:one_moment, :qᵗ))
         microphysics, _ = BreezeLab.build_microphysics(Float64, scheme; droplet_number=75e6, surface_density=1.17)
         schemes = BreezeLab.scalar_advection_schemes(5, microphysics, moisture)
         @test !is_bounded(schemes.ρs)
@@ -574,6 +600,8 @@ end
 end # BreezeLab
 
 include("ena_protocols.jl")
+include("ena_lasso.jl")
+include("arm_observations.jl")
 include("arm_download.jl")
 include("manifest_download.jl")
 include("ena_execution.jl")

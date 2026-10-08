@@ -19,7 +19,7 @@ using Oceananigans.Units
 using Oceananigans.Fields: interior
 using Oceananigans.Grids: znodes
 using Breeze
-using Breeze.Microphysics.PredictedParticleProperties: CloudDroplets, AerosolActivation, AerosolMode, has_prognostic_aerosol
+using Breeze.Microphysics.PredictedParticleProperties: CloudDroplets, AerosolActivation, AerosolMode, has_prognostic_aerosol, activated_number
 using CloudMicrophysics: CloudMicrophysics
 using RRTMGP: RRTMGP
 using NCDatasets: NCDatasets
@@ -38,7 +38,8 @@ function epoch_from_day_of_year(day0; year=2017)
 end
 
 """
-    lasso_aerosol_modes(FT; setting=:aer2, reference_density, kwargs...)
+    lasso_aerosol_modes(FT; setting=:aer2, reference_density, maximum_supersaturation=nothing,
+                        mass_fraction_soluble=1, kwargs...)
 
 The two lognormal aerosol modes of the LASSO-ENA spectral-bin configuration converted to
 P3 `AerosolMode`s. LASSO quotes number *concentrations* per cm³:
@@ -55,20 +56,85 @@ initializes its CCN with a constant *mixing ratio* with height
 surface concentration `N` scaled by `ρ(z)/ρ(0)`), so the conversion uses the surface
 reference density: `number_mixing_ratio = 1e6 N / ρ(0)`, uniform in z. The chemistry is
 set explicitly to the HUJI-SBM values (aerosol density 1790 kg m⁻³, molecular weight
-0.115 kg mol⁻¹, van 't Hoff factor 3) rather than P3's implicit defaults, and recorded.
+0.115 kg mol⁻¹, van 't Hoff factor 3, fully soluble: `micro_prm.f90` has no insoluble
+fraction, so Breeze's default `mass_fraction_soluble = 0.9` is overridden) and recorded.
+
+`maximum_supersaturation` emulates the SBM's activation cap (`ss_max = 0.003` in
+`MICRO_HUJISBM/microphysics.f90`: no particle activates at a supersaturation above 0.3 %):
+each mode's number is reduced to the fraction of its particles with critical
+supersaturation below the cap ([`activated_fraction`](@ref)), so the activatable total
+can never exceed the SBM's. Breeze's Morrison–Grabowski activation itself has no cap and
+relaxes the droplet number one way toward the equilibrium count at the *grid-cell*
+supersaturation, which activates the Aitken mode whenever a cell overshoots (see
+`docs/cases/ena_aerosol_audit.md`). The cap is an explicit, provenance-recorded
+approximation (the lognormal shape is kept, the number is scaled), not the SBM.
 """
 function lasso_aerosol_modes(FT=Float64; setting=:aer2, reference_density,
-                             aerosol_density=1790, molecular_weight_aerosol=0.115, vant_hoff_factor=3, kwargs...)
+                             aerosol_density=1790, molecular_weight_aerosol=0.115, vant_hoff_factor=3,
+                             mass_fraction_soluble=1, maximum_supersaturation=nothing, kwargs...)
     N₁, N₂ = setting === :aer1 ? (138.0, 140.5) :
              setting === :aer2 ? (276.0, 281.0) :
              setting === :aer3 ? (552.0, 562.0) :
              throw(ArgumentError("unknown LASSO aerosol setting $setting (aer1, aer2, aer3)"))
-    n₁ = 1e6 * N₁ / reference_density
-    n₂ = 1e6 * N₂ / reference_density
-    chemistry = (; aerosol_density, molecular_weight_aerosol, vant_hoff_factor)
-    mode1 = AerosolMode(FT; number_mixing_ratio=n₁, mean_radius=0.018e-6, geometric_std=1.53, chemistry..., kwargs...)
-    mode2 = AerosolMode(FT; number_mixing_ratio=n₂, mean_radius=0.066e-6, geometric_std=1.78, chemistry..., kwargs...)
-    return (mode1, mode2), (; N₁, N₂, n₁, n₂, reference_density, chemistry...)
+    chemistry = (; aerosol_density, molecular_weight_aerosol, vant_hoff_factor, mass_fraction_soluble)
+    geometry = ((; mean_radius=0.018e-6, geometric_std=1.53), (; mean_radius=0.066e-6, geometric_std=1.78))
+    fractions = isnothing(maximum_supersaturation) ? (1.0, 1.0) :
+        Tuple(activated_fraction(g.mean_radius, g.geometric_std, maximum_supersaturation; chemistry...) for g in geometry)
+    n₁ = fractions[1] * 1e6 * N₁ / reference_density
+    n₂ = fractions[2] * 1e6 * N₂ / reference_density
+    mode1 = AerosolMode(FT; number_mixing_ratio=n₁, geometry[1]..., chemistry..., kwargs...)
+    mode2 = AerosolMode(FT; number_mixing_ratio=n₂, geometry[2]..., chemistry..., kwargs...)
+    record = (; N₁, N₂, n₁, n₂, reference_density, chemistry...,
+                maximum_supersaturation=something(maximum_supersaturation, 0.0),
+                activatable_fraction₁=fractions[1], activatable_fraction₂=fractions[2])
+    return (mode1, mode2), record
+end
+
+"""
+    covert_aerosol_modes(FT; reference_density, target_droplet_number=75e6, maximum_supersaturation=0.003, kwargs...)
+
+A **Covert-consistent** P3 aerosol for the public Covert et al. (2022) ENA case, which
+prescribes the *observed* droplet number `Nc = 75 cm⁻³` (airborne in situ, 18 July 2017)
+and publishes no aerosol spectrum (its bin configuration is compiled into SAM). The modes
+keep the LASSO-ENA aer2 shapes (r = 0.018/0.066 μm, σ = 1.53/1.78, SBM chemistry) and are
+scaled by one factor so that the number activatable below `maximum_supersaturation`
+(the SBM cap, see [`lasso_aerosol_modes`](@ref)) equals `target_droplet_number` [m⁻³] at
+the surface reference density. With the diagnostic-CCN projection this bounds the in-cloud
+droplet number at the observed value instead of the LASSO aer2 ≈ 270 cm⁻³. It is a labelled
+configuration of this package, not an ARM or Covert prescription of aerosol.
+"""
+function covert_aerosol_modes(FT=Float64; reference_density, target_droplet_number=75e6, maximum_supersaturation=0.003, kwargs...)
+    aer2, record = lasso_aerosol_modes(FT; setting=:aer2, reference_density, maximum_supersaturation, kwargs...)
+    activatable = aer2[1].number_mixing_ratio + aer2[2].number_mixing_ratio          # kg⁻¹, already capped
+    factor = target_droplet_number / reference_density / activatable
+    modes = Tuple(AerosolMode(FT; number_mixing_ratio=factor * m.number_mixing_ratio, mean_radius=m.mean_radius,
+                              geometric_std=m.geometric_std, vant_hoff_factor=m.vant_hoff_factor,
+                              osmotic_potential=m.osmotic_potential, mass_fraction_soluble=m.mass_fraction_soluble,
+                              aerosol_density=m.aerosol_density, molecular_weight_aerosol=m.molecular_weight_aerosol) for m in aer2)
+    return modes, (; setting="covert_n75", target_droplet_number, scale_factor=factor,
+                     N₁=factor * record.N₁, N₂=factor * record.N₂,
+                     n₁=modes[1].number_mixing_ratio, n₂=modes[2].number_mixing_ratio,
+                     reference_density, record.aerosol_density, record.molecular_weight_aerosol, record.vant_hoff_factor,
+                     record.mass_fraction_soluble, maximum_supersaturation,
+                     activatable_fraction₁=record.activatable_fraction₁, activatable_fraction₂=record.activatable_fraction₂)
+end
+
+"""
+    activated_fraction(mean_radius, geometric_std, S; T=285, aerosol_density=1790,
+                       molecular_weight_aerosol=0.115, vant_hoff_factor=3, mass_fraction_soluble=1,
+                       osmotic_potential=1)
+
+Fraction of a lognormal aerosol mode activated at supersaturation `S` (fraction, not %)
+and temperature `T` in the Morrison & Grabowski (2007) Köhler closure Breeze's P3 uses
+(critical supersaturation of the median particle `s_m = 2 β⁻¹ᐟ² (A/(3 r_m))³ᐟ²`, activated
+fraction `½[1 − erf(2 ln(s_m/S)/(4.242 ln σ_g))]`), evaluated with Breeze's own
+`activated_number` on a unit-number mode so that the two can never disagree.
+"""
+function activated_fraction(mean_radius, geometric_std, S; T=285.0, aerosol_density=1790, molecular_weight_aerosol=0.115,
+                            vant_hoff_factor=3, mass_fraction_soluble=1, osmotic_potential=1)
+    mode = AerosolMode(Float64; number_mixing_ratio=1.0, mean_radius, geometric_std, aerosol_density,
+                       molecular_weight_aerosol, vant_hoff_factor, mass_fraction_soluble, osmotic_potential)
+    return activated_number(mode, AerosolActivation(mode), Float64(T), Float64(S))
 end
 
 one_moment_extension() = Base.get_extension(Breeze, :BreezeCloudMicrophysicsExt)
@@ -87,6 +153,14 @@ function build_microphysics(FT, scheme; droplet_number, surface_density, aerosol
         aerosol = AerosolActivation(modes...; prognostic=true)   # depleting reservoir ρnᵃ, as the SBM's
         cloud = CloudDroplets(FT; number_concentration=droplet_number) # only the initial droplet number
         return P3Microphysics(FT; cloud, aerosol), (; scheme, setting, prognostic_aerosol=true, conversion...)
+    elseif scheme === :p3_covert_n75
+        # Covert-consistent prognostic aerosol: activatable number = the case's observed 75 cm⁻³
+        cap = get(aerosol_kwargs, :maximum_supersaturation, 0.003)
+        modes, conversion = covert_aerosol_modes(FT; reference_density=surface_density, target_droplet_number=droplet_number,
+                                                 maximum_supersaturation=cap)
+        aerosol = AerosolActivation(modes...; prognostic=true)
+        cloud = CloudDroplets(FT; number_concentration=droplet_number)
+        return P3Microphysics(FT; cloud, aerosol), (; scheme, prognostic_aerosol=true, conversion...)
     else
         throw(ArgumentError("unknown microphysics scheme $scheme"))
     end
@@ -153,18 +227,24 @@ Keyword arguments:
   the `qls` source; `:mass_fraction` passes them through
 - `latitude = 39.0916`, `longitude = -28.0257` (ENA C1); the namelist `latitude0` wins if present
 - `microphysics`: `:one_moment` (1M-control), `:p3_n75` (prescribed droplet number), `:p3_aer2`
-  (production; also `:p3_aer1`, `:p3_aer3`)
+  (LASSO production; also `:p3_aer1`, `:p3_aer3`), `:p3_covert_n75` (prognostic aerosol whose
+  capped activatable number is `droplet_number`, the Covert case's observed 75 cm⁻³; see
+  [`covert_aerosol_modes`](@ref))
 - `droplet_number = 75e6` [m⁻³]: prescribed Nᶜˡ for `:p3_n75` and the initial in-cloud droplet number
 - `radiation`: `:rrtmgp` (all-sky LW+SW, production), `:simple` (LASSO SAM rad_simple, Covert-era
   legacy control), `:dycoms` (Stevens et al. 2005 form), or `nothing`
 - `radiation_interval = 60` s, `liquid_effective_radius = 10e-6`, `ice_effective_radius = 30e-6`
-- `surface`: `:prescribed_fluxes` (SFC_FLX_FXD, Covert) or `:bulk_sst` (LASSO flxsst)
+- `surface`: `:prescribed_fluxes` (SFC_FLX_FXD, Covert) or `:bulk_sst` (LASSO flxsst), with
+  `surface_flux_law = :breeze` or `:sam_oceflx` (see [`bulk_surface_flux_boundary_conditions`](@ref))
+- `coriolis_parameter = nothing`: the f-plane parameter; `nothing` derives it from `latitude`
 - `wind_nudging_timescale = 7200` (LASSO n0), `nothing` to disable
 - `vertical_advection`: `:full_field` (SAM subsidence.f90), `:mean_profile` (Breeze
   `SubsidenceForcing`), or `nothing`
 - `sponge = SAMSponge()`, `closure = :smagorinsky_lilly` (built at the run precision) or any Oceananigans closure / `nothing`, `advection_order = 5`
 - `stop_time = 9hours`, `Δt = 1`, `max_Δt = 10`, `cfl = 0.7`
 - `perturbation = InitialPerturbation()`
+- `aerosol_supersaturation_cap = nothing`: with the P3-aer members, scale each LASSO mode to the
+  fraction activatable below this supersaturation (SBM `ss_max = 0.003`); see [`lasso_aerosol_modes`](@ref)
 - `output_dir`, `output_prefix`, `profile_interval = 1hour`, `timeseries_interval = 60`,
   `slice_interval = 10minutes`, `slice_height = 900`
 - `exclude_subsurface_levels = false` (SAM interpolates through below-surface levels)
@@ -190,6 +270,8 @@ function build_case(data_dir;
                               surface_emissivity = 0.98,
                               background_atmosphere = BackgroundAtmosphere(CO₂ = 405e-6, CH₄ = 1.85e-6, N₂O = 330e-9),
                               surface = :prescribed_fluxes,
+                              surface_flux_law = :breeze,
+                              coriolis_parameter = nothing,
                               wind_nudging_timescale = 7200,
                               translation_velocity = (0.0, 0.0),
                               vertical_advection = :full_field,
@@ -207,6 +289,7 @@ function build_case(data_dir;
                               p3_initialization = :condensate_free,
                               initial_droplet_number = nothing,
                               aerosol_replenishment = nothing,
+                              aerosol_supersaturation_cap = nothing,
                               bounded_condensate_advection = nothing,
                               moment_advection = :positive,
                               formulation = :LiquidIcePotentialTemperature,
@@ -242,7 +325,8 @@ function build_case(data_dir;
     day0 = isnothing(day0) ? soundings[1].day : day0
     epoch = isnothing(epoch) ? epoch_from_day_of_year(day0) : epoch
 
-    sounding = soundings[1]
+    # setdata.f90 interpolates the bracketing snd records to day0 (a record at day0 is used as is)
+    sounding = initial_sounding(soundings, day0)
     profiles = SoundingProfiles(sounding; exclude_subsurface_levels, moisture_basis)
 
     #####
@@ -260,7 +344,9 @@ function build_case(data_dir;
                                      potential_temperature = z -> profiles(:θ, z),
                                      vapor_mass_fraction = z -> profiles(:qᵗ, z))
     dynamics = AnelasticDynamics(reference_state)
-    coriolis = FPlane(FT; latitude)
+    # SAM uses the namelist `fcor` directly when it is given (setgrid.f90: only fcor = -999 is
+    # replaced by 4π/86400 sin φ); the LASSO bundles carry it.
+    coriolis = isnothing(coriolis_parameter) ? FPlane(FT; latitude) : FPlane(FT; f = coriolis_parameter)
 
     z_centers = Array(znodes(grid, Center()))
     ρᵣ = Array(interior(reference_state.density, 1, 1, :))
@@ -271,7 +357,8 @@ function build_case(data_dir;
     ##### Microphysics
     #####
 
-    microphysics_model, microphysics_record = build_microphysics(FT, microphysics; droplet_number, surface_density)
+    aerosol_kwargs = isnothing(aerosol_supersaturation_cap) ? NamedTuple() : (; maximum_supersaturation=aerosol_supersaturation_cap)
+    microphysics_model, microphysics_record = build_microphysics(FT, microphysics; droplet_number, surface_density, aerosol_kwargs)
     moisture_name = Breeze.AtmosphereModels.moisture_specific_name(microphysics_model)
 
     momentum_advection = WENO(order=advection_order)
@@ -377,6 +464,7 @@ function build_case(data_dir;
     sst_updater = SeaSurfaceTemperatureUpdater(Tₛ, surface_series.times, FT.(sfc.sst))
 
     stress_record = nothing
+    surface_record = NamedTuple()
     boundary_conditions = if isnothing(surface)
         NamedTuple()
     elseif surface === :prescribed_fluxes
@@ -385,7 +473,8 @@ function build_case(data_dir;
                                                                          frame_velocity=(uᶠ, vᶠ))
         bcs
     elseif surface === :bulk_sst
-        bulk_surface_flux_boundary_conditions(grid, Tₛ; moisture_name)
+        bcs, surface_record = bulk_surface_flux_boundary_conditions(grid, Tₛ; moisture_name, law = surface_flux_law)
+        bcs
     else
         throw(ArgumentError("unknown surface mode $surface"))
     end
@@ -398,7 +487,7 @@ function build_case(data_dir;
         RadiativeTransferModel(grid, AllSkyOptics(), constants;
                                surface_temperature = Tₛ,
                                surface_albedo, surface_emissivity, background_atmosphere,
-                               solar_position = ApparentSolarPosition(coordinate=(longitude, latitude), epoch),
+                               solar_position = ApparentSolarPosition(; coordinate=(longitude, latitude), epoch),
                                schedule = TimeInterval(radiation_interval),
                                liquid_effective_radius = ConstantRadiusParticles(liquid_effective_radius),
                                ice_effective_radius = ConstantRadiusParticles(ice_effective_radius))
@@ -427,13 +516,16 @@ function build_case(data_dir;
 
     columns = initial_state_columns(profiles, z_centers, pᵣ; constants=constants64)
     ϵ = perturbation_array(Nx, Ny, z_centers, perturbation)
-    δT = perturbation.amplitude_T
-    δq = perturbation.amplitude_q
     column(values) = reshape(values, 1, 1, Nz)
+    # Per-level amplitudes of the selected setperturb.f90 case (5: ±0.1 K, ±0.025 g/kg below
+    # 600 m; 0: ±0.02 (6 - k) K in the five lowest levels, no moisture perturbation).
+    δT_levels, δq_levels = perturbation_amplitudes(perturbation, z_centers)
+    δT = column(δT_levels)
+    δq = column(δq_levels)
     # setperturb.f90 adds ±δq to SAM's dry-basis vapor; with moisture_basis = :mixing_ratio the
     # perturbation is applied to r = q/qᵈ (qᵈ = 1 - q - qᶜ, with qᶜ the condensate held fixed)
     # and converted back, otherwise to q directly.
-    perturbed_moisture(q, ϵ, qᶜ=0.0) = moisture_basis === :mixing_ratio ?
+    perturbed_moisture(q, ϵ, δq, qᶜ=0.0) = moisture_basis === :mixing_ratio ?
         (r = q / (1 - q - qᶜ) + δq * ϵ; max(0, r * (1 - qᶜ) / (1 + r))) : max(0, q + δq * ϵ)
 
     u₀ = repeat(column(columns.u .- uᶠ), Nx, Ny, 1)
@@ -444,13 +536,13 @@ function build_case(data_dir;
             # SAM HUJI-SBM `micro_init`: all condensate bins empty, qᵗ all vapor, cloud forms
             # through the scheme's own activation/condensation in the first steps.
             T₀ = column(columns.T_condensate_free) .+ δT .* ϵ
-            qᵛ₀ = perturbed_moisture.(column(columns.qᵗ), ϵ)
+            qᵛ₀ = perturbed_moisture.(column(columns.qᵗ), ϵ, δq)
             set!(model; T=T₀, qᵛ=qᵛ₀, u=u₀, v=v₀)
         elseif p3_initialization === :equilibrium
             # Deliberate P3 choice: warm-phase equilibrium partition (identical to the 1M
             # control's first saturation adjustment), with an in-cloud droplet number.
             T₀ = column(columns.T) .+ δT .* ϵ
-            qᵛ₀ = perturbed_moisture.(column(columns.qᵛ), ϵ, column(columns.qᶜˡ))
+            qᵛ₀ = perturbed_moisture.(column(columns.qᵛ), ϵ, δq, column(columns.qᶜˡ))
             qᶜˡ₀ = repeat(column(columns.qᶜˡ), Nx, Ny, 1)
             if !isnothing(microphysics_model.aerosol)
                 isnothing(initial_droplet_number) &&
@@ -466,7 +558,7 @@ function build_case(data_dir;
     else
         Π = columns.T ./ columns.θˡ
         θ₀ = column(columns.θˡ) .+ δT .* ϵ ./ column(Π)
-        qᵗ₀ = perturbed_moisture.(column(columns.qᵗ), ϵ)
+        qᵗ₀ = perturbed_moisture.(column(columns.qᵗ), ϵ, δq)
         set!(model; θ=θ₀, qᵗ=qᵗ₀, u=u₀, v=v₀)
     end
 
@@ -500,6 +592,8 @@ function build_case(data_dir;
                 latitude, longitude, microphysics=string(microphysics), droplet_number,
                 radiation=string(radiation), radiation_interval, liquid_effective_radius, ice_effective_radius,
                 surface=string(surface), wind_nudging_timescale=something(wind_nudging_timescale, 0),
+                coriolis_parameter=Float64(coriolis.f), coriolis_parameter_source=isnothing(coriolis_parameter) ? "4π/86400 sin(latitude)" : "namelist fcor",
+                surface_record...,
                 translation_velocity_u=uᶠ, translation_velocity_v=vᶠ, translation_frame_applied=translating,
                 sam_translation_u=Float64(get(namelist, "ug", 0.0)), sam_translation_v=Float64(get(namelist, "vg", 0.0)),
                 geostrophic, thermodynamic_tendencies,
@@ -516,6 +610,7 @@ function build_case(data_dir;
                 perturbation=string(perturbation), p3_initialization=string(p3_initialization),
                 initial_droplet_number=something(initial_droplet_number, 0),
                 aerosol_replenishment=string(aerosol_replenishment), bounded_condensate_advection,
+                aerosol_supersaturation_cap=something(aerosol_supersaturation_cap, 0.0),
                 sedimentation_thermal_coupling="Breeze (PR 959): falling condensate carries its enthalpy",
                 moment_advection=string(moment_advection), formulation=string(formulation),
                 namelist_latitude=get(namelist, "latitude0", NaN),
@@ -525,8 +620,8 @@ function build_case(data_dir;
     inputs = (; snd=snd_path, lsf=lsf_path, sfc=sfc_path, prm=isfile(prm_path) ? prm_path : nothing,
                 grd=isfile(grd_path) ? grd_path : nothing)
 
-    return (; simulation, model, grid, config, inputs, namelist, soundings, lsf, sfc, profiles,
-              forcing_profiles, surface_series, columns, surface_temperature=Tₛ)
+    return (; simulation, model, grid, config, inputs, namelist, soundings, sounding, lsf, sfc, profiles,
+              forcing_profiles, surface_series, columns, surface_temperature=Tₛ, forcing)
 end
 
 # Mean-profile alternative (Breeze SubsidenceForcing): snapshot of wls at the first record,
@@ -634,6 +729,9 @@ function write_provenance(path, case; extra=NamedTuple())
         "protocol" => string(get(case, :protocol, "custom")),
         "protocol_dimensions" => toml_value(get(case, :protocol_dimensions, nothing)),
         "protocol_overrides" => toml_value(get(case, :protocol_overrides, NamedTuple())),
+        "protocol_member" => string(get(case, :protocol_member, "none")),
+        "bundle" => toml_value(get(case, :bundle, "none")),
+        "staging" => toml_value(get(case, :staging, "none")),
         "inputs" => inputs,
         "software" => software,
         "config" => Dict{String, Any}(string(k) => toml_value(v) for (k, v) in pairs(case.config)),
@@ -650,6 +748,7 @@ toml_value(::Nothing) = "nothing"
 toml_value(x::Tuple) = [toml_value(v) for v in x]
 toml_value(x::AbstractVector) = [toml_value(v) for v in x]
 toml_value(x::NamedTuple) = Dict{String, Any}(string(k) => toml_value(v) for (k, v) in pairs(x))
+toml_value(x::AbstractDict) = Dict{String, Any}(string(k) => toml_value(v) for (k, v) in x)
 toml_value(x) = string(x)
 
 # A pinned dependency's git revision (from the active Manifest) and the dirty state of a

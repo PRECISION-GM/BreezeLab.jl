@@ -2,8 +2,12 @@
 
 - `fetch_covert_inputs.jl`: pinned public SAM input files for the ENA case.
 - `fetch_manifest.jl`: checksum-pinned SEA STARR drivers and TRACER protocol references.
-- `fetch_arm_inputs.jl`: one exact ARM LASSO `samin` archive, with credentials kept outside
-  Git and error messages. These archives are model inputs, not station observations.
+- `fetch_arm_inputs.jl`: one exact ARM LASSO `samin` archive (or a member's `samstat`/`sam2d`
+  reference output), with credentials kept outside Git and error messages. These archives
+  are model inputs, not station observations.
+- `stage_lasso_bundle.jl`: freeze a downloaded `samin` archive into `data/lasso/<member>/`
+  (checksums, member tokens, DOI, SAM reference revision in `bundle.toml`); the member
+  identity comes from the archive name and is never guessed.
 
 These tools populate ignored `data/` directories. They do not build or run simulations.
 

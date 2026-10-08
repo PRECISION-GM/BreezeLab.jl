@@ -45,7 +45,8 @@ for run in $RUNS; do
     case $run in
         one_moment) submit "${PARTITION_1M:-$PARTITION}"   lasso-1m   one_moment ;;
         p3_n75)     submit "${PARTITION_N75:-$PARTITION}"  lasso-n75  p3_n75 ;;
-        p3_aer2)    submit "${PARTITION_AER2:-$PARTITION}" lasso-aer2 p3_aer2 --aerosol_replenishment diagnostic_ccn ;;
+        p3_aer2)    submit "${PARTITION_AER2:-$PARTITION}" lasso-aer2 p3_aer2 --aerosol_replenishment diagnostic_ccn --aerosol_ss_cap 0.003 ;;
+        p3_covert_n75) submit "${PARTITION_AER2:-$PARTITION}" covert-n75a p3_covert_n75 --aerosol_replenishment diagnostic_ccn ;;
         *) echo "unknown run $run" >&2; exit 1 ;;
     esac
 done

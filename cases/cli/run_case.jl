@@ -23,7 +23,7 @@ end
 
 opts = parse_args(ARGS)
 getopt(k, default) = get(opts, k, default)
-allowed = Set(["data", "protocol", "preset", "arch", "float", "seed", "epoch", "dimensions", "microphysics", "Nx", "Ny", "Lx", "Ly", "hours", "radiation", "surface", "nudging", "vertical_advection", "p3_initialization", "aerosol_replenishment", "cfl", "dt", "max_dt", "lasso_grid", "moment_advection", "formulation", "profile_interval", "closure", "slice_interval", "output"])
+allowed = Set(["data", "protocol", "preset", "arch", "float", "seed", "epoch", "member", "dimensions", "microphysics", "Nx", "Ny", "Lx", "Ly", "hours", "radiation", "surface", "surface_flux_law", "nudging", "vertical_advection", "p3_initialization", "aerosol_replenishment", "aerosol_ss_cap", "cfl", "dt", "max_dt", "lasso_grid", "moment_advection", "formulation", "profile_interval", "closure", "slice_interval", "output"])
 unknown = setdiff(Set(keys(opts)), allowed)
 isempty(unknown) || error("unknown options: $(join(sort!(collect(unknown)), ", "))")
 
@@ -45,6 +45,8 @@ if haskey(opts, "dimensions")
     kw[:dimensions] = dims
 end
 haskey(opts, "epoch") && (kw[:epoch] = DateTime(opts["epoch"]))
+haskey(opts, "member") && (kw[:member] = opts["member"])      # LASSO run ID, e.g. 20170718era5d25x100_sbmwrm-aer2-flxsst
+preset === :lasso_ena_official && !haskey(opts, "member") && error("--member <LASSO run ID> is required with --protocol lasso_ena_official")
 haskey(opts, "microphysics") && (kw[:microphysics] = Symbol(opts["microphysics"]))   # otherwise the preset decides
 haskey(opts, "Nx") && (kw[:Nx] = parse(Int, opts["Nx"]))
 haskey(opts, "Ny") && (kw[:Ny] = parse(Int, opts["Ny"]))
@@ -53,11 +55,13 @@ haskey(opts, "Ly") && (kw[:Ly] = parse(Float64, opts["Ly"]))
 haskey(opts, "hours") && (kw[:stop_time] = parse(Float64, opts["hours"]) * 3600)
 haskey(opts, "radiation") && (kw[:radiation] = opts["radiation"] == "nothing" ? nothing : Symbol(opts["radiation"]))
 haskey(opts, "surface") && (kw[:surface] = Symbol(opts["surface"]))
+haskey(opts, "surface_flux_law") && (kw[:surface_flux_law] = Symbol(opts["surface_flux_law"]))
 haskey(opts, "nudging") && (kw[:wind_nudging_timescale] = opts["nudging"] == "nothing" ? nothing : parse(Float64, opts["nudging"]))
 haskey(opts, "vertical_advection") && (kw[:vertical_advection] = opts["vertical_advection"] == "nothing" ? nothing : Symbol(opts["vertical_advection"]))
 haskey(opts, "p3_initialization") && (kw[:p3_initialization] = Symbol(opts["p3_initialization"]))
 haskey(opts, "aerosol_replenishment") && (kw[:aerosol_replenishment] = opts["aerosol_replenishment"] == "nothing" ? nothing :
                                           opts["aerosol_replenishment"] == "diagnostic_ccn" ? :diagnostic_ccn : parse(Float64, opts["aerosol_replenishment"]))
+haskey(opts, "aerosol_ss_cap") && (kw[:aerosol_supersaturation_cap] = opts["aerosol_ss_cap"] == "nothing" ? nothing : parse(Float64, opts["aerosol_ss_cap"]))
 haskey(opts, "cfl") && (kw[:cfl] = parse(Float64, opts["cfl"]))
 haskey(opts, "max_dt") && (kw[:max_Δt] = parse(Float64, opts["max_dt"]))
 haskey(opts, "dt") && (kw[:Δt] = parse(Float64, opts["dt"]))
