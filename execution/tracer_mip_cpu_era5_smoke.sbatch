@@ -10,7 +10,7 @@
 #SBATCH --time=02:00:00
 #SBATCH --output=/shared/home/greg/breezelab-work/tracer-mip/logs/slurm-%j.out
 set -euo pipefail
-W=/shared/home/greg/breezelab-work/tracer-mip
+W=${W:-/shared/home/greg/breezelab-work/tracer-mip}
 C=/shared/home/greg/breezelab-runs/20261006
 D=/shared/home/greg/breezelab-runs/docs-20261007-8dc824d
 CPU_TAG=$(awk -F ': ' '/model name/ {print $2; exit}' /proc/cpuinfo | tr -c 'A-Za-z0-9' '_')
