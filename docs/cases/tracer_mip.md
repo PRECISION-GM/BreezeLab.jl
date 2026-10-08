@@ -69,9 +69,27 @@ Missing or mismatched for this protocol:
 - **Radiation**: RRTMGP all-sky every 60 s; aerosols are radiatively inactive (protocol).
 - **Boundaries**: hourly ERA5 (the protocol minimum is 3-hourly), interpolated linearly in time; Davies relaxation over the
   outermost cells; no interior large-scale tendency is applied (forcing enters only through the boundaries and the surface).
+- **Turbulence/PBL**: no explicit closure by default. `SmagorinskyLilly` (isotropic length on 50 m × 2 km cells) drove the
+  first step to negative pressure in every CPU smoke of the real ERA5 state; `TKEBasedTurbulenceClosure` (vertical,
+  implicit) steps stably and is the PBL candidate (`TRACER_MIP_CLOSURE=tke`), not yet used in a GPU run.
+- **Rain to land**: NumericalEarth imports the renamed `surface_precipitation_flux`; the extension defines it at run
+  time in `Breeze.AtmosphereModels` as the sign-flipped `bottom_precipitation_flux` so the child's rain reaches the bucket.
+- **Nesting**: one-way and offline — the outer run saves its state on the inner region + halo every 10 min, and
+  `outer_run_parent` rebuilds a `PrescribedAtmosphere` on a static 3-D-height grid for `tracer_mip_inner_simulation`.
+
+## Runs so far (all on wpcluster; see the status file for job IDs)
+
+| Run | Configuration | Result |
+| --- | --- | --- |
+| CPU smokes (jobs 204–215) | real ERA5, 32×32×94, 36 s | stable without closure and with TKE closure; Smagorinsky fails in step 1 |
+| GPU pilot (job 217) | real ERA5, 750×750×94, 1 h, A100-80GB | completed; 40.3 GB; 4.3 s wall per 3 s step (≈86 min per simulated hour) |
+| GPU control (job 233) | same, 24 h | running |
+| Inner-nest CPU test (job 227) | parent from the pilot's saved state, 8×8×24 child, 6 s | passes |
 
 ## Status
 
-See `plans/status/TRACER-MIP.md` in the coordination checkout for the live status, job IDs and results. Implemented and tested
-on CPU: protocol metadata, grids, vertical faces, aerosol profiles and P3 modes. ERA5 staging, the outer-domain constructor,
-coastal exchange, process diagnostics and nesting are tracked there.
+See `plans/status/TRACER-MIP.md` in the coordination checkout for the live status, job IDs and results. Implemented and
+tested on CPU: protocol metadata, grids, vertical faces, aerosol profiles and P3 modes, the Tier-1 prescribed aerosol in P3,
+process-rate accumulators, ERA5 staging, the outer-domain constructor with coastal exchange, and the offline inner nest.
+The 24-h August 7 outer control is running; the inner 500 m run, its 10-min/2-min writers and the June 17 case are next.
+A pilot is not a completed MIP; nothing here has been compared against observations.
