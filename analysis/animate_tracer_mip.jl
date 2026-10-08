@@ -211,15 +211,27 @@ for (name, make) in products
     fig, draw! = make()
     mp4 = joinpath(out_dir, "tracer_mip_aug07_$(name).mp4")
     # Frame-change diagnostic: fraction of pixels that differ between the first and last frames.
-    draw!(1); first_img = colorbuffer(fig); draw!(n_common); last_img = colorbuffer(fig)
+    draw!(1); first_img = copy(colorbuffer(fig)); draw!(n_common); last_img = copy(colorbuffer(fig))   # copy: the buffer is reused
     report[name * "_changed_pixel_fraction"] = round(count(first_img .!= last_img) / length(first_img); digits = 4)
     mb = finish_record(fig, mp4, draw!, frames)
     report[name * "_mp4_MB"] = round(mb; digits = 2)
+    # Independent check of the written file: decoded frame count and the last frame as PNG.
+    ffmpeg = CairoMakie.Makie.FFMPEG_jll.ffmpeg()
+    log = read(pipeline(`$ffmpeg -v info -i $mp4 -f null -`; stderr = devnull, stdin = devnull), String)
+    decoded = read(pipeline(`$ffmpeg -v error -i $mp4 -map 0:v:0 -f null -`, stderr = devnull), String)
+    nframes = try
+        out = read(pipeline(`$ffmpeg -i $mp4 -map 0:v:0 -f null -`, stderr = stdout), String)
+        parse(Int, last(collect(eachmatch(r"frame=\s*(\d+)", out))).captures[1])
+    catch
+        -1
+    end
+    report[name * "_mp4_decoded_frames"] = nframes
+    run(pipeline(`$ffmpeg -y -v error -sseof -0.3 -i $mp4 -update 1 -frames:v 1 $(joinpath(out_dir, "tracer_mip_aug07_$(name)_last_frame.png"))`; stderr = devnull))
     # 4-frame montage: one full figure per pick, rendered to PNG then composed
     panels = map(enumerate(picks)) do (k, n)
         draw!(n)
         isempty(labels[k]) || (fig.content[1].text[] = fig.content[1].text[] * " — " * labels[k])
-        colorbuffer(fig)
+        copy(colorbuffer(fig))
     end
     montage = Figure(size = (2 * size(panels[1], 2) ÷ 2, 2 * size(panels[1], 1) ÷ 2))
     for (k, img) in enumerate(panels)
