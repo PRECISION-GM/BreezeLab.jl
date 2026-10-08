@@ -14,7 +14,7 @@ outer_dir = get(ENV, "TRACER_MIP_OUTER_RUN", "/shared/home/greg/breezelab-work/t
     T = parent.temperature[1]
     @test 190 < minimum(interior(T)) && maximum(interior(T)) < 320
     @test all(diff(Array(interior(parent.pressure[1], 1, 1, :))) .< 0)
-    z = [NumericalEarth.Grids.znode(1, 1, k, parent.grid, Center(), Center(), Center()) for k in 1:size(parent.grid, 3)]
+    z = [Oceananigans.Grids.znode(1, 1, k, parent.grid, Center(), Center(), Center()) for k in 1:size(parent.grid, 3)]
     @test issorted(z) && z[end] > 20_000
     case = tracer_mip_inner_simulation(CPU(); outer_run_dir = outer_dir, FT = Float32, Nx = 8, Ny = 8,
                                        z_faces = collect(range(0, 12_000, length = 25)), stop_time = 6.0,
