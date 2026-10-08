@@ -23,11 +23,11 @@ echo "== $(date -u) node=$(hostname) cpu_tag=$CPU_TAG commit=$(git rev-parse HEA
 echo "== instantiate case sub-environment"
 $J --project=cases/tracer_mip -e 'using Pkg; Pkg.instantiate(); Pkg.precompile(; timing=true); Pkg.status()'
 echo "== $(date -u) stage ERA5 aug07"
-$J --project=cases/tracer_mip data_wrangling/fetch_era5_tracer_mip.jl aug07 "$W/data/era5" 6 2>&1 | grep -v -i "key:\|token" || true
+$J --project=cases/tracer_mip data_wrangling/fetch_era5_tracer_mip.jl aug07 "$W/data/era5" 6 2>&1 | grep --line-buffered -v -i "key:\|token" || true
 echo "== $(date -u) regional software tests (synthetic parent)"
 $J --project=cases/tracer_mip -e 'using Test, BreezeLab, Breeze, Oceananigans, Oceananigans.Units; using Dates: DateTime
 test_grid(; Nx=8, Ny=8, Nz=24, Lz=6000) = RectilinearGrid(CPU(), Float64; size=(Nx, Ny, Nz), x=(0, 800), y=(0, 800), z=(0, Lz), halo=(5, 5, 5), topology=(Periodic, Periodic, Bounded))
 @testset "regional" begin; include("test/tracer_mip_regional.jl"); end'
 echo "== $(date -u) stage ERA5 jun17"
-$J --project=cases/tracer_mip data_wrangling/fetch_era5_tracer_mip.jl jun17 "$W/data/era5" 6 2>&1 | grep -v -i "key:\|token" || true
+$J --project=cases/tracer_mip data_wrangling/fetch_era5_tracer_mip.jl jun17 "$W/data/era5" 6 2>&1 | grep --line-buffered -v -i "key:\|token" || true
 echo "== $(date -u) done"

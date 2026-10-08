@@ -19,5 +19,5 @@ set -a; source "$HOME/.bashrc" 2>/dev/null || true; set +a
 cd "$W"
 CASE=${CASE:-aug07}
 echo "== $(date -u) node=$(hostname) commit=$(git rev-parse HEAD) case=$CASE"
-"$C/julia-1.12.7/bin/julia" --startup-file=no --project=cases/tracer_mip data_wrangling/fetch_era5_tracer_mip.jl "$CASE" "$W/data/era5" 6 2>&1 | grep -v -i "key:\|token"
+"$C/julia-1.12.7/bin/julia" --startup-file=no --project=cases/tracer_mip data_wrangling/fetch_era5_tracer_mip.jl "$CASE" "$W/data/era5" 6 2>&1 | grep --line-buffered -v -i "key:\|token"
 echo "== $(date -u) done"

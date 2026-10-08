@@ -23,6 +23,6 @@ export TRACER_MIP_ARCH=cpu TRACER_MIP_NX=${TRACER_MIP_NX:-16} TRACER_MIP_NY=${TR
 export TRACER_MIP_ERA5_DIR="$W/data/era5" TRACER_MIP_OUTPUT_DIR="$W/runs/era5_cpu_smoke_job${SLURM_JOB_ID}"
 mkdir -p "$TRACER_MIP_OUTPUT_DIR"
 "$C/julia-1.12.7/bin/julia" --startup-file=no --project=cases/tracer_mip -e 'using Pkg; Pkg.precompile("BreezeLab")' 2>&1 | tail -2
-"$C/julia-1.12.7/bin/julia" --startup-file=no --project=cases/tracer_mip cases/tracer_mip.jl 2>&1 | grep -v -i "key:\|token"
+"$C/julia-1.12.7/bin/julia" --startup-file=no --project=cases/tracer_mip cases/tracer_mip.jl 2>&1 | grep --line-buffered -v -i "key:\|token"
 touch "$TRACER_MIP_OUTPUT_DIR/COMPLETE"
 echo "== $(date -u) done"
