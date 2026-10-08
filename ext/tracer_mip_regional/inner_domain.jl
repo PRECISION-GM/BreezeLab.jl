@@ -20,17 +20,20 @@ Base.summary(p::OuterRunParent) = string("OuterRunParent(", p.directory, ")")
 
 const INNER_REGION_FILE = joinpath("inner_region", "inner_region_state.jld2")
 
-# Horizontally average a saved x-face (or y-face) field onto cell centers; center fields pass through.
-function centered_data(fts, n)
+# Move a saved x-face (or y-face) window onto the cell centers of the (ni, nj) sub-region. The writer's
+# index window selects faces i₁…i₂ (one fewer than the centers need), so the last center takes the
+# one-sided face value; a window that already holds ni + 1 faces is averaged exactly.
+function centered_data(fts, n, (ni, nj))
     data = Array(interior(fts[n]))
     LX, LY, _ = Oceananigans.Fields.location(fts)
     if LX === Face
-        nx = size(data, 1) - 1
-        data = nx ≥ 1 ? 0.5 .* (data[1:nx, :, :] .+ data[2:nx+1, :, :]) : data
+        data = size(data, 1) == ni + 1 ? 0.5 .* (data[1:ni, :, :] .+ data[2:ni+1, :, :]) :
+               cat(0.5 .* (data[1:end-1, :, :] .+ data[2:end, :, :]), data[end:end, :, :]; dims = 1)
     elseif LY === Face
-        ny = size(data, 2) - 1
-        data = ny ≥ 1 ? 0.5 .* (data[:, 1:ny, :] .+ data[:, 2:ny+1, :]) : data
+        data = size(data, 2) == nj + 1 ? 0.5 .* (data[:, 1:nj, :] .+ data[:, 2:nj+1, :]) :
+               cat(0.5 .* (data[:, 1:end-1, :] .+ data[:, 2:end, :]), data[:, end:end, :]; dims = 2)
     end
+    size(data)[1:2] == (ni, nj) || throw(DimensionMismatch("saved $(fts.name) window $(size(data)) does not match the ($ni, $nj) sub-region"))
     return data
 end
 
@@ -78,7 +81,7 @@ function outer_run_parent(run_dir; arch = CPU(), FT = Float32, gravitational_acc
         src = FieldTimeSeries(file, name; backend = OnDisk())
         fts = FieldTimeSeries{Center, Center, Center}(grid, times)
         for n in eachindex(times)
-            interior(fts[n]) .= Oceananigans.on_architecture(arch, FT.(centered_data(src, n)))
+            interior(fts[n]) .= Oceananigans.on_architecture(arch, FT.(centered_data(src, n, (ni, nj))))
         end
         fill_halo_regions!(fts)
         return fts
