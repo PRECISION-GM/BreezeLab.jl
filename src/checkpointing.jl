@@ -14,3 +14,4 @@
 Oceananigans.prognostic_state(::PrescribedStressUpdater) = nothing
 Oceananigans.prognostic_state(::SeaSurfaceTemperatureUpdater) = nothing
 Oceananigans.prognostic_state(::DiagnosticCCNProjection) = nothing
+Oceananigans.prognostic_state(::ProgressMessenger) = nothing   # wall-clock reference only
