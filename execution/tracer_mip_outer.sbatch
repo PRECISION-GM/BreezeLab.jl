@@ -12,7 +12,8 @@
 #SBATCH --mem=96G
 #SBATCH --output=/shared/home/greg/breezelab-work/tracer-mip/logs/slurm-%j.out
 set -euo pipefail
-W=/shared/home/greg/breezelab-work/tracer-mip
+W=/shared/home/greg/breezelab-work/tracer-mip          # depot root (compiled caches, shared sources)
+CHECKOUT=${CHECKOUT:-$W}                                 # source tree to run (a worktree of another branch, if given)
 C=/shared/home/greg/breezelab-runs/20261006
 D=/shared/home/greg/breezelab-runs/docs-20261007-8dc824d
 GPU_UUID=${1:?GPU UUID}
@@ -40,7 +41,7 @@ RUN="$W/runs/${EXPERIMENT}_job${SLURM_JOB_ID}"
 mkdir -p "$RUN"
 export TRACER_MIP_OUTPUT_DIR="$RUN"
 export TRACER_MIP_ERA5_DIR="${TRACER_MIP_ERA5_DIR:-$W/data/era5}"
-cd "$W"
+cd "$CHECKOUT"
 git rev-parse HEAD > "$RUN/COMMIT"
 git status --porcelain > "$RUN/GIT_STATUS" || true
 cp Manifest.toml "$RUN/Manifest.package.toml"
