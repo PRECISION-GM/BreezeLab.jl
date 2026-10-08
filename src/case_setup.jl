@@ -249,8 +249,40 @@ Keyword arguments:
   `slice_interval = 10minutes`, `slice_height = 900`
 - `exclude_subsurface_levels = false` (SAM interpolates through below-surface levels)
 - `temperature_neutral_evaporation = true`
+- `coriolis = :f_plane` (an `FPlane` at `latitude`), any Oceananigans Coriolis, or `nothing`
+- `surface = :prescribed_heat_fluxes_bulk_drag`: `sfc` sensible/latent heat fluxes with a
+  constant-coefficient `BulkDrag` (`drag_coefficient`, `gustiness`) for the momentum
+  (the DP-SCREAM `iop_srf_prop` pathway; the `sfc` stress column is ignored)
+- `checkpoint_interval = nothing`: seconds between Oceananigans `Checkpointer` writes
+  (`<output_prefix>_checkpoint` in `output_dir`); `checkpoint_cleanup = true` keeps only the latest
+
+`build_case(data_dir; ...)` reads the SAM files; `build_case(inputs; ...)` takes the bundle
+of [`read_case_inputs`](@ref) (or an adapter such as [`iop_sam_inputs`](@ref)) directly.
 """
-function build_case(data_dir;
+build_case(data_dir::AbstractString; kwargs...) = build_case(read_case_inputs(data_dir); kwargs...)
+
+"""
+    read_case_inputs(data_dir)
+
+The SAM `snd`, `lsf`, `sfc` records and the `prm` namelist (empty when absent) of a case
+directory, with the file paths for provenance: `(; soundings, lsf, sfc, namelist, paths)`.
+"""
+function read_case_inputs(data_dir)
+    snd_path = joinpath(data_dir, "snd")
+    lsf_path = joinpath(data_dir, "lsf")
+    sfc_path = joinpath(data_dir, "sfc")
+    prm_path = joinpath(data_dir, "prm")
+    grd_path = joinpath(data_dir, "grd")
+    soundings = read_sam_sounding(snd_path)
+    lsf = read_sam_large_scale_forcing(lsf_path)
+    sfc = read_sam_surface_forcing(sfc_path)
+    namelist = isfile(prm_path) ? read_sam_namelist(prm_path) : Dict{String, NamelistValue}()
+    paths = (; snd=snd_path, lsf=lsf_path, sfc=sfc_path, prm=isfile(prm_path) ? prm_path : nothing,
+               grd=isfile(grd_path) ? grd_path : nothing)
+    return (; soundings, lsf, sfc, namelist, paths)
+end
+
+function build_case(inputs::NamedTuple;
                               arch = CPU(),
                               FT = Float32,
                               Nx = 256, Ny = 256, Lx = 25600, Ly = 25600,
@@ -303,6 +335,11 @@ function build_case(data_dir;
                               progress_interval = 10minutes,
                               exclude_subsurface_levels = false,
                               temperature_neutral_evaporation = true,
+                              coriolis = :f_plane,
+                              drag_coefficient = 1.5e-3,
+                              gustiness = 0.1,
+                              checkpoint_interval = nothing,
+                              checkpoint_cleanup = true,
                               write_output = true)
 
     Oceananigans.defaults.FloatType = FT
@@ -312,14 +349,10 @@ function build_case(data_dir;
     ##### Inputs
     #####
 
-    snd_path = joinpath(data_dir, "snd")
-    lsf_path = joinpath(data_dir, "lsf")
-    sfc_path = joinpath(data_dir, "sfc")
-    prm_path = joinpath(data_dir, "prm")
-    soundings = read_sam_sounding(snd_path)
-    lsf = read_sam_large_scale_forcing(lsf_path)
-    sfc = read_sam_surface_forcing(sfc_path)
-    namelist = isfile(prm_path) ? read_sam_namelist(prm_path) : Dict{String, NamelistValue}()
+    soundings = inputs.soundings
+    lsf = inputs.lsf
+    sfc = inputs.sfc
+    namelist = inputs.namelist
     haskey(namelist, "latitude0") && (latitude = namelist["latitude0"])
     haskey(namelist, "longitude0") && (longitude = namelist["longitude0"])
     day0 = isnothing(day0) ? soundings[1].day : day0
@@ -345,8 +378,13 @@ function build_case(data_dir;
                                      vapor_mass_fraction = z -> profiles(:qᵗ, z))
     dynamics = AnelasticDynamics(reference_state)
     # SAM uses the namelist `fcor` directly when it is given (setgrid.f90: only fcor = -999 is
-    # replaced by 4π/86400 sin φ); the LASSO bundles carry it.
-    coriolis = isnothing(coriolis_parameter) ? FPlane(FT; latitude) : FPlane(FT; f = coriolis_parameter)
+    # replaced by 4π/86400 sin φ); the LASSO bundles carry it. `coriolis = :f_plane` builds that
+    # f-plane; any other Oceananigans Coriolis (or `nothing`) is used as given.
+    coriolis = if coriolis === :f_plane
+        isnothing(coriolis_parameter) ? FPlane(FT; latitude) : FPlane(FT; f = coriolis_parameter)
+    else
+        coriolis
+    end
 
     z_centers = Array(znodes(grid, Center()))
     ρᵣ = Array(interior(reference_state.density, 1, 1, :))
@@ -475,6 +513,11 @@ function build_case(data_dir;
     elseif surface === :bulk_sst
         bcs, surface_record = bulk_surface_flux_boundary_conditions(grid, Tₛ; moisture_name, law = surface_flux_law)
         bcs
+    elseif surface === :prescribed_heat_fluxes_bulk_drag
+        heat = prescribed_heat_flux_boundary_conditions(grid, sfc, day0; thermodynamic_constants=constants,
+                                                        moisture_name, temperature_neutral_evaporation)
+        drag = BulkDrag(; coefficient=FT(drag_coefficient), gustiness=FT(gustiness), surface_temperature=Tₛ)
+        merge((; ρu = FieldBoundaryConditions(bottom=drag), ρv = FieldBoundaryConditions(bottom=drag)), heat.bcs)
     else
         throw(ArgumentError("unknown surface mode $surface"))
     end
@@ -585,14 +628,23 @@ function build_case(data_dir;
         mkpath(output_dir)
         add_output_writers!(simulation; output_dir, output_prefix, profile_interval,
                             timeseries_interval, slice_interval, slice_height)
+        if !isnothing(checkpoint_interval)
+            simulation.output_writers[:checkpointer] =
+                Checkpointer(model; schedule = TimeInterval(checkpoint_interval), dir = output_dir,
+                             prefix = output_prefix * "_checkpoint", overwrite_files = true, cleanup = checkpoint_cleanup)
+        end
     end
 
     config = (; label, arch=string(typeof(arch)), FT=string(FT), Nx, Ny, Nz, Lx, Ly, day0, epoch=string(epoch),
+                coriolis=isnothing(coriolis) ? "nothing" : summary(coriolis),
+                drag_coefficient, gustiness,
+                checkpoint_interval=something(checkpoint_interval, 0), checkpoint_cleanup,
                 moisture_basis=string(moisture_basis),
                 latitude, longitude, microphysics=string(microphysics), droplet_number,
                 radiation=string(radiation), radiation_interval, liquid_effective_radius, ice_effective_radius,
                 surface=string(surface), wind_nudging_timescale=something(wind_nudging_timescale, 0),
-                coriolis_parameter=Float64(coriolis.f), coriolis_parameter_source=isnothing(coriolis_parameter) ? "4π/86400 sin(latitude)" : "namelist fcor",
+                coriolis_parameter=coriolis isa FPlane ? Float64(coriolis.f) : 0.0,
+                coriolis_parameter_source=isnothing(coriolis) ? "no Coriolis" : isnothing(coriolis_parameter) ? "4π/86400 sin(latitude)" : "namelist fcor",
                 surface_record...,
                 translation_velocity_u=uᶠ, translation_velocity_v=vᶠ, translation_frame_applied=translating,
                 sam_translation_u=Float64(get(namelist, "ug", 0.0)), sam_translation_v=Float64(get(namelist, "vg", 0.0)),
@@ -616,11 +668,7 @@ function build_case(data_dir;
                 namelist_latitude=get(namelist, "latitude0", NaN),
                 microphysics_record...)
 
-    grd_path = joinpath(data_dir, "grd")
-    inputs = (; snd=snd_path, lsf=lsf_path, sfc=sfc_path, prm=isfile(prm_path) ? prm_path : nothing,
-                grd=isfile(grd_path) ? grd_path : nothing)
-
-    return (; simulation, model, grid, config, inputs, namelist, soundings, sounding, lsf, sfc, profiles,
+    return (; simulation, model, grid, config, inputs=inputs.paths, namelist, soundings, sounding, lsf, sfc, profiles,
               forcing_profiles, surface_series, columns, surface_temperature=Tₛ, forcing)
 end
 
@@ -652,13 +700,15 @@ function add_output_writers!(simulation; output_dir, output_prefix, profile_inte
     s = Breeze.AtmosphereModels.Diagnostics.StaticEnergy(model)   # a diagnostic in either formulation
 
     profile_fields = (; u, v, w² = w^2, uw = u * w, vw = v * w, θ, T, s, qᵛ, qᶜˡ, qʳ,
-                        cloud_fraction = cloud_fraction_profile(model))
+                        cloud_fraction = cloud_fraction_profile(model),
+                        total_cloud_fraction = total_cloud_fraction_profile(model))
     haskey(μ, :nᶜˡ) && (profile_fields = merge(profile_fields, (; nᶜˡ = μ.nᶜˡ)))
     haskey(μ, :nᵃ) && (profile_fields = merge(profile_fields, (; nᵃ = μ.nᵃ)))
     haskey(μ, :qⁱ) && (profile_fields = merge(profile_fields, (; qⁱ = μ.qⁱ)))
     if !isnothing(model.radiation)
         profile_fields = merge(profile_fields, (; radiative_flux_divergence = model.radiation.flux_divergence))
     end
+    ρ = reference_density(model)
     # Fields that are already horizontal means (cloud fraction) are written as they are:
     # Oceananigans main refuses to average over dimensions a field no longer has.
     profiles = NamedTuple(name => (horizontally_reduced(f) ? f : Average(f, dims=(1, 2)))
@@ -674,7 +724,18 @@ function add_output_writers!(simulation; output_dir, output_prefix, profile_inte
     timeseries = (; lwp = Average(lwp, dims=(1, 2)),
                     rwp = Average(rwp, dims=(1, 2)),
                     cloud_fraction = cloud_fraction(model),
-                    rain_flux = Average(rain, dims=(1, 2)))
+                    rain_flux = Average(rain, dims=(1, 2)),
+                    # water and energy budget terms: precipitable water, column static energy,
+                    # and the column-integrated radiative flux convergence (W m⁻², positive warming)
+                    precipitable_water = Average(precipitable_water(model), dims=(1, 2)),
+                    column_static_energy = Average(Field(Integral(ρ * s, dims=3)), dims=(1, 2)))
+    if haskey(μ, :qⁱ)
+        timeseries = merge(timeseries, (; iwp = Average(ice_water_path(model), dims=(1, 2)),
+                                          ice_flux = Average(surface_ice_flux(model), dims=(1, 2))))
+    end
+    if !isnothing(model.radiation)
+        timeseries = merge(timeseries, (; column_radiative_heating = Average(Field(Integral(model.radiation.flux_divergence, dims=3)), dims=(1, 2))))
+    end
 
     simulation.output_writers[:timeseries] =
         JLD2Writer(model, timeseries; filename = joinpath(output_dir, output_prefix * "_timeseries.jld2"),

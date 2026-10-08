@@ -84,6 +84,37 @@ function prescribed_surface_flux_boundary_conditions(grid, sfc::SAMSurfaceForcin
                                                      temperature_neutral_evaporation = true,
                                                      frame_velocity = (0, 0))
     FT = eltype(grid)
+    heat = prescribed_heat_flux_boundary_conditions(grid, sfc, day0; thermodynamic_constants, moisture_name,
+                                                    temperature_neutral_evaporation)
+    ρ₀ = FT(surface_density)
+
+    τˣ = Field{Face, Center, Nothing}(grid)
+    τʸ = Field{Center, Face, Nothing}(grid)
+    ρu_bc = FluxBoundaryCondition(τˣ)
+    ρv_bc = FluxBoundaryCondition(τʸ)
+
+    bcs = merge((; ρu = FieldBoundaryConditions(bottom=ρu_bc),
+                   ρv = FieldBoundaryConditions(bottom=ρv_bc)), heat.bcs)
+    stress = (; τˣ, τʸ, times = heat.times, kinematic_stress = FT.(sfc.kinematic_stress), surface_density = ρ₀,
+                frame_velocity = (FT(frame_velocity[1]), FT(frame_velocity[2])))
+    return bcs, stress
+end
+
+"""
+    prescribed_heat_flux_boundary_conditions(grid, sfc, day0; thermodynamic_constants, moisture_name,
+                                             temperature_neutral_evaporation=true)
+
+The energy (`ρE`) and vapor flux bottom boundary conditions of the `sfc` series alone: energy
+flux H(t) [+ (cᵖᵛ - cᵖᵈ) SST(t) E(t)] and vapor flux E = LE/ℒ, as `FieldTimeSeries`
+interpolated linearly in time. Returns `(; bcs, energy_flux, vapor_flux, times)`; combine
+with a stress condition (`prescribed_surface_flux_boundary_conditions`) or a `BulkDrag`
+(the DP-SCREAM `iop_srf_prop` pathway in `build_case`'s `:prescribed_heat_fluxes_bulk_drag`).
+"""
+function prescribed_heat_flux_boundary_conditions(grid, sfc::SAMSurfaceForcing, day0;
+                                                  thermodynamic_constants,
+                                                  moisture_name,
+                                                  temperature_neutral_evaporation = true)
+    FT = eltype(grid)
     constants = thermodynamic_constants
     ℒ = constants.liquid.reference_latent_heat
     cᵖᵈ = constants.dry_air.heat_capacity
@@ -105,23 +136,13 @@ function prescribed_surface_flux_boundary_conditions(grid, sfc::SAMSurfaceForcin
 
     energy_flux = make(energy)
     vapor_flux = make(E)
-    ρ₀ = FT(surface_density)
-
-    τˣ = Field{Face, Center, Nothing}(grid)
-    τʸ = Field{Center, Face, Nothing}(grid)
-    ρu_bc = FluxBoundaryCondition(τˣ)
-    ρv_bc = FluxBoundaryCondition(τʸ)
     ρE_bc = FluxBoundaryCondition(energy_flux)
     ρq_bc = FluxBoundaryCondition(vapor_flux)
 
     moisture_density_name = Symbol("ρ", moisture_name)
-    bcs = (; ρu = FieldBoundaryConditions(bottom=ρu_bc),
-             ρv = FieldBoundaryConditions(bottom=ρv_bc),
-             ρE = FieldBoundaryConditions(bottom=ρE_bc))
+    bcs = (; ρE = FieldBoundaryConditions(bottom=ρE_bc))
     bcs = merge(bcs, NamedTuple{(moisture_density_name,)}((FieldBoundaryConditions(bottom=ρq_bc),)))
-    stress = (; τˣ, τʸ, times, kinematic_stress = FT.(sfc.kinematic_stress), surface_density = ρ₀,
-                frame_velocity = (FT(frame_velocity[1]), FT(frame_velocity[2])))
-    return bcs, stress
+    return (; bcs, energy_flux, vapor_flux, times)
 end
 
 # Horizontal mean of the lowest level as a device-side reduction (`sum` over a GPU array
