@@ -201,24 +201,26 @@ Returns `(boundary_conditions, record)`; `record` names the law and its coeffici
 function bulk_surface_flux_boundary_conditions(grid, surface_temperature; moisture_name, law = :breeze,
                                                roughness_length = 1.5e-4, gustiness = 0.1)
     if law === :breeze
-        make(transfer) = PolynomialCoefficient(; roughness_length)
+        polynomials = (; drag = nothing, sensible = nothing, latent = nothing)   # Breeze fills Large & Yeager
+        minimum_wind_speed = 0.1
         record = (; surface_flux_law = "breeze (Large & Yeager 2009 polynomials, Li et al. 2010 stability)",
-                    gustiness, roughness_length, minimum_wind_speed = 0.1)
+                    gustiness, roughness_length, minimum_wind_speed)
     elseif law === :sam_oceflx
         laws = sam_oceflx_neutral_polynomials()
         polynomials = (; drag = laws.drag, sensible = laws.sensible, latent = laws.latent)
-        make(transfer) = PolynomialCoefficient(; polynomial = polynomials[transfer], roughness_length, minimum_wind_speed = 1.0)
+        minimum_wind_speed = 1.0
         gustiness = 0.0
         record = (; surface_flux_law = "sam_oceflx (Large & Pond drag, fitted 0.0327√cdn Stanton and 0.0346√cdn Dalton, umin = 1 m/s; Breeze log-profile height shift and Li et al. stability instead of SAM's two MO iterations and stable Stanton branch)",
-                    gustiness, roughness_length, minimum_wind_speed = 1.0,
+                    gustiness, roughness_length, minimum_wind_speed,
                     sensible_polynomial = laws.sensible, latent_polynomial = laws.latent, fit_error = laws.fit_error)
     else
         throw(ArgumentError("surface flux law must be :breeze or :sam_oceflx, got $law"))
     end
-    ρu_bc = BulkDrag(; coefficient = make(:drag), gustiness, surface_temperature)
-    ρv_bc = BulkDrag(; coefficient = make(:drag), gustiness, surface_temperature)
-    ρE_bc = BulkSensibleHeatFlux(; coefficient = make(:sensible), gustiness, surface_temperature)
-    ρq_bc = BulkVaporFlux(; coefficient = make(:latent), gustiness, surface_temperature)
+    coefficient(transfer) = PolynomialCoefficient(; polynomial = polynomials[transfer], roughness_length, minimum_wind_speed)
+    ρu_bc = BulkDrag(; coefficient = coefficient(:drag), gustiness, surface_temperature)
+    ρv_bc = BulkDrag(; coefficient = coefficient(:drag), gustiness, surface_temperature)
+    ρE_bc = BulkSensibleHeatFlux(; coefficient = coefficient(:sensible), gustiness, surface_temperature)
+    ρq_bc = BulkVaporFlux(; coefficient = coefficient(:latent), gustiness, surface_temperature)
     moisture_density_name = Symbol("ρ", moisture_name)
     bcs = (; ρu = FieldBoundaryConditions(bottom=ρu_bc),
              ρv = FieldBoundaryConditions(bottom=ρv_bc),
