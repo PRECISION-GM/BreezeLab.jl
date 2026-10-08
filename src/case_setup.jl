@@ -19,7 +19,7 @@ using Oceananigans.Units
 using Oceananigans.Fields: interior
 using Oceananigans.Grids: znodes
 using Breeze
-using Breeze.Microphysics.PredictedParticleProperties: CloudDroplets, AerosolActivation, AerosolMode, has_prognostic_aerosol
+using Breeze.Microphysics.PredictedParticleProperties: CloudDroplets, AerosolActivation, AerosolMode, has_prognostic_aerosol, activated_number
 using CloudMicrophysics: CloudMicrophysics
 using RRTMGP: RRTMGP
 using NCDatasets: NCDatasets
@@ -38,7 +38,8 @@ function epoch_from_day_of_year(day0; year=2017)
 end
 
 """
-    lasso_aerosol_modes(FT; setting=:aer2, reference_density, kwargs...)
+    lasso_aerosol_modes(FT; setting=:aer2, reference_density, maximum_supersaturation=nothing,
+                        mass_fraction_soluble=1, kwargs...)
 
 The two lognormal aerosol modes of the LASSO-ENA spectral-bin configuration converted to
 P3 `AerosolMode`s. LASSO quotes number *concentrations* per cm³:
@@ -55,20 +56,56 @@ initializes its CCN with a constant *mixing ratio* with height
 surface concentration `N` scaled by `ρ(z)/ρ(0)`), so the conversion uses the surface
 reference density: `number_mixing_ratio = 1e6 N / ρ(0)`, uniform in z. The chemistry is
 set explicitly to the HUJI-SBM values (aerosol density 1790 kg m⁻³, molecular weight
-0.115 kg mol⁻¹, van 't Hoff factor 3) rather than P3's implicit defaults, and recorded.
+0.115 kg mol⁻¹, van 't Hoff factor 3, fully soluble: `micro_prm.f90` has no insoluble
+fraction, so Breeze's default `mass_fraction_soluble = 0.9` is overridden) and recorded.
+
+`maximum_supersaturation` emulates the SBM's activation cap (`ss_max = 0.003` in
+`MICRO_HUJISBM/microphysics.f90`: no particle activates at a supersaturation above 0.3 %):
+each mode's number is reduced to the fraction of its particles with critical
+supersaturation below the cap ([`activated_fraction`](@ref)), so the activatable total
+can never exceed the SBM's. Breeze's Morrison–Grabowski activation itself has no cap and
+relaxes the droplet number one way toward the equilibrium count at the *grid-cell*
+supersaturation, which activates the Aitken mode whenever a cell overshoots (see
+`docs/cases/ena_aerosol_audit.md`). The cap is an explicit, provenance-recorded
+approximation (the lognormal shape is kept, the number is scaled), not the SBM.
 """
 function lasso_aerosol_modes(FT=Float64; setting=:aer2, reference_density,
-                             aerosol_density=1790, molecular_weight_aerosol=0.115, vant_hoff_factor=3, kwargs...)
+                             aerosol_density=1790, molecular_weight_aerosol=0.115, vant_hoff_factor=3,
+                             mass_fraction_soluble=1, maximum_supersaturation=nothing, kwargs...)
     N₁, N₂ = setting === :aer1 ? (138.0, 140.5) :
              setting === :aer2 ? (276.0, 281.0) :
              setting === :aer3 ? (552.0, 562.0) :
              throw(ArgumentError("unknown LASSO aerosol setting $setting (aer1, aer2, aer3)"))
-    n₁ = 1e6 * N₁ / reference_density
-    n₂ = 1e6 * N₂ / reference_density
-    chemistry = (; aerosol_density, molecular_weight_aerosol, vant_hoff_factor)
-    mode1 = AerosolMode(FT; number_mixing_ratio=n₁, mean_radius=0.018e-6, geometric_std=1.53, chemistry..., kwargs...)
-    mode2 = AerosolMode(FT; number_mixing_ratio=n₂, mean_radius=0.066e-6, geometric_std=1.78, chemistry..., kwargs...)
-    return (mode1, mode2), (; N₁, N₂, n₁, n₂, reference_density, chemistry...)
+    chemistry = (; aerosol_density, molecular_weight_aerosol, vant_hoff_factor, mass_fraction_soluble)
+    geometry = ((; mean_radius=0.018e-6, geometric_std=1.53), (; mean_radius=0.066e-6, geometric_std=1.78))
+    fractions = isnothing(maximum_supersaturation) ? (1.0, 1.0) :
+        Tuple(activated_fraction(g.mean_radius, g.geometric_std, maximum_supersaturation; chemistry...) for g in geometry)
+    n₁ = fractions[1] * 1e6 * N₁ / reference_density
+    n₂ = fractions[2] * 1e6 * N₂ / reference_density
+    mode1 = AerosolMode(FT; number_mixing_ratio=n₁, geometry[1]..., chemistry..., kwargs...)
+    mode2 = AerosolMode(FT; number_mixing_ratio=n₂, geometry[2]..., chemistry..., kwargs...)
+    record = (; N₁, N₂, n₁, n₂, reference_density, chemistry...,
+                maximum_supersaturation=something(maximum_supersaturation, 0.0),
+                activatable_fraction₁=fractions[1], activatable_fraction₂=fractions[2])
+    return (mode1, mode2), record
+end
+
+"""
+    activated_fraction(mean_radius, geometric_std, S; T=285, aerosol_density=1790,
+                       molecular_weight_aerosol=0.115, vant_hoff_factor=3, mass_fraction_soluble=1,
+                       osmotic_potential=1)
+
+Fraction of a lognormal aerosol mode activated at supersaturation `S` (fraction, not %)
+and temperature `T` in the Morrison & Grabowski (2007) Köhler closure Breeze's P3 uses
+(critical supersaturation of the median particle `s_m = 2 β⁻¹ᐟ² (A/(3 r_m))³ᐟ²`, activated
+fraction `½[1 − erf(2 ln(s_m/S)/(4.242 ln σ_g))]`), evaluated with Breeze's own
+`activated_number` on a unit-number mode so that the two can never disagree.
+"""
+function activated_fraction(mean_radius, geometric_std, S; T=285.0, aerosol_density=1790, molecular_weight_aerosol=0.115,
+                            vant_hoff_factor=3, mass_fraction_soluble=1, osmotic_potential=1)
+    mode = AerosolMode(Float64; number_mixing_ratio=1.0, mean_radius, geometric_std, aerosol_density,
+                       molecular_weight_aerosol, vant_hoff_factor, mass_fraction_soluble, osmotic_potential)
+    return activated_number(mode, AerosolActivation(mode), Float64(T), Float64(S))
 end
 
 one_moment_extension() = Base.get_extension(Breeze, :BreezeCloudMicrophysicsExt)
@@ -165,6 +202,8 @@ Keyword arguments:
 - `sponge = SAMSponge()`, `closure = :smagorinsky_lilly` (built at the run precision) or any Oceananigans closure / `nothing`, `advection_order = 5`
 - `stop_time = 9hours`, `Δt = 1`, `max_Δt = 10`, `cfl = 0.7`
 - `perturbation = InitialPerturbation()`
+- `aerosol_supersaturation_cap = nothing`: with the P3-aer members, scale each LASSO mode to the
+  fraction activatable below this supersaturation (SBM `ss_max = 0.003`); see [`lasso_aerosol_modes`](@ref)
 - `output_dir`, `output_prefix`, `profile_interval = 1hour`, `timeseries_interval = 60`,
   `slice_interval = 10minutes`, `slice_height = 900`
 - `exclude_subsurface_levels = false` (SAM interpolates through below-surface levels)
@@ -207,6 +246,7 @@ function build_case(data_dir;
                               p3_initialization = :condensate_free,
                               initial_droplet_number = nothing,
                               aerosol_replenishment = nothing,
+                              aerosol_supersaturation_cap = nothing,
                               bounded_condensate_advection = nothing,
                               moment_advection = :positive,
                               formulation = :LiquidIcePotentialTemperature,
@@ -272,7 +312,8 @@ function build_case(data_dir;
     ##### Microphysics
     #####
 
-    microphysics_model, microphysics_record = build_microphysics(FT, microphysics; droplet_number, surface_density)
+    aerosol_kwargs = isnothing(aerosol_supersaturation_cap) ? NamedTuple() : (; maximum_supersaturation=aerosol_supersaturation_cap)
+    microphysics_model, microphysics_record = build_microphysics(FT, microphysics; droplet_number, surface_density, aerosol_kwargs)
     moisture_name = Breeze.AtmosphereModels.moisture_specific_name(microphysics_model)
 
     momentum_advection = WENO(order=advection_order)
@@ -520,6 +561,7 @@ function build_case(data_dir;
                 perturbation=string(perturbation), p3_initialization=string(p3_initialization),
                 initial_droplet_number=something(initial_droplet_number, 0),
                 aerosol_replenishment=string(aerosol_replenishment), bounded_condensate_advection,
+                aerosol_supersaturation_cap=something(aerosol_supersaturation_cap, 0.0),
                 sedimentation_thermal_coupling="Breeze (PR 959): falling condensate carries its enthalpy",
                 moment_advection=string(moment_advection), formulation=string(formulation),
                 namelist_latitude=get(namelist, "latitude0", NaN),

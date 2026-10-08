@@ -23,7 +23,7 @@ end
 
 opts = parse_args(ARGS)
 getopt(k, default) = get(opts, k, default)
-allowed = Set(["data", "protocol", "preset", "arch", "float", "seed", "epoch", "member", "dimensions", "microphysics", "Nx", "Ny", "Lx", "Ly", "hours", "radiation", "surface", "nudging", "vertical_advection", "p3_initialization", "aerosol_replenishment", "cfl", "dt", "max_dt", "lasso_grid", "moment_advection", "formulation", "profile_interval", "closure", "slice_interval", "output"])
+allowed = Set(["data", "protocol", "preset", "arch", "float", "seed", "epoch", "member", "dimensions", "microphysics", "Nx", "Ny", "Lx", "Ly", "hours", "radiation", "surface", "nudging", "vertical_advection", "p3_initialization", "aerosol_replenishment", "aerosol_ss_cap", "cfl", "dt", "max_dt", "lasso_grid", "moment_advection", "formulation", "profile_interval", "closure", "slice_interval", "output"])
 unknown = setdiff(Set(keys(opts)), allowed)
 isempty(unknown) || error("unknown options: $(join(sort!(collect(unknown)), ", "))")
 
@@ -60,6 +60,7 @@ haskey(opts, "vertical_advection") && (kw[:vertical_advection] = opts["vertical_
 haskey(opts, "p3_initialization") && (kw[:p3_initialization] = Symbol(opts["p3_initialization"]))
 haskey(opts, "aerosol_replenishment") && (kw[:aerosol_replenishment] = opts["aerosol_replenishment"] == "nothing" ? nothing :
                                           opts["aerosol_replenishment"] == "diagnostic_ccn" ? :diagnostic_ccn : parse(Float64, opts["aerosol_replenishment"]))
+haskey(opts, "aerosol_ss_cap") && (kw[:aerosol_supersaturation_cap] = opts["aerosol_ss_cap"] == "nothing" ? nothing : parse(Float64, opts["aerosol_ss_cap"]))
 haskey(opts, "cfl") && (kw[:cfl] = parse(Float64, opts["cfl"]))
 haskey(opts, "max_dt") && (kw[:max_Δt] = parse(Float64, opts["max_dt"]))
 haskey(opts, "dt") && (kw[:Δt] = parse(Float64, opts["dt"]))
