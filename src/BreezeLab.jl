@@ -50,7 +50,14 @@ export
     # diagnostics
     cloud_liquid, rain_mass_fraction, liquid_water_path, ice_water_path, precipitable_water, total_condensate,
     cloud_fraction, cloud_fraction_profile, total_cloud_fraction_profile,
-    surface_rain_flux, surface_ice_flux, cloud_boundaries, ProgressMessenger
+    surface_rain_flux, surface_ice_flux, cloud_boundaries, ProgressMessenger,
+    # SEA STARR
+    DEPHYDriver, read_dephy_driver, aerosol_number_per_kg, driver_profile_time_series, driver_initial_profile,
+    inversion_height, sea_starr_vertical_faces,
+    KappaAerosolMode, kappa_aerosol_activation, kappa_critical_supersaturation,
+    SurfaceAerosolSource, EvaporationRegeneration, EvaporationRateUpdater, cloud_evaporation_rate_field, aerosol_number_columns,
+    InversionFollowingNudging, InversionMaskUpdater, inversion_height_field, nudging_mask_weights,
+    sea_starr, sea_starr_driver_path
 
 using Oceananigans
 using Oceananigans.Units
@@ -75,5 +82,9 @@ include("arm_observations.jl")
 include("iop_forcing.jl")
 include("dp_scream_output.jl")
 include("tracer_dp_scream.jl")
+include("dephy_driver.jl")
+include("sea_starr_aerosol.jl")
+include("sea_starr_forcings.jl")
+include("sea_starr.jl")
 
 end # module
