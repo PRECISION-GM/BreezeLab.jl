@@ -1,5 +1,7 @@
 # BreezeLab.jl
 
+[Documentation](https://precision-gm.github.io/BreezeLab.jl/)
+
 BreezeLab develops observation-comparable LES cases and differentiable cloud-physics
 workflows with [Breeze.jl](https://github.com/NumericalEarth/Breeze.jl) for PRECISION/GENESIS.
 The first implementation ports the ENA machinery from
