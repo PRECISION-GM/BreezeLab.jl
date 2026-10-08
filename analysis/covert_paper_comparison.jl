@@ -41,7 +41,7 @@ col(f, n) = vec(Array(interior(f[n])))
 in_window(t) = window[1] < t ≤ window[2] + 1    # hourly means ending at 4, 5, 6 h
 function window_profiles(dir)
     file = only(filter(f -> endswith(f, "_profiles.jld2"), readdir(dir; join = true)))
-    names = ["θ", "qᵛ", "qᶜˡ", "qʳ", "cloud_fraction", "w²", "T"]
+    names = ["θ", "qᵛ", "qᶜˡ", "qʳ", "cloud_fraction", "w²", "T", "nᶜˡ", "nᵃ"]
     have(n) = jldopen(f -> haskey(f["timeseries"], n), file)
     fts = Dict(n => FieldTimeSeries(file, n) for n in names if have(n))
     θ = fts["θ"]; z = collect(znodes(θ.grid, Center())); zf = collect(znodes(θ.grid, Face()))
@@ -85,7 +85,7 @@ function nc_estimate(dir, p)
     end
     ρ0 = get(prov, "reference_density", 1.206)
     cloudy = p.cf .> 0.05
-    return (; label = "in-cloud mean (hourly means, 09–12 UTC)", value_cm3 = 1e-6 * ρ0 * mean((p.nᶜˡ ./ max.(p.cf, 1e-6))[cloudy]))
+    return (; label = "in-cloud mean", value_cm3 = 1e-6 * ρ0 * mean((p.nᶜˡ ./ max.(p.cf, 1e-6))[cloudy]))
 end
 
 results = Dict{String, Any}("paper" => Dict(string(k) => v for (k, v) in pairs(PAPER)),
@@ -96,7 +96,7 @@ sections = Any[]
 profiles_to_plot = Any[]
 summary_rows = String[]
 for (i, (label, dir)) in enumerate(runs)
-    isfile(joinpath(dir, "COMPLETE")) || isfile(joinpath(dir, "provenance.toml")) || (println("skipping $label: $dir not found"); continue)
+    isfile(joinpath(dir, "COMPLETE")) || (println("skipping $label: $dir has no COMPLETE marker"); continue)
     stage("$label: profiles")
     p = window_profiles(dir); c = colors[mod1(i, 7)]
     cloudy = p.qᶜˡ .≥ QC_THRESHOLD                       # the paper's definition applied to the mean profile
