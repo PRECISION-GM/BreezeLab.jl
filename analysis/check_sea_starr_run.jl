@@ -75,7 +75,7 @@ if !isnothing(slurm_log) && isfile(slurm_log)
     lines = filter(l -> occursin("iter", l) && occursin("Δt", l), readlines(slurm_log))
     println("progress messages: ", length(lines))
     isempty(lines) || (println(lines[1]); println(lines[end]))
-    Δts = [parse(Float64, m.captures[1]) for l in lines for m in (match(r"Δt = ([0-9.]+) s", l),) if !isnothing(m)]
+    Δts = [parse(Float64, m.captures[1]) * (m.captures[2] == "ms" ? 1e-3 : 1.0) for l in lines for m in (match(r"Δt = ([0-9.]+) (ms|second|s)", l),) if !isnothing(m)]
     isempty(Δts) || @printf("Δt: min %.3f max %.3f s over %d messages\n", minimum(Δts), maximum(Δts), length(Δts))
     walls = [m.captures[1] for l in lines for m in (match(r"wall = ([^|]+)\|", l),) if !isnothing(m)]
     isempty(walls) || println("wall at last message: ", strip(walls[end]))

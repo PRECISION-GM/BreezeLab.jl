@@ -9,8 +9,9 @@
 # `julia data_wrangling/fetch_manifest.jl cases/seastarr/inputs.toml data/seastarr_22241697`,
 # then run `julia --project cases/sea_starr.jl` on an NVIDIA GPU. Settings can be
 # overridden from the environment (`SEA_STARR_HOURS`, `SEA_STARR_NX`, `SEA_STARR_OUTPUT`,
-# `SEA_STARR_DATA`, `SEA_STARR_MEMBER`, `SEA_STARR_CHECKPOINT_HOURS`) so the same script
-# serves the short pilot and the full integration.
+# `SEA_STARR_DATA`, `SEA_STARR_MEMBER`, `SEA_STARR_CHECKPOINT_HOURS`, `SEA_STARR_PICKUP`) so
+# the same script serves the short pilot, the full integration and a restart from the latest
+# checkpoint in the output directory.
 #
 # The physics that the pinned Breeze cannot represent is listed in
 # `case.config.departures` and written to the provenance file: no aerosol optical
@@ -23,7 +24,7 @@ using Oceananigans, Oceananigans.Units
 using Oceananigans.Fields: interior
 using CairoMakie
 using Statistics
-using Dates
+import Dates
 
 # ## Build the simulation
 #
@@ -51,10 +52,13 @@ simulation = case.simulation;
 # writers at 192² × 288 is about 0.45 GB per simulated hour (hourly 3D fields of ten
 # variables dominate; checkpoints are overwritten).
 
+pickup = get(ENV, "SEA_STARR_PICKUP", "false") == "true"
 mkpath(output_dir)
-write_provenance(joinpath(output_dir, "provenance.toml"), case;
-                 extra = (; hostname = gethostname(), started = string(Dates.now())))
-run!(simulation)
+write_provenance(joinpath(output_dir, pickup ? "provenance_restart_$(Dates.format(Dates.now(), "yyyymmddHHMM")).toml" : "provenance.toml"), case;
+                 extra = (; hostname = gethostname(), started = string(Dates.now()), pickup))
+# A restart resumes the prognostic state from the latest checkpoint; the forcing position
+# follows the restored clock and the radiation recomputes at its next scheduled interval.
+run!(simulation; pickup)
 
 # ## Analyze
 #
@@ -68,7 +72,7 @@ ts = prefix * "_timeseries.jld2"
 series(name) = FieldTimeSeries(ts, name)
 cwp = series("cwp"); rwp = series("rwp"); rain = series("rain_flux"); zi = series("zi"); zimax = series("zi_max")
 na = series("nᵃ_column"); nc = series("nᶜˡ_column"); nr = series("nʳ_column"); nt = series("n_total_column")
-t = cwp.times ./ hour
+t = cwp.times ./ 3600
 value(f) = [f[n][1, 1, 1] for n in eachindex(f.times)]
 
 fig = Figure(size = (1000, 1100))
