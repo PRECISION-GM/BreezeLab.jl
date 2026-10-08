@@ -6,10 +6,15 @@
 # paper's cloud definition (qᶜˡ ≥ 0.01 g kg⁻¹); the surface fluxes of the covert protocol
 # are prescribed inputs (SFC_FLX_FXD), so they are read from the `sfc` file. Writes
 # paper_comparison.toml, mean_profiles.png, rain_sections.png and nc_sensitivity.png.
+# All statistics are computed before any Makie object is created: with Makie axes alive in the
+# session, the column loop (`findall(≥(t), view(...))`) stalled for >1 h (reproduced in isolation
+# on the CPU node, 8 Oct 2026); the same loop takes milliseconds when it runs first.
 using BreezeLab, CairoMakie, JLD2, Oceananigans, Statistics, TOML, Dates, Printf
 using Oceananigans.Grids: Center, Face, znodes
 using Oceananigans.Fields: interior
 
+stage(msg) = (println(stderr, "[", Dates.format(Dates.now(), "HH:MM:SS"), "] ", msg); flush(stderr))
+stage("loaded")
 output_dir, sfc_file = ARGS[1], ARGS[2]
 runs = [(split(a, "=", limit=2)[1], split(a, "=", limit=2)[2]) for a in ARGS[3:end]]
 mkpath(output_dir)
@@ -30,6 +35,7 @@ window_mean(ts, values) = begin
     mean(interpolate_profile(ts, values, t) for t in tt)
 end
 shf_in, lhf_in = window_mean(t_sfc, sfc.sensible_heat_flux), window_mean(t_sfc, sfc.latent_heat_flux)
+stage("fluxes done")
 
 col(f, n) = vec(Array(interior(f[n])))
 in_window(t) = window[1] < t ≤ window[2] + 1    # hourly means ending at 4, 5, 6 h
@@ -49,23 +55,27 @@ function window_profiles(dir)
               nᶜˡ = (haskey(fts, "nᶜˡ") ? mean_profile("nᶜˡ") : nothing), section)
 end
 # column-wise ("ARSCL-like") cloud base/top from the hourly x–z slices: per column the lowest/highest
-# cell with qᶜˡ > threshold, averaged over cloudy columns and the window's slice times
-function column_boundaries(dir; threshold = QC_THRESHOLD)
+# cell with qᶜˡ ≥ threshold, averaged over cloudy columns and the window's slice times. The slice
+# arrays are read raw from JLD2 (halo of 5 stripped) with the heights of the profile grid `z`.
+function column_boundaries(dir, z; threshold = QC_THRESHOLD, halo = 5)
     file = only(filter(f -> endswith(f, "_slices.jld2"), readdir(dir; join = true)))
-    q = FieldTimeSeries(file, "qᶜˡ_xz"); z = collect(znodes(q.grid, Center()))
-    bases = Float64[]; tops = Float64[]; cloudy = 0; total = 0
-    for n in eachindex(q.times)
-        in_window(q.times[n]) || continue
-        data = Array(interior(q[n]))[:, 1, :]
-        for i in axes(data, 1)
-            total += 1
-            ks = findall(>(threshold), data[i, :])
-            isempty(ks) && continue
-            cloudy += 1; push!(bases, z[first(ks)]); push!(tops, z[last(ks)])
-        end
+    nz = length(z)
+    # read the window's slices first (no counters inside the closure), then count
+    slices = jldopen(file) do f
+        ts = f["timeseries"]
+        iterations = sort(parse.(Int, filter(!=("serialized"), collect(keys(ts["qᶜˡ_xz"])))))
+        inside = [it for it in iterations if in_window(ts["t/$it"])]
+        [Array{Float64}(ts["qᶜˡ_xz/$it"][halo+1:end-halo, 1, halo+1:halo+nz]) for it in inside]
+    end
+    bases = Float64[]; tops = Float64[]; total = 0
+    for data in slices, i in axes(data, 1)
+        total += 1
+        ks = findall(≥(threshold), view(data, i, :))
+        isempty(ks) && continue
+        push!(bases, z[first(ks)]); push!(tops, z[last(ks)])
     end
     return (; base = isempty(bases) ? NaN : mean(bases), top = isempty(tops) ? NaN : mean(tops),
-              column_cloud_fraction = total == 0 ? NaN : cloudy / total, n_columns = total)
+              column_cloud_fraction = total == 0 ? NaN : length(bases) / total, n_columns = total)
 end
 inversion_height(θ, z) = (dθ = diff(θ) ./ diff(z); k = argmax(dθ); (z[k] + z[k+1]) / 2)
 function nc_estimate(dir, p)
@@ -82,30 +92,25 @@ results = Dict{String, Any}("paper" => Dict(string(k) => v for (k, v) in pairs(P
                             "prescribed_fluxes_W_m2" => Dict("sensible" => shf_in, "latent" => lhf_in, "source" => sfc_file,
                                                              "note" => "SFC_FLX_FXD inputs averaged over 09–12 UTC; the runs save no flux output"))
 colors = Makie.wong_colors()
-fig = Figure(size = (1800, 700), fontsize = 13)
-titles = ("qᶜˡ (g kg⁻¹)", "qᵗ = qᵛ + qᶜˡ (g kg⁻¹)", "θˡ (K)", "qʳ (g kg⁻¹, log)", "w variance (m² s⁻²)")
-axes = [Axis(fig[1, k], title = t, ylabel = k == 1 ? "z (m)" : "", limits = (nothing, (0, 1600)),
-             xscale = (k == 4 ? log10 : identity)) for (k, t) in enumerate(titles)]
-for ax in axes
-    hlines!(ax, [PAPER.cloud_base, PAPER.cloud_top]; color = :black, linestyle = :dot)
-    hlines!(ax, [PAPER.inversion]; color = :black, linestyle = :dash)
-end
-vlines!(axes[1], [PAPER.peak_lwc_gkg]; color = :black, linestyle = :dot)
-vlines!(axes[2], [PAPER.mixed_layer_qt]; color = :black, linestyle = :dot); vlines!(axes[3], [PAPER.mixed_layer_theta_l]; color = :black, linestyle = :dot)
 sections = Any[]
+profiles_to_plot = Any[]
 summary_rows = String[]
 for (i, (label, dir)) in enumerate(runs)
     isfile(joinpath(dir, "COMPLETE")) || isfile(joinpath(dir, "provenance.toml")) || (println("skipping $label: $dir not found"); continue)
+    stage("$label: profiles")
     p = window_profiles(dir); c = colors[mod1(i, 7)]
     cloudy = p.qᶜˡ .≥ QC_THRESHOLD                       # the paper's definition applied to the mean profile
     base = any(cloudy) ? p.z[findfirst(cloudy)] : NaN; top = any(cloudy) ? p.z[findlast(cloudy)] : NaN
-    cb = column_boundaries(dir)
+    stage("$label: columns")
+    cb = column_boundaries(dir, p.z)
+    stage("$label: inversion")
     zi = inversion_height(p.θ, p.z)
     kpeak = argmax(p.qᶜˡ)
     nc = nc_estimate(dir, p)
     qt = 1e3 .* (p.qᵛ .+ p.qᶜˡ)
     θl = p.θ   # the saved θ is Breeze's liquid-ice potential temperature (θˡⁱ), SAM's θl analogue
     # rain: window-mean profile, its maximum, and the rain water path series
+    stage("$label: time series")
     tsf = only(filter(f -> endswith(f, "_timeseries.jld2"), readdir(dir; join = true)))
     rwp = FieldTimeSeries(tsf, "rwp"); rain = FieldTimeSeries(tsf, "rain_flux")
     rwp_series = [1e3 * Array(interior(rwp[n]))[1] for n in eachindex(rwp.times)]
@@ -122,19 +127,34 @@ for (i, (label, dir)) in enumerate(runs)
              "rwp_g_m2_window_mean" => mean(rwp_series[win]), "rwp_g_m2_max" => maximum(rwp_series),
              "rain_mm_hr_window_mean" => mean(rain_series[win]), "rain_mm_hr_max" => maximum(rain_series))
     results[label] = r
-    lines!(axes[1], 1e3 .* p.qᶜˡ, p.z; color = c, label = label)
-    lines!(axes[2], qt, p.z; color = c); lines!(axes[3], θl, p.z; color = c)
-    lines!(axes[4], max.(1e3 .* p.qʳ, 1e-7), p.z; color = c)
-    lines!(axes[5], p.w², p.zf; color = c)
+    push!(profiles_to_plot, (; label, color = c, p.z, p.zf, qc = 1e3 .* p.qᶜˡ, qt, θl, qr = max.(1e3 .* p.qʳ, 1e-7), w2 = p.w²))
     push!(sections, (; label, color = c, p.section, z = p.z, rwp_hours = rwp.times ./ 3600, rwp = rwp_series))
     push!(summary_rows, @sprintf("%-22s base %4.0f/%4.0f top %4.0f/%4.0f (profile/columns) zi %4.0f peakLWC %.2f g/kg @%4.0f m  Nc %5.0f cm⁻³ (%s)  w²max %.3f  qr max %.2e g/kg @%4.0f m  RWP %.2f g/m²  rain %.4f mm/hr",
                                  label, base, cb.base, top, cb.top, zi, 1e3 * p.qᶜˡ[kpeak], p.z[kpeak], nc.value_cm3, nc.label[1:min(end, 9)], maximum(p.w²),
                                  1e3 * p.qʳ[kr], p.z[kr], mean(rwp_series[win]), mean(rain_series[win])))
 end
+stage("profile figure")
+fig = Figure(size = (1800, 700), fontsize = 13)
+titles = ("qᶜˡ (g kg⁻¹)", "qᵗ = qᵛ + qᶜˡ (g kg⁻¹)", "θˡ (K)", "qʳ (g kg⁻¹, log)", "w variance (m² s⁻²)")
+axes = [Axis(fig[1, k], title = t, ylabel = k == 1 ? "z (m)" : "", limits = (nothing, (0, 1600)),
+             xscale = (k == 4 ? log10 : identity)) for (k, t) in enumerate(titles)]
+for ax in axes
+    hlines!(ax, [PAPER.cloud_base, PAPER.cloud_top]; color = :black, linestyle = :dot)
+    hlines!(ax, [PAPER.inversion]; color = :black, linestyle = :dash)
+end
+vlines!(axes[1], [PAPER.peak_lwc_gkg]; color = :black, linestyle = :dot)
+vlines!(axes[2], [PAPER.mixed_layer_qt]; color = :black, linestyle = :dot); vlines!(axes[3], [PAPER.mixed_layer_theta_l]; color = :black, linestyle = :dot)
+for q in profiles_to_plot
+    lines!(axes[1], q.qc, q.z; color = q.color, label = q.label)
+    lines!(axes[2], q.qt, q.z; color = q.color); lines!(axes[3], q.θl, q.z; color = q.color)
+    lines!(axes[4], q.qr, q.z; color = q.color)
+    lines!(axes[5], q.w2, q.zf; color = q.color)
+end
 axislegend(axes[1], position = :rt, labelsize = 9)
 Label(fig[0, :], "ENA-covert runs, 09–12 UTC means, vs Covert et al. (2022) stated values (dotted: cloud base 821 m / top 1109 m, peak LWC 0.5 g kg⁻¹, mixed-layer qᵗ 11.2 g kg⁻¹ and θˡ 292.2 K; dashed: inversion 1132.5 m)", fontsize = 13, tellwidth = false)
 save(joinpath(output_dir, "mean_profiles.png"), fig; px_per_unit = 2)
 
+stage("rain sections")
 # rain mass fraction time–height sections (hourly-mean profiles, the run's saved cadence) with the RWP series, one row per member
 nsec = length(sections)
 fs = Figure(size = (1800, 320 * nsec + 80), fontsize = 13)
@@ -151,6 +171,7 @@ colsize!(fs.layout, 1, Relative(0.62))
 Label(fs[0, :], "Rain in the ENA-covert runs (shared log scale); the paper's Fig. 6 shows instantaneous x–z sections of qc and qr, with drizzle described in the text (see docs)", fontsize = 13, tellwidth = false)
 save(joinpath(output_dir, "rain_sections.png"), fs; px_per_unit = 2)
 
+stage("nc sensitivity")
 # Nc sensitivity across the P3 members (prescribed or diagnosed in-cloud Nc)
 pts = [(results[l]["nc_cm3"], results[l]["cloud_base_m_profile"], results[l]["cloud_top_m_profile"], l) for (l, _) in runs if haskey(results, l) && isfinite(results[l]["nc_cm3"])]
 if length(pts) ≥ 2
