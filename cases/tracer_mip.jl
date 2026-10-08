@@ -90,15 +90,17 @@ inner_extent = tracer_mip_horizontal_extent(tracer_mip_protocol(), :inner)
 i_range = max(1, searchsortedfirst(λc, inner_extent.longitude[1]) - inner_halo):min(Nx, searchsortedlast(λc, inner_extent.longitude[2]) + inner_halo)
 j_range = max(1, searchsortedfirst(φc, inner_extent.latitude[1]) - inner_halo):min(Ny, searchsortedlast(φc, inner_extent.latitude[2]) + inner_halo)
 inner_dir = joinpath(output_dir, "inner_region"); mkpath(inner_dir)
+# velocities moved to cell centers so the saved window has the same (i, j) extent for every field
 inner_state = (; T = child.temperature, p = Breeze.AtmosphereModels.dynamics_pressure(child.dynamics), qᵛ = μ.qᵛ,
-                 qᶜˡ = μ.qᶜˡ, qʳ = μ.qʳ, qⁱ = μ.qⁱ, u, v, w, ρ = child.dynamics.total_density)
+                 qᶜˡ = μ.qᶜˡ, qʳ = μ.qʳ, qⁱ = μ.qⁱ, u = @at((Center, Center, Center), u), v = @at((Center, Center, Center), v),
+                 w = @at((Center, Center, Center), w), ρ = child.dynamics.total_density)
 simulation.output_writers[:inner_region] = JLD2Writer(child, inner_state; schedule = TimeInterval(inner_interval),
                                                       indices = (i_range, j_range, :),
                                                       filename = joinpath(inner_dir, "inner_region_state.jld2"), overwrite_files = true)
 open(joinpath(inner_dir, "README.txt"), "w") do io
     println(io, "Outer-domain state saved on the inner nest region every $(prettytime(inner_interval)) for the offline one-way nest.")
     println(io, "Outer cell index ranges: i = $(i_range), j = $(j_range) (inner extent plus $(inner_halo) outer cells); all 94 levels.")
-    println(io, "Fields: T (K), p (Pa), qᵛ qᶜˡ qʳ qⁱ (kg/kg), u v w (m/s), ρ (kg/m³) on the outer terrain-following lat-lon grid.")
+    println(io, "Fields: T (K), p (Pa), qᵛ qᶜˡ qʳ qⁱ (kg/kg), u v w (m/s, cell centers), ρ (kg/m³) on the outer terrain-following lat-lon grid.")
 end
 
 k_aloft = searchsortedfirst(Array(znodes(child.grid, Center())), 2000)
