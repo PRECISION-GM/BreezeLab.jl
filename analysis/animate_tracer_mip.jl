@@ -138,7 +138,7 @@ function plan_view(; zoom = false)
     Colorbar(fig[1, 2], hm1)
     if zoom
         hm2 = heatmap!(ax2, xs, ys, B; colormap = :dense, colorrange = (0, 800))
-        contour!(ax2, xs, ys, C; levels = [1, 5, 20], color = [:orange, :red, :darkred], linewidth = 1)
+        contour!(ax2, xs, ys, C; levels = [1, 5, 20], colormap = :OrRd, colorrange = (0, 20), linewidth = 1)
     else
         hm2 = heatmap!(ax2, xs, ys, B; colormap = Reverse(:Blues), colorrange = (0, 20), lowclip = :white)
         contour!(ax2, xs, ys, C; levels = [0.05, 0.5], color = :grey40, linewidth = 0.6)
