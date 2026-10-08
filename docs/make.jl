@@ -94,6 +94,7 @@ for script in ("ena_lasso.jl", "sea_starr.jl", "tracer_dp_scream.jl", "tracer_mi
     Literate.markdown(joinpath(dirname(@__DIR__), "cases", script), generated;
                      name=replace(script, ".jl" => "_script"),
                      flavor=Literate.DocumenterFlavor(), execute=false,
+                     codefence="```julia" => "```",   # plain fences: Documenter must not execute these
                      preprocess=content -> content * """
 
 # !!! note "Rendered, not executed"
