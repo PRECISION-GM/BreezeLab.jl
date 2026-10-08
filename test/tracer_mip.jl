@@ -64,8 +64,8 @@ end
     @testset "units and surface values" begin
         n₀ = surface_number_mixing_ratios(aug)
         @test n₀[1] ≈ 1425e6 / 1.159 && n₀[2] ≈ 263e6 / 1.159     # kg⁻¹
-        @test 1e-6 .* n₀ ≈ (1229.5, 226.9) atol = 0.06              # mg⁻¹, Table 3 / notebook
-        @test 1e-6 .* surface_number_mixing_ratios(jun) ≈ (2970.7, 458.2) atol = 0.06
+        @test collect(1e-6 .* n₀) ≈ [1229.5, 226.9] atol = 0.06       # mg⁻¹, Table 3 / notebook
+        @test collect(1e-6 .* surface_number_mixing_ratios(jun)) ≈ [2970.7, 458.2] atol = 0.06
         @test aerosol_shape(aug, 0.0) == 1
         @test aug.modes[1].median_diameter ≈ 49e-9 && aug.modes[2].sigma == 1.4
         @test jun.modes[1].sigma == 1.5 && jun.modes[2].median_diameter ≈ 136e-9
@@ -96,7 +96,7 @@ end
             r = n₀ ./ sum(n₀)
             for z in (0.0, 500.0, 2000.0, 4500.0, 6001.0, 12000.0)
                 n = mode_number_mixing_ratios(profile, z)
-                @test n ./ sum(n) ≈ r                                   # modal ratio preserved everywhere
+                @test collect(n ./ sum(n)) ≈ collect(r)                 # modal ratio preserved everywhere
                 @test total_number_mixing_ratio(profile, z) ≥ 50e6 - 1e-6  # 50 mg⁻¹ total floor
             end
             @test total_number_mixing_ratio(profile, 6001.0) ≈ 50e6
@@ -111,7 +111,7 @@ end
 
     @testset "sensitivity multipliers" begin
         high = tracer_mip_aerosol_profile(:aug07; multiplier = 3)
-        @test surface_number_mixing_ratios(high) == 3 .* surface_number_mixing_ratios(aug)
+        @test collect(surface_number_mixing_ratios(high)) ≈ 3 .* collect(surface_number_mixing_ratios(aug))
         @test total_number_mixing_ratio(high, 10000.0) ≈ 50e6                  # floor not scaled by default
         scaled = tracer_mip_aerosol_profile(:aug07; multiplier = 3, scale_floor = true)
         @test total_number_mixing_ratio(scaled, 10000.0) ≈ 150e6

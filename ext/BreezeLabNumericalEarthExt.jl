@@ -43,7 +43,9 @@ function __init__()
     # it works regardless of extension load order and is never baked into a precompile image.
     AM = Breeze.AtmosphereModels
     if !isdefined(AM, :surface_precipitation_flux)
+        # NumericalEarth probes `applicable(f, model, microphysics)` and then calls `f(model)`: provide both forms.
         Core.eval(AM, :(surface_precipitation_flux(model, microphysics) = $(surface_precipitation_flux_shim)(model, microphysics)))
+        Core.eval(AM, :(surface_precipitation_flux(model) = $(surface_precipitation_flux_shim)(model, model.microphysics)))
     end
     return nothing
 end
