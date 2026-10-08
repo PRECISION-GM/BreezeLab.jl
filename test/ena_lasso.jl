@@ -100,6 +100,8 @@ end
     @test s.radiation_interval == 60.0 && s.wind_nudging_timescale == 7200.0
     @test s.surface == :bulk_sst && s.radiation == :rrtmgp && s.vertical_advection == :full_field
     @test s.surface_emissivity == 0.95 && s.liquid_effective_radius == 14e-6
+    @test s.surface_flux_law == :sam_oceflx && s.aerosol_supersaturation_cap == 0.003 && isnothing(s.coriolis_parameter)
+    @test isempty(bundle.readme)
     @test s.microphysics == :p3_aer2 && s.aerosol_replenishment == :diagnostic_ccn
     @test s.perturbation.sam_perturb_type == 5 && s.translation_velocity == (0.0, 0.0)
     @test s.upper_boundary_relaxation && s.sponge isa SAMSponge
@@ -139,7 +141,6 @@ end
                                ("perturb_type = 5" => "perturb_type = 2", "perturb_type = 2"),
                                ("READ_IN_GEOSTROPHIC_WIND = .true." => "READ_IN_GEOSTROPHIC_WIND = .false.", "ug/vg columns"),
                                ("nrad = 30" => "nrad = 30, nudging_uv_z1 = 500.", "nudging_uv_z1"),
-                               ("nrad = 30" => "nrad = 30, fcor = 1.0e-4", "fcor"),
                                ("nrad = 30" => "nrad = 30, nxco2 = 2", "nxco2"),
                                ("nrestart = 0" => "nrestart = 1", "nrestart"),
                                ("nrad = 30" => "nrad = 30, doperpetual = .true.", "doperpetual"),
@@ -150,6 +151,19 @@ end
             text = problem_text(dir; dimensions=LASSO_DIMS)
             @test occursin(needle, text)
         end
+        # the official members compute per-column fluxes and carry fcor: both accepted, both recorded
+        rewrite_prm(dir, "UNIFORM_SFC_FLX = .true." => "UNIFORM_SFC_FLX = .false.", "nrad = 30" => "nrad = 30, fcor = 9.19626e-05")
+        bpc = inspect_lasso_bundle(dir; dimensions=LASSO_DIMS)
+        @test isempty(bpc.problems) && bpc.settings.coriolis_parameter == 9.19626e-5 && !bpc.switches.uniform_sfc_flx
+        @test any(occursin("per column", w) for w in bpc.warnings) && any(occursin("fcor = 9.19626e-5 is used", w) for w in bpc.warnings)
+        rewrite_prm(dir, "nrad = 30" => "nrad = 30, fcor = 9.17e-05")       # within 0.1 % of the latitude value: no deviation warning
+        @test !any(occursin("fcor", w) for w in inspect_lasso_bundle(dir; dimensions=LASSO_DIMS).warnings)
+        rewrite_prm(dir, "nrad = 30" => "nrad = 30, fcor = -999.")          # SAM's sentinel: derive from latitude
+        @test isnothing(inspect_lasso_bundle(dir; dimensions=LASSO_DIMS).settings.coriolis_parameter)
+        mkpath(joinpath(dir, "extra"))
+        write(joinpath(dir, "extra", "README_LASSO-ENA.txt"), "sim_name: x\nmodel_type: SAM v6.10.3 plus LASSO modifications\nmodel_source_git_hash: f83adf58\n")
+        @test inspect_lasso_bundle(dir; dimensions=LASSO_DIMS).readme["model_source_git_hash"] == "f83adf58"
+        rm(joinpath(dir, "extra"); recursive=true)
         rewrite_prm(dir, "perturb_type = 5," => "")          # absent → SAM case 0, supported
         b0 = inspect_lasso_bundle(dir; dimensions=LASSO_DIMS)
         @test isempty(b0.problems) && b0.settings.perturbation.sam_perturb_type == 0
@@ -208,6 +222,10 @@ end
     zc = Array(znodes(grid, Center()))
     @test case.config.Δt_initial == 2.0 && case.config.max_Δt == 2.0 && case.simulation.stop_time == 4.0
     @test case.config.surface == "bulk_sst" && case.config.wind_nudging_timescale == 7200
+    @test startswith(case.config.surface_flux_law, "sam_oceflx") && case.config.coriolis_parameter_source == "4π/86400 sin(latitude)"
+    @test case.config.coriolis_parameter ≈ 4π / 86400 * sind(39.0916) rtol=1e-6
+    @test case.config.minimum_wind_speed == 1.0 && case.config.gustiness == 0.0 && case.config.fit_error < 0.02
+    @test case.model.velocities.u.boundary_conditions.bottom.condition.coefficient.minimum_wind_speed == 1.0
     @test case.config.surface_emissivity == 0.95 && case.config.liquid_effective_radius == 14e-6
     @test case.protocol_member == LASSO_MEMBER && occursin("member $LASSO_MEMBER", case.config.label)
     @test case.bundle.member.aerosol == "aer2"
@@ -275,6 +293,13 @@ end
         @test any(occursin("diagCCN", w) for w in record["bundle"]["warnings"])
     end
 
+    # a namelist fcor becomes the f-plane parameter
+    mktempdir() do dir
+        lasso_copy(dir)
+        rewrite_prm(dir, "nrad = 30" => "nrad = 30, fcor = 9.19626e-05")
+        withf = ena_simulation(dir; common..., stop_time=2.0)
+        @test withf.model.coriolis.f ≈ 9.19626e-5 && withf.config.coriolis_parameter_source == "namelist fcor"
+    end
     # a namelist translation frame is recorded but not applied with bulk fluxes (ground-relative winds)
     mktempdir() do dir
         lasso_copy(dir)
@@ -308,6 +333,29 @@ end
     @test case.model.radiation.solar_position.epoch == LASSO_EPOCH
     Oceananigans.TimeSteppers.update_state!(case.model)
     @test all(isfinite, interior(case.model.radiation.flux_divergence))
+end
+
+@testset "SAM oceflx surface law" begin
+    laws = sam_oceflx_neutral_polynomials()
+    cdn(U) = 0.0027 / U + 0.000142 + 0.0000764 * U
+    @test laws.drag == (0.000142, 0.0000764, 0.0027) && laws.fit_error < 0.02
+    ev(p, U) = p[1] + p[2] * U + p[3] / U
+    for U in (1.0, 3.0, 7.0, 12.0, 20.0)
+        @test ev(laws.sensible, U) ≈ 0.0327 * sqrt(cdn(U)) rtol=0.02
+        @test ev(laws.latent, U) ≈ 0.0346 * sqrt(cdn(U)) rtol=0.02
+    end
+    # SAM's scalar coefficients are ~10 % above Breeze's Large & Yeager defaults at 7 m/s
+    @test ev(laws.sensible, 7.0) > ev((1.28e-4, 6.8e-5, 2.43e-3), 7.0) * 1.05
+    grid = test_grid(; Nz=8, Lz=400)
+    Tₛ = Field{Center, Center, Nothing}(grid); set!(Tₛ, 295.0)
+    bcs, record = bulk_surface_flux_boundary_conditions(grid, Tₛ; moisture_name=:qᵛ, law=:sam_oceflx)
+    @test record.minimum_wind_speed == 1.0 && record.gustiness == 0.0 && startswith(record.surface_flux_law, "sam_oceflx")
+    @test bcs.ρE.bottom.condition.coefficient.polynomial == laws.sensible
+    @test bcs.ρqᵛ.bottom.condition.coefficient.polynomial == laws.latent
+    @test bcs.ρu.bottom.condition.coefficient.polynomial == laws.drag
+    bcs_b, record_b = bulk_surface_flux_boundary_conditions(grid, Tₛ; moisture_name=:qᵛ)
+    @test record_b.gustiness == 0.1 && isnothing(bcs_b.ρE.bottom.condition.coefficient.polynomial)
+    @test_throws ArgumentError bulk_surface_flux_boundary_conditions(grid, Tₛ; moisture_name=:qᵛ, law=:other)
 end
 
 @testset "ena_lasso constructor wrapper" begin

@@ -12,6 +12,7 @@ mkpath(output_dir)
 julia = Base.julia_cmd()
 for (label, dir) in runs
     out = joinpath(output_dir, "comparison_$label")
+    isfile(joinpath(out, "comparison.toml")) && continue
     run(`$julia --startup-file=no --project=$(dirname(dirname(pathof(BreezeLab)))) $(joinpath(dirname(dirname(pathof(BreezeLab))), "analysis", "compare_ena_observations.jl")) $dir $obs_dir $out`)
 end
 
@@ -56,10 +57,8 @@ save(joinpath(output_dir, "timeseries_all_runs.png"), fig; px_per_unit=2)
 # profiles at the last hourly mean (and the first) for θ, qᵗ, qᶜˡ, nᶜˡ, nᵃ
 function prof(dir, name)
     file = only(filter(f -> endswith(f, "_profiles.jld2"), readdir(dir; join=true)))
-    jldopen(file) do f
-        haskey(f["timeseries"], name) || return nothing
-    end
-    return FieldTimeSeries(file, name)
+    present = jldopen(f -> haskey(f["timeseries"], name), file)
+    return present ? FieldTimeSeries(file, name) : nothing
 end
 col(f) = vec(Array(interior(f)))
 fp = Figure(size=(1600, 900), fontsize=13)
@@ -68,7 +67,7 @@ for (i, (label, dir)) in enumerate(runs)
     c = colors[mod1(i, 7)]
     θ = prof(dir, "θ"); qv = prof(dir, "qᵛ"); qc = prof(dir, "qᶜˡ"); cf = prof(dir, "cloud_fraction"); nc = prof(dir, "nᶜˡ"); na = prof(dir, "nᵃ")
     z = collect(znodes(θ.grid, Center()))
-    ρ0 = TOML.parsefile(joinpath(dir, "provenance.toml"))["config"]["reference_density"]
+    ρ0 = get(TOML.parsefile(joinpath(dir, "provenance.toml"))["config"], "reference_density", 1.206)   # only P3-aer runs record it; 1.206 is the ENA surface value
     for (n, ls) in ((1, :dot), (length(θ.times), :solid))
         lines!(axes[1], col(θ[n]), z; color=c, linestyle=ls, label=(ls == :solid ? label : nothing))
         lines!(axes[2], 1e3 .* (col(qv[n]) .+ col(qc[n])), z; color=c, linestyle=ls)

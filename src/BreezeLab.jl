@@ -25,7 +25,7 @@ export
     upper_boundary_relaxation_forcings, UpperBoundaryEnergyRelaxation, UpperBoundaryMoistureRelaxation, SoundingTargetProfiles,
     SimpleLongwaveRadiation,
     # surface
-    prescribed_surface_flux_boundary_conditions, bulk_surface_flux_boundary_conditions,
+    prescribed_surface_flux_boundary_conditions, bulk_surface_flux_boundary_conditions, sam_oceflx_neutral_polynomials,
     PrescribedStressUpdater, prescribed_stress_updater,
     SeaSurfaceTemperatureUpdater,
     # initial state

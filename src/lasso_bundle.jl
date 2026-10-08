@@ -244,7 +244,6 @@ function inspect_lasso_bundle(directory; member=nothing, dimensions=nothing, epo
         ("cem", false, false, "CEM mode computes local per-column fluxes (surface.f90)"),
         ("sfc_flx_fxd", false, false, "the LASSO flxsst protocol computes H/LE online; prescribed fluxes are the Covert protocol"),
         ("sfc_tau_fxd", false, false, "stress must come from oceflx (SFC_TAU_FXD = .true. would read tau from sfc)"),
-        ("uniform_sfc_flx", true, true, "per-column fluxes (UNIFORM_SFC_FLX = .false.) are not the uniform-flux LES branch the adapter implements"),
         ("dolargescale", true, false, "the lsf forcing must be active"),
         ("dosfcforcing", true, false, "the sfc SST series must be active"),
         ("donudging_uv", true, false, "wind nudging to uls/vls is part of the protocol (nudging.f90)"),
@@ -296,6 +295,7 @@ function inspect_lasso_bundle(directory; member=nothing, dimensions=nothing, epo
     perturb_type = Int(getnml("perturb_type", 0))
     perturb_type in (0, 5) ||
         push!(problems, "prm perturb_type = $perturb_type: only setperturb.f90 cases 0 (±0.02 K × (6-k) in the five lowest levels) and 5 (±0.1 K, ±0.025 g/kg below 600 m) are implemented")
+    uniform_sfc_flx = Bool(getnml("uniform_sfc_flx", true))
     nudging_z1 = Float64(getnml("nudging_uv_z1", -1.0))
     nudging_z2 = Float64(getnml("nudging_uv_z2", 1.0e6))
     fcor = Float64(getnml("fcor", -999.0))
@@ -352,10 +352,14 @@ function inspect_lasso_bundle(directory; member=nothing, dimensions=nothing, epo
     stop_time = nstop * dt
     day_end = day0 + stop_time / 86400
 
+    # setgrid.f90 keeps a namelist fcor as is; only fcor = -999 is replaced by 4π/86400 sin φ.
+    coriolis_parameter = nothing
     if fcor != -999.0
         expected_f = 4π / 86400 * sind(latitude)
+        isfinite(fcor) || push!(problems, "prm fcor = $fcor is not finite")
+        coriolis_parameter = fcor
         isapprox(fcor, expected_f; rtol=1e-3) ||
-            push!(problems, "prm fcor = $fcor differs from 4π/86400 sin(latitude0) = $expected_f; a Coriolis parameter detached from the latitude is not supported")
+            push!(warnings, "prm fcor = $fcor is used as the Coriolis parameter (SAM uses it directly); 4π/86400 sin(latitude0) would be $(round(expected_f; sigdigits=6))")
     end
 
     # --- vertical grid (setgrid.f90) ------------------------------------------------------
@@ -441,6 +445,10 @@ function inspect_lasso_bundle(directory; member=nothing, dimensions=nothing, epo
     # --- deliberate differences recorded as warnings -------------------------------------
     push!(warnings, "SAM SGS: " * (dosmagor ? "SGS_TKE with dosmagor = .true. (diagnostic Smagorinsky)" : "SGS_TKE prognostic 1.5-order TKE") *
                     "; Breeze uses Smagorinsky–Lilly")
+    push!(warnings, uniform_sfc_flx ?
+          "UNIFORM_SFC_FLX = .true.: SAM computes one domain-mean oceflx flux per step; Breeze's bulk fluxes are per column (departure recorded)" :
+          "UNIFORM_SFC_FLX = .false.: SAM computes oceflx per column (surface.f90 CEM branch), as Breeze does; the adapter uses the sam_oceflx law (Large & Pond drag, fitted Stanton/Dalton, umin = 1 m/s) with Breeze's log-profile shift and Li et al. stability instead of SAM's two Monin–Obukhov iterations and stable Stanton branch")
+    push!(warnings, "aerosol activation: Breeze's Morrison–Grabowski scheme has no supersaturation cap; the adapter scales the LASSO modes to the fraction activatable below the SBM ss_max = 0.3 % (aerosol_supersaturation_cap = 0.003, recorded)")
     push!(warnings, compute_reffc ?
           "compute_reffc = .true.: SAM diagnoses the liquid effective radius from the SBM spectrum (2.5–60 μm); Breeze prescribes a constant radius" :
           "compute_reffc = .false.: SAM's RRTMG uses computeRe_Liquid = 14 μm over ocean; the adapter prescribes 14 μm")
@@ -467,13 +475,17 @@ function inspect_lasso_bundle(directory; member=nothing, dimensions=nothing, epo
            surface_emissivity = 0.95,                       # RAD_RRTM/rad.f90: surfaceEmissivity = 0.95
            liquid_effective_radius = compute_reffc ? 10e-6 : 14e-6,   # cam_rad_parameterizations: rliqocean = 14 μm
            wind_nudging_timescale = tauls,
+           surface_flux_law = :sam_oceflx,
+           coriolis_parameter,
+           aerosol_supersaturation_cap = 0.003,              # HUJI-SBM ss_max (microphysics.f90)
            vertical_advection = :full_field,
            upper_boundary_relaxation = Bool(getnml("doupperbound", false)),
            sponge = Bool(getnml("dodamping", false)) ? SAMSponge() : nothing,
            aerosol_replenishment = :diagnostic_ccn,
            perturbation = InitialPerturbation(; sam_perturb_type = perturb_type))
 
-    switches = (; dosmagor, compute_reffc, compute_reffi, doseasons, perturb_type, timelargescale, nxco2,
+    readme = read_bundle_readme(directory)
+    switches = (; dosmagor, compute_reffc, compute_reffi, doseasons, perturb_type, timelargescale, nxco2, uniform_sfc_flx,
                   read_in_geostrophic_wind = read_geostrophic, nudging_uv_z1 = nudging_z1, nudging_uv_z2 = nudging_z2,
                   doupperbound = Bool(getnml("doupperbound", false)), dodamping = Bool(getnml("dodamping", false)),
                   sam_translation = (ug, vg), fcor)
@@ -481,7 +493,28 @@ function inspect_lasso_bundle(directory; member=nothing, dimensions=nothing, epo
               snd_days, lsf_days, sfc_days, snd_records = length(soundings), lsf_records = length(lsf), sfc_samples = length(sfc.day))
 
     return (; directory = abspath(directory), member, files, checksums, namelist = nml, groups, grid, time, switches,
-              dimension_source, problems, warnings, settings)
+              readme, dimension_source, problems, warnings, settings)
+end
+
+"""
+    read_bundle_readme(directory)
+
+The `key: value` metadata of the bundle's `README_LASSO-ENA.txt` (staged under `extra/`),
+e.g. `model_type`, `model_source_git_hash`, `stagesam_ena_git_hash`, as a `Dict`; empty when
+absent. The git hash recorded there is the SAM revision that produced the member, which
+may differ from the public reference commit the adapter was audited against.
+"""
+function read_bundle_readme(directory)
+    record = Dict{String, String}()
+    for candidate in (joinpath(directory, "extra", "README_LASSO-ENA.txt"), joinpath(directory, "README_LASSO-ENA.txt"))
+        isfile(candidate) || continue
+        for line in eachline(candidate)
+            m = match(r"^\s*([A-Za-z0-9_\-]+):\s*(.+?)\s*$", line)
+            isnothing(m) || (record[m.captures[1]] = m.captures[2])
+        end
+        break
+    end
+    return record
 end
 
 function lasso_label(member, dimension_source, ug, vg)
@@ -522,5 +555,5 @@ function lasso_bundle_record(bundle)
               grid = isnothing(grid) ? "invalid" :
                      (; Nz = length(grid.levels), first_level = grid.first_level, top_level = grid.top_level, top_face = grid.top_face,
                         uniform_spacing = grid.uniform_spacing, extrapolated_levels = grid.extrapolated, max_level_offset = grid.max_level_offset),
-              time = bundle.time, switches = bundle.switches, warnings = bundle.warnings)
+              time = bundle.time, switches = bundle.switches, readme = bundle.readme, warnings = bundle.warnings)
 end

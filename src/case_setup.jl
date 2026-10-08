@@ -195,7 +195,9 @@ Keyword arguments:
 - `radiation`: `:rrtmgp` (all-sky LW+SW, production), `:simple` (LASSO SAM rad_simple, Covert-era
   legacy control), `:dycoms` (Stevens et al. 2005 form), or `nothing`
 - `radiation_interval = 60` s, `liquid_effective_radius = 10e-6`, `ice_effective_radius = 30e-6`
-- `surface`: `:prescribed_fluxes` (SFC_FLX_FXD, Covert) or `:bulk_sst` (LASSO flxsst)
+- `surface`: `:prescribed_fluxes` (SFC_FLX_FXD, Covert) or `:bulk_sst` (LASSO flxsst), with
+  `surface_flux_law = :breeze` or `:sam_oceflx` (see [`bulk_surface_flux_boundary_conditions`](@ref))
+- `coriolis_parameter = nothing`: the f-plane parameter; `nothing` derives it from `latitude`
 - `wind_nudging_timescale = 7200` (LASSO n0), `nothing` to disable
 - `vertical_advection`: `:full_field` (SAM subsidence.f90), `:mean_profile` (Breeze
   `SubsidenceForcing`), or `nothing`
@@ -229,6 +231,8 @@ function build_case(data_dir;
                               surface_emissivity = 0.98,
                               background_atmosphere = BackgroundAtmosphere(CO₂ = 405e-6, CH₄ = 1.85e-6, N₂O = 330e-9),
                               surface = :prescribed_fluxes,
+                              surface_flux_law = :breeze,
+                              coriolis_parameter = nothing,
                               wind_nudging_timescale = 7200,
                               translation_velocity = (0.0, 0.0),
                               vertical_advection = :full_field,
@@ -301,7 +305,9 @@ function build_case(data_dir;
                                      potential_temperature = z -> profiles(:θ, z),
                                      vapor_mass_fraction = z -> profiles(:qᵗ, z))
     dynamics = AnelasticDynamics(reference_state)
-    coriolis = FPlane(FT; latitude)
+    # SAM uses the namelist `fcor` directly when it is given (setgrid.f90: only fcor = -999 is
+    # replaced by 4π/86400 sin φ); the LASSO bundles carry it.
+    coriolis = isnothing(coriolis_parameter) ? FPlane(FT; latitude) : FPlane(FT; f = coriolis_parameter)
 
     z_centers = Array(znodes(grid, Center()))
     ρᵣ = Array(interior(reference_state.density, 1, 1, :))
@@ -419,6 +425,7 @@ function build_case(data_dir;
     sst_updater = SeaSurfaceTemperatureUpdater(Tₛ, surface_series.times, FT.(sfc.sst))
 
     stress_record = nothing
+    surface_record = NamedTuple()
     boundary_conditions = if isnothing(surface)
         NamedTuple()
     elseif surface === :prescribed_fluxes
@@ -427,7 +434,8 @@ function build_case(data_dir;
                                                                          frame_velocity=(uᶠ, vᶠ))
         bcs
     elseif surface === :bulk_sst
-        bulk_surface_flux_boundary_conditions(grid, Tₛ; moisture_name)
+        bcs, surface_record = bulk_surface_flux_boundary_conditions(grid, Tₛ; moisture_name, law = surface_flux_law)
+        bcs
     else
         throw(ArgumentError("unknown surface mode $surface"))
     end
@@ -545,6 +553,8 @@ function build_case(data_dir;
                 latitude, longitude, microphysics=string(microphysics), droplet_number,
                 radiation=string(radiation), radiation_interval, liquid_effective_radius, ice_effective_radius,
                 surface=string(surface), wind_nudging_timescale=something(wind_nudging_timescale, 0),
+                coriolis_parameter=Float64(coriolis.f), coriolis_parameter_source=isnothing(coriolis_parameter) ? "4π/86400 sin(latitude)" : "namelist fcor",
+                surface_record...,
                 translation_velocity_u=uᶠ, translation_velocity_v=vᶠ, translation_frame_applied=translating,
                 sam_translation_u=Float64(get(namelist, "ug", 0.0)), sam_translation_v=Float64(get(namelist, "vg", 0.0)),
                 geostrophic, thermodynamic_tendencies,
