@@ -57,6 +57,7 @@ cd "$W"
 } | tee "$RUN/job.txt"
 
 "$C/julia-1.12.7/bin/julia" --startup-file=no --project=. -e 'using Pkg; Pkg.precompile()' 2>&1 | tail -3
-"$C/julia-1.12.7/bin/julia" --startup-file=no --project=. cases/sea_starr.jl
+# Piping through tee keeps Julia's stdout/stderr unbuffered (a direct file handle showed nothing until exit).
+"$C/julia-1.12.7/bin/julia" --startup-file=no --project=. cases/sea_starr.jl 2>&1 | tee "$RUN/run.log"
 echo "finished=$(date -u +%FT%TZ)" >> "$RUN/job.txt"
 touch "$RUN/COMPLETE"
