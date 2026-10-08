@@ -38,8 +38,10 @@ checkpoint_interval = parse(Float64, get(ENV, "TRACER_DP_SCREAM_CHECKPOINT", "21
 output_dir = get(ENV, "TRACER_DP_SCREAM_OUTPUT", joinpath(pkgdir(BreezeLab), "output", "tracer_dp_scream"))
 pickup_from = get(ENV, "TRACER_DP_SCREAM_PICKUP_FROM", "")
 arch = GPU()
-Nx = Ny = 256
-Δx = 200.0
+# Horizontal grid: the baseline uses 256² cells of 200 m (51.2 km). `TRACER_DP_SCREAM_NX`
+# and `TRACER_DP_SCREAM_DX` override both so that a 512² × 100 m run covers the same domain.
+Nx = Ny = parse(Int, get(ENV, "TRACER_DP_SCREAM_NX", "256"))
+Δx = parse(Float64, get(ENV, "TRACER_DP_SCREAM_DX", "200"))
 
 # ## Build the simulation
 
