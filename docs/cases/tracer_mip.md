@@ -93,7 +93,7 @@ Missing or mismatched for this protocol:
 | CPU smokes (jobs 204–215) | real ERA5, 32×32×94, 36 s | stable without closure and with TKE closure; Smagorinsky fails in step 1 |
 | GPU pilot (job 217) | real ERA5, 750×750×94, 1 h, A100-80GB | completed; 40.3 GB; 4.3 s wall per 3 s step (≈86 min per simulated hour) |
 | GPU control (job 233) | same, 24 h, no closure | running; surface-layer wind defect diagnosed (see Turbulence/PBL) |
-| GPU control (job TKE_JOB) | same, 24 h, TKE closure | queued after job 233 (replacement August 7 control) |
+| GPU control (job 336) | same, 24 h, TKE closure | queued after job 233 (replacement August 7 control) |
 | Inner-nest CPU test (job 227) | parent from the pilot's saved state, 8×8×24 child, 6 s | passes |
 
 ## Status
