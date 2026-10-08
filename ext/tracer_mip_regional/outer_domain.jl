@@ -152,7 +152,10 @@ function BreezeLab.tracer_mip_outer_simulation(arch;
         set!(swvl, Metadatum(:volumetric_soil_water_layer_1; dataset = ERA5HourlyLand(), date = start, region = land_region, dir = era5_dir);
              inpainting)
         Mmax = default_saturated_storage(land)
-        set!(land; M = Field(Mmax * min(swvl / soil_porosity, 1)))
+        M₀ = Field{Center, Center, Nothing}(land_grid)
+        interior(M₀) .= Mmax .* clamp.(interior(swvl) ./ soil_porosity, 0, 1)   # NaN (sea) cells are pinned below
+        interior(M₀)[isnan.(interior(M₀))] .= Mmax
+        set!(land; M = M₀)
         skt = FieldTimeSeries(Metadata(:skin_temperature; dataset = single, dates, region = land_region, dir = era5_dir), arch;
                               time_indices_in_memory = 8)
         sst = skt
