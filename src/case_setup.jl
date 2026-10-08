@@ -91,6 +91,35 @@ function lasso_aerosol_modes(FT=Float64; setting=:aer2, reference_density,
 end
 
 """
+    covert_aerosol_modes(FT; reference_density, target_droplet_number=75e6, maximum_supersaturation=0.003, kwargs...)
+
+A **Covert-consistent** P3 aerosol for the public Covert et al. (2022) ENA case, which
+prescribes the *observed* droplet number `Nc = 75 cm⁻³` (airborne in situ, 18 July 2017)
+and publishes no aerosol spectrum (its bin configuration is compiled into SAM). The modes
+keep the LASSO-ENA aer2 shapes (r = 0.018/0.066 μm, σ = 1.53/1.78, SBM chemistry) and are
+scaled by one factor so that the number activatable below `maximum_supersaturation`
+(the SBM cap, see [`lasso_aerosol_modes`](@ref)) equals `target_droplet_number` [m⁻³] at
+the surface reference density. With the diagnostic-CCN projection this bounds the in-cloud
+droplet number at the observed value instead of the LASSO aer2 ≈ 270 cm⁻³. It is a labelled
+configuration of this package, not an ARM or Covert prescription of aerosol.
+"""
+function covert_aerosol_modes(FT=Float64; reference_density, target_droplet_number=75e6, maximum_supersaturation=0.003, kwargs...)
+    aer2, record = lasso_aerosol_modes(FT; setting=:aer2, reference_density, maximum_supersaturation, kwargs...)
+    activatable = aer2[1].number_mixing_ratio + aer2[2].number_mixing_ratio          # kg⁻¹, already capped
+    factor = target_droplet_number / reference_density / activatable
+    modes = Tuple(AerosolMode(FT; number_mixing_ratio=factor * m.number_mixing_ratio, mean_radius=m.mean_radius,
+                              geometric_std=m.geometric_std, vant_hoff_factor=m.vant_hoff_factor,
+                              osmotic_potential=m.osmotic_potential, mass_fraction_soluble=m.mass_fraction_soluble,
+                              aerosol_density=m.aerosol_density, molecular_weight_aerosol=m.molecular_weight_aerosol) for m in aer2)
+    return modes, (; setting="covert_n75", target_droplet_number, scale_factor=factor,
+                     N₁=factor * record.N₁, N₂=factor * record.N₂,
+                     n₁=modes[1].number_mixing_ratio, n₂=modes[2].number_mixing_ratio,
+                     reference_density, record.aerosol_density, record.molecular_weight_aerosol, record.vant_hoff_factor,
+                     record.mass_fraction_soluble, maximum_supersaturation,
+                     activatable_fraction₁=record.activatable_fraction₁, activatable_fraction₂=record.activatable_fraction₂)
+end
+
+"""
     activated_fraction(mean_radius, geometric_std, S; T=285, aerosol_density=1790,
                        molecular_weight_aerosol=0.115, vant_hoff_factor=3, mass_fraction_soluble=1,
                        osmotic_potential=1)
@@ -124,6 +153,14 @@ function build_microphysics(FT, scheme; droplet_number, surface_density, aerosol
         aerosol = AerosolActivation(modes...; prognostic=true)   # depleting reservoir ρnᵃ, as the SBM's
         cloud = CloudDroplets(FT; number_concentration=droplet_number) # only the initial droplet number
         return P3Microphysics(FT; cloud, aerosol), (; scheme, setting, prognostic_aerosol=true, conversion...)
+    elseif scheme === :p3_covert_n75
+        # Covert-consistent prognostic aerosol: activatable number = the case's observed 75 cm⁻³
+        cap = get(aerosol_kwargs, :maximum_supersaturation, 0.003)
+        modes, conversion = covert_aerosol_modes(FT; reference_density=surface_density, target_droplet_number=droplet_number,
+                                                 maximum_supersaturation=cap)
+        aerosol = AerosolActivation(modes...; prognostic=true)
+        cloud = CloudDroplets(FT; number_concentration=droplet_number)
+        return P3Microphysics(FT; cloud, aerosol), (; scheme, prognostic_aerosol=true, conversion...)
     else
         throw(ArgumentError("unknown microphysics scheme $scheme"))
     end
@@ -190,7 +227,9 @@ Keyword arguments:
   the `qls` source; `:mass_fraction` passes them through
 - `latitude = 39.0916`, `longitude = -28.0257` (ENA C1); the namelist `latitude0` wins if present
 - `microphysics`: `:one_moment` (1M-control), `:p3_n75` (prescribed droplet number), `:p3_aer2`
-  (production; also `:p3_aer1`, `:p3_aer3`)
+  (LASSO production; also `:p3_aer1`, `:p3_aer3`), `:p3_covert_n75` (prognostic aerosol whose
+  capped activatable number is `droplet_number`, the Covert case's observed 75 cm⁻³; see
+  [`covert_aerosol_modes`](@ref))
 - `droplet_number = 75e6` [m⁻³]: prescribed Nᶜˡ for `:p3_n75` and the initial in-cloud droplet number
 - `radiation`: `:rrtmgp` (all-sky LW+SW, production), `:simple` (LASSO SAM rad_simple, Covert-era
   legacy control), `:dycoms` (Stevens et al. 2005 form), or `nothing`

@@ -39,7 +39,7 @@ end
 
 @testset "ENA case execution and output" begin
     if HAVE_COVERT
-        @testset "$scheme on CPU" for scheme in (:one_moment, :p3_n75, :p3_aer2)
+        @testset "$scheme on CPU" for scheme in (:one_moment, :p3_n75, :p3_aer2, :p3_covert_n75)
             test_ena_execution(CPU(), scheme === :one_moment ? Float64 : Float32, scheme)
         end
         if "gpu" in ARGS
