@@ -23,7 +23,7 @@ end
 
 opts = parse_args(ARGS)
 getopt(k, default) = get(opts, k, default)
-allowed = Set(["data", "protocol", "preset", "arch", "float", "seed", "epoch", "member", "dimensions", "microphysics", "Nx", "Ny", "Lx", "Ly", "hours", "radiation", "surface", "surface_flux_law", "nudging", "vertical_advection", "p3_initialization", "aerosol_replenishment", "aerosol_ss_cap", "cfl", "dt", "max_dt", "lasso_grid", "moment_advection", "formulation", "profile_interval", "closure", "slice_interval", "output"])
+allowed = Set(["data", "protocol", "preset", "arch", "float", "seed", "epoch", "member", "dimensions", "microphysics", "Nx", "Ny", "Lx", "Ly", "hours", "radiation", "surface", "surface_flux_law", "nudging", "vertical_advection", "p3_initialization", "aerosol_replenishment", "aerosol_ss_cap", "cfl", "dt", "max_dt", "lasso_grid", "grid", "moment_advection", "formulation", "profile_interval", "closure", "slice_interval", "output"])
 unknown = setdiff(Set(keys(opts)), allowed)
 isempty(unknown) || error("unknown options: $(join(sort!(collect(unknown)), ", "))")
 
@@ -66,6 +66,9 @@ haskey(opts, "cfl") && (kw[:cfl] = parse(Float64, opts["cfl"]))
 haskey(opts, "max_dt") && (kw[:max_Δt] = parse(Float64, opts["max_dt"]))
 haskey(opts, "dt") && (kw[:Δt] = parse(Float64, opts["dt"]))
 haskey(opts, "lasso_grid") && opts["lasso_grid"] == "true" && (kw[:z_faces] = lasso_ena_vertical_faces())
+# --grid covert|covert_inversion_5m|lasso: a named vertical grid (recorded in provenance as `vertical_grid`)
+vertical_grid = get(opts, "grid", get(opts, "lasso_grid", "false") == "true" ? "lasso" : "covert")
+haskey(opts, "grid") && (kw[:z_faces] = ena_vertical_faces(opts["grid"]))
 haskey(opts, "moment_advection") && (kw[:moment_advection] = Symbol(opts["moment_advection"]))
 haskey(opts, "formulation") && (kw[:formulation] = Symbol(opts["formulation"]))   # LiquidIcePotentialTemperature (default) or StaticEnergy
 haskey(opts, "profile_interval") && (kw[:profile_interval] = parse(Float64, opts["profile_interval"]))
@@ -83,7 +86,7 @@ case = ena_simulation(data; protocol=preset, arch, FT, output_dir,
                             perturbation = InitialPerturbation(seed=seed), kw...)
 mkpath(output_dir)
 provenance = write_provenance(joinpath(output_dir, "provenance.toml"), case;
-                              extra = (; command = join(ARGS, " "), hostname = gethostname(),
+                              extra = (; command = join(ARGS, " "), hostname = gethostname(), vertical_grid,
                                          gpu = CUDA.functional() ? CUDA.name(CUDA.device()) : "none"))
 @info "Provenance written to $provenance"
 @info "Label: $(case.config.label)"
