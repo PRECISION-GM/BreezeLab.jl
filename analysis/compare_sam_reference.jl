@@ -33,7 +33,12 @@ sam_hash = string(get(sam.attrib, "model_source_git_hash", "?"))
 member == sam_sim || @warn "run member $member differs from samstat sim_name $sam_sim"
 inwin = [t0 ≤ t ≤ t1 for t in sam_time]
 sv(name) = Float64[ismissing(v) ? NaN : Float64(v) for v in sam[name][:]]
-stats(x) = (; mean = mean(filter(isfinite, x)), min = minimum(filter(isfinite, x)), max = maximum(filter(isfinite, x)), n = count(isfinite, x))
+todict(nt) = Dict{String, Any}(string(k) => v for (k, v) in pairs(nt))   # TOML needs string keys
+function stats(x)
+    v = filter(isfinite, x)
+    isempty(v) && return (; mean = NaN, min = NaN, max = NaN, n = 0)
+    return (; mean = mean(v), min = minimum(v), max = maximum(v), n = length(v))
+end
 
 result = Dict{String, Any}(
     "run" => Dict("directory" => abspath(run_dir), "member" => member, "label" => series.label, "window" => Dict("start" => string(t0), "stop" => string(t1))),
@@ -45,44 +50,51 @@ quantities = [("CWP", "lwp", "cloud water path (g m⁻²)", 1.0),
          ("CLDSHD", "cloud_fraction", "shaded cloud fraction", 1.0)]
 stage("time series figure")
 fig = Figure(size = (1300, 1300), fontsize = 13)
-hours(t) = [Dates.value(x - t0) / 3.6e6 for x in t]
+hours(t) = Float64[Dates.value(x - t0) / 3.6e6 for x in t]
+# Makie cannot set limits from an all-NaN series: draw only the finite points, skip empty series.
+function plot_finite!(ax, x, y; kwargs...)
+    keep = BitVector(isfinite.(y))
+    any(keep) && lines!(ax, x[keep], y[keep]; kwargs...)
+    return nothing
+end
 for (k, (sname, bname, title, scale)) in enumerate(quantities)
     stage("panel $sname: axis")
     ax = Axis(fig[(k - 1) ÷ 2 + 1, (k - 1) % 2 + 1], title = title, xlabel = "hours since $(t0) UTC")
     stage("panel $sname: read")
     s = sv(sname) .* scale
     stage("panel $sname: lines (SAM)")
-    lines!(ax, hours(sam_time[inwin]), s[inwin]; color = :gray30, label = "SAM $sname")
+    plot_finite!(ax, hours(sam_time[inwin]), s[inwin]; color = :gray30, label = "SAM $sname")
     b = getproperty(series, Symbol(bname))
     stage("panel $sname: lines (Breeze)")
-    lines!(ax, hours(series.time), b; color = :dodgerblue, label = "Breeze $bname")
+    plot_finite!(ax, hours(series.time), b; color = :dodgerblue, label = "Breeze $bname")
     stage("panel $sname: legend")
-    axislegend(ax, position = :lt, labelsize = 10)
+    isempty(ax.scene.plots) || axislegend(ax, position = :lt, labelsize = 10)
     stage("panel $sname: stats")
-    result[sname] = Dict("sam" => Dict(pairs(stats(s[inwin]))), "breeze" => Dict(pairs(stats(b))))
+    result[sname] = Dict{String, Any}("sam" => todict(stats(s[inwin])), "breeze" => todict(stats(b)))
 end
 stage("cloud boundaries panel")
 ax5 = Axis(fig[3, 1], title = "cloud base/top (m): SAM GCSS ZCB/ZCT vs Breeze profile boundaries", xlabel = "hours since $(t0) UTC")
 zcb = 1e3 .* sv("ZCB"); zct = 1e3 .* sv("ZCT")
-lines!(ax5, hours(sam_time[inwin]), zcb[inwin]; color = :gray30, label = "SAM ZCB")
-lines!(ax5, hours(sam_time[inwin]), zct[inwin]; color = :gray30, linestyle = :dash, label = "SAM ZCT")
-lines!(ax5, hours(bounds.time), bounds.base; color = :dodgerblue, label = "Breeze base")
-lines!(ax5, hours(bounds.time), bounds.top; color = :dodgerblue, linestyle = :dash, label = "Breeze top")
-axislegend(ax5, position = :lt, labelsize = 10)
-result["ZCB_m"] = Dict("sam" => Dict(pairs(stats(zcb[inwin]))), "breeze" => Dict(pairs(stats(bounds.base))))
-result["ZCT_m"] = Dict("sam" => Dict(pairs(stats(zct[inwin]))), "breeze" => Dict(pairs(stats(bounds.top))))
+plot_finite!(ax5, hours(sam_time[inwin]), zcb[inwin]; color = :gray30, label = "SAM ZCB")
+plot_finite!(ax5, hours(sam_time[inwin]), zct[inwin]; color = :gray30, linestyle = :dash, label = "SAM ZCT")
+plot_finite!(ax5, hours(bounds.time), bounds.base; color = :dodgerblue, label = "Breeze base")
+plot_finite!(ax5, hours(bounds.time), bounds.top; color = :dodgerblue, linestyle = :dash, label = "Breeze top")
+isempty(ax5.scene.plots) || axislegend(ax5, position = :lt, labelsize = 10)
+result["ZCB_m"] = Dict("sam" => todict((stats(zcb[inwin]))), "breeze" => todict((stats(bounds.base))))
+result["ZCT_m"] = Dict("sam" => todict((stats(zct[inwin]))), "breeze" => todict((stats(bounds.top))))
 ax6 = Axis(fig[3, 2], title = "SAM surface fluxes and radiation (W m⁻²; Breeze run output has no flux series yet)", xlabel = "hours since $(t0) UTC")
 for (name, c) in (("SHF", :orange), ("LHF", :red), ("LWNS", :purple), ("SWNS", :gold))
-    v = sv(name); lines!(ax6, hours(sam_time[inwin]), v[inwin]; color = c, label = "SAM $name")
-    result[name] = Dict("sam" => Dict(pairs(stats(v[inwin]))))
+    v = sv(name); plot_finite!(ax6, hours(sam_time[inwin]), v[inwin]; color = c, label = "SAM $name")
+    result[name] = Dict("sam" => todict((stats(v[inwin]))))
 end
-axislegend(ax6, position = :lt, labelsize = 10)
+isempty(ax6.scene.plots) || axislegend(ax6, position = :lt, labelsize = 10)
 if !isnothing(obs_dir)
     mwr = filter(f -> startswith(basename(f), "enamwrret2turn"), readdir(obs_dir; join = true))
     if !isempty(mwr)
         lwp = read_arm_lwp(first(mwr)); sel = lwp.good .& [t0 ≤ t ≤ t1 for t in lwp.time]
-        scatter!(content(fig[1, 1]), hours(lwp.time[sel]), lwp.value[sel]; markersize = 2, color = (:black, 0.3), label = "MWRRET")
-        result["CWP"]["mwrret"] = Dict(pairs(window_statistics(lwp, t0, t1)))
+        any(sel) && scatter!(content(fig[1, 1]), hours(lwp.time[sel]), lwp.value[sel]; markersize = 2, color = (:black, 0.3), label = "MWRRET")
+        result["CWP"]["mwrret"] = todict(window_statistics(lwp, t0, t1))
+        println("MWRRET good samples in window: ", count(sel))
     end
 end
 Label(fig[0, :], "Breeze vs SAM reference $sam_sim (SAM $sam_hash); Breeze is an adapter of the forcing, not the SAM model", fontsize = 13, tellwidth = false)
@@ -103,9 +115,9 @@ fp = Figure(size = (1500, 600), fontsize = 13)
 for (k, (sname, bname, scale, title)) in enumerate((("THETA", "θ", 1.0, "θ (K)"), ("QV", "qᵛ", 1e3, "qᵛ (g kg⁻¹)"), ("QCL", "qᶜˡ", 1e3, "qᶜˡ (g kg⁻¹)"), ("U", "u", 1.0, "u (m s⁻¹)"), ("V", "v", 1.0, "v (m s⁻¹)")))
     ax = Axis(fp[1, k], title = title, ylabel = "z (m)", limits = (nothing, (0, 3000)))
     s = Float64[ismissing(v) ? NaN : Float64(v) for v in sam[sname][:, js]]
-    lines!(ax, s, zs; color = :gray30, label = "SAM $(sam_time[js])")
+    keep = BitVector(isfinite.(s)); any(keep) && lines!(ax, s[keep], zs[keep]; color = :gray30, label = "SAM $(sam_time[js])")
     lines!(ax, scale .* col(pf[bname], nb), zb; color = :dodgerblue, label = "Breeze $(tb_end)")
-    k == 1 && axislegend(ax, position = :rb, labelsize = 9)
+    k == 1 && !isempty(ax.scene.plots) && axislegend(ax, position = :rb, labelsize = 9)
 end
 Label(fp[0, :], "Profiles at the last common hour (SAM instantaneous statistics sample vs Breeze hourly mean)", fontsize = 13, tellwidth = false)
 stage("saving profiles figure")
