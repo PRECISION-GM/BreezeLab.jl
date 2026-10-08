@@ -353,13 +353,16 @@ function inspect_lasso_bundle(directory; member=nothing, dimensions=nothing, epo
     day_end = day0 + stop_time / 86400
 
     # setgrid.f90 keeps a namelist fcor as is; only fcor = -999 is replaced by 4π/86400 sin φ.
+    # The LASSO bundles carry fcor = 2Ω sin φ with the sidereal Ω = 7.292115e-5 s⁻¹ (what
+    # Oceananigans' FPlane(latitude) gives), 0.27 % above SAM's own solar-day formula.
     coriolis_parameter = nothing
     if fcor != -999.0
-        expected_f = 4π / 86400 * sind(latitude)
+        solar_f = 4π / 86400 * sind(latitude)
+        sidereal_f = 2 * 7.292115e-5 * sind(latitude)
         isfinite(fcor) || push!(problems, "prm fcor = $fcor is not finite")
         coriolis_parameter = fcor
-        isapprox(fcor, expected_f; rtol=1e-3) ||
-            push!(warnings, "prm fcor = $fcor is used as the Coriolis parameter (SAM uses it directly); 4π/86400 sin(latitude0) would be $(round(expected_f; sigdigits=6))")
+        isapprox(fcor, solar_f; rtol=1e-3) || isapprox(fcor, sidereal_f; rtol=1e-3) ||
+            push!(warnings, "prm fcor = $fcor is used as the Coriolis parameter (SAM uses it directly); the latitude would give $(round(sidereal_f; sigdigits=6)) (sidereal) or $(round(solar_f; sigdigits=6)) (SAM's 4π/86400 sin φ)")
     end
 
     # --- vertical grid (setgrid.f90) ------------------------------------------------------

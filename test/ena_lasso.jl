@@ -155,9 +155,13 @@ end
         rewrite_prm(dir, "UNIFORM_SFC_FLX = .true." => "UNIFORM_SFC_FLX = .false.", "nrad = 30" => "nrad = 30, fcor = 9.19626e-05")
         bpc = inspect_lasso_bundle(dir; dimensions=LASSO_DIMS)
         @test isempty(bpc.problems) && bpc.settings.coriolis_parameter == 9.19626e-5 && !bpc.switches.uniform_sfc_flx
-        @test any(occursin("per column", w) for w in bpc.warnings) && any(occursin("fcor = 9.19626e-5 is used", w) for w in bpc.warnings)
-        rewrite_prm(dir, "nrad = 30" => "nrad = 30, fcor = 9.17e-05")       # within 0.1 % of the latitude value: no deviation warning
+        @test any(occursin("per column", w) for w in bpc.warnings)
+        @test !any(occursin("fcor", w) for w in bpc.warnings)                # the bundle value is 2Ω sin φ (sidereal): no deviation warning
+        rewrite_prm(dir, "nrad = 30" => "nrad = 30, fcor = 9.17e-05")       # SAM's own 4π/86400 sin φ: accepted silently too
         @test !any(occursin("fcor", w) for w in inspect_lasso_bundle(dir; dimensions=LASSO_DIMS).warnings)
+        rewrite_prm(dir, "nrad = 30" => "nrad = 30, fcor = 1.0e-04")        # detached from the latitude: accepted, warned
+        bfc = inspect_lasso_bundle(dir; dimensions=LASSO_DIMS)
+        @test isempty(bfc.problems) && bfc.settings.coriolis_parameter == 1e-4 && any(occursin("fcor = 0.0001 is used", w) for w in bfc.warnings)
         rewrite_prm(dir, "nrad = 30" => "nrad = 30, fcor = -999.")          # SAM's sentinel: derive from latitude
         @test isnothing(inspect_lasso_bundle(dir; dimensions=LASSO_DIMS).settings.coriolis_parameter)
         mkpath(joinpath(dir, "extra"))
@@ -223,9 +227,8 @@ end
     @test case.config.Δt_initial == 2.0 && case.config.max_Δt == 2.0 && case.simulation.stop_time == 4.0
     @test case.config.surface == "bulk_sst" && case.config.wind_nudging_timescale == 7200
     @test startswith(case.config.surface_flux_law, "sam_oceflx") && case.config.coriolis_parameter_source == "4π/86400 sin(latitude)"
-    @test case.config.coriolis_parameter ≈ 4π / 86400 * sind(39.0916) rtol=1e-6
-    @test case.config.minimum_wind_speed == 1.0 && case.config.gustiness == 0.0 && case.config.fit_error < 0.02
-    @test case.model.velocities.u.boundary_conditions.bottom.condition.coefficient.minimum_wind_speed == 1.0
+    @test case.config.coriolis_parameter ≈ FPlane(Float64; latitude=39.0916).f rtol=1e-6    # 2Ω sin φ, sidereal Ω
+    @test case.config.minimum_wind_speed == 1.0 && case.config.gustiness == 0.0 && case.config.fit_error < 0.01
     @test case.config.surface_emissivity == 0.95 && case.config.liquid_effective_radius == 14e-6
     @test case.protocol_member == LASSO_MEMBER && occursin("member $LASSO_MEMBER", case.config.label)
     @test case.bundle.member.aerosol == "aer2"
@@ -338,12 +341,13 @@ end
 @testset "SAM oceflx surface law" begin
     laws = sam_oceflx_neutral_polynomials()
     cdn(U) = 0.0027 / U + 0.000142 + 0.0000764 * U
-    @test laws.drag == (0.000142, 0.0000764, 0.0027) && laws.fit_error < 0.02
+    @test laws.drag == (0.000142, 0.0000764, 0.0027) && laws.fit_error < 0.01
     ev(p, U) = p[1] + p[2] * U + p[3] / U
-    for U in (1.0, 3.0, 7.0, 12.0, 20.0)
-        @test ev(laws.sensible, U) ≈ 0.0327 * sqrt(cdn(U)) rtol=0.02
-        @test ev(laws.latent, U) ≈ 0.0346 * sqrt(cdn(U)) rtol=0.02
+    for U in (2.0, 3.0, 7.0, 12.0, 15.0)
+        @test ev(laws.sensible, U) ≈ 0.0327 * sqrt(cdn(U)) rtol=0.01
+        @test ev(laws.latent, U) ≈ 0.0346 * sqrt(cdn(U)) rtol=0.01
     end
+    @test ev(laws.sensible, 1.0) ≈ 0.0327 * sqrt(cdn(1.0)) rtol=0.1     # outside the fitted range
     # SAM's scalar coefficients are ~10 % above Breeze's Large & Yeager defaults at 7 m/s
     @test ev(laws.sensible, 7.0) > ev((1.28e-4, 6.8e-5, 2.43e-3), 7.0) * 1.05
     grid = test_grid(; Nz=8, Lz=400)

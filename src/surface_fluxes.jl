@@ -146,21 +146,21 @@ prescribed_stress_updater(stress, velocities) =
 #####
 
 """
-    sam_oceflx_neutral_polynomials(; wind_speeds=1.0:0.5:20.0)
+    sam_oceflx_neutral_polynomials(; wind_speeds=2.0:0.5:15.0)
 
 SAM's `oceflx.f90` neutral 10-m transfer laws expressed in Breeze's
 `PolynomialCoefficient` form `C(U) = a₀ + a₁U + a₂/U`:
 
 - drag: `cdn = 0.0027/U + 0.000142 + 0.0000764 U` exactly (the Large & Pond polynomial);
 - Stanton (unstable branch) `0.0327 √cdn` and Dalton `0.0346 √cdn`: least-squares fits of
-  `(1, U, 1/U)` over `wind_speeds` (the fits stay within 2 % of the law between 1 and
-  20 m s⁻¹; the stable-branch Stanton number `0.0180 √cdn` is not representable because
-  Breeze applies its stability correction to one neutral law).
+  `(1, U, 1/U)` over `wind_speeds` (within 0.4 % of the law between 2 and 15 m s⁻¹, the
+  ENA wind range; 8 % at 1 and 20 m s⁻¹); the stable-branch Stanton number `0.0180 √cdn`
+  is not representable because Breeze applies its stability correction to one neutral law.
 
 Returns `(; drag, sensible, latent, fit_error)` with `fit_error` the maximum relative
 error of the two fits over `wind_speeds`.
 """
-function sam_oceflx_neutral_polynomials(; wind_speeds=1.0:0.5:20.0)
+function sam_oceflx_neutral_polynomials(; wind_speeds=2.0:0.5:15.0)
     cdn(U) = 0.0027 / U + 0.000142 + 0.0000764 * U
     U = collect(Float64, wind_speeds)
     basis = hcat(ones(length(U)), U, 1 ./ U)
