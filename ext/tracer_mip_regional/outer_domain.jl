@@ -64,7 +64,9 @@ Returns a named tuple with `simulation`, `model`, `nest`, `land`, `grid`, `accum
 - Land: `SlabLand` initialized from ERA5 skin temperature and ERA5-Land soil moisture (or constants for
   the synthetic parent); sea cells (terrain ≤ 0 m) pinned to the ERA5 skin temperature each step.
 - Radiation: RRTMGP all-sky every `radiation_interval` (protocol 60 s), constant land/sea albedo.
-- `Δt` fixed at the protocol's 3 s; `closure` defaults to `SmagorinskyLilly`.
+- `Δt` fixed at the protocol's 3 s. `closure` defaults to `nothing` (numerical diffusion only, as in NumericalEarth's
+  ERA5 downscaling example): `SmagorinskyLilly` on the 50 m × 2 km anisotropic grid drove the first step to negative
+  pressure in every CPU smoke; `TKEBasedTurbulenceClosure(FT)` (vertical, implicit) is the PBL candidate under evaluation.
 """
 function BreezeLab.tracer_mip_outer_simulation(arch;
         case = :aug07,
@@ -81,7 +83,7 @@ function BreezeLab.tracer_mip_outer_simulation(arch;
         initial_droplet_number = 100e6,
         radiation = :rrtmgp,
         radiation_interval = protocol["forcing"]["radiation_interval_s"],
-        closure = SmagorinskyLilly(FT),
+        closure = nothing,
         terrain = parent === :era5 ? ETOPO2022() : nothing,
         relaxation_width = 5,
         relaxation_rate = 1/300,

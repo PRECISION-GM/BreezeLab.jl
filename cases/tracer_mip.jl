@@ -41,7 +41,7 @@ parent = Symbol(get(ENV, "TRACER_MIP_PARENT", "era5"))
 radiation = get(ENV, "TRACER_MIP_RADIATION", "rrtmgp") == "none" ? nothing : :rrtmgp
 terrain_choice = get(ENV, "TRACER_MIP_TERRAIN", "etopo")
 Δt = parse(Float64, get(ENV, "TRACER_MIP_DT", "3"))
-closure_choice = get(ENV, "TRACER_MIP_CLOSURE", "smagorinsky")
+closure_choice = get(ENV, "TRACER_MIP_CLOSURE", "none")   # none | tke | smagorinsky
 era5_dir = get(ENV, "TRACER_MIP_ERA5_DIR", joinpath(pkgdir(BreezeLab), "data", "era5"))
 output_dir = get(ENV, "TRACER_MIP_OUTPUT_DIR", joinpath(pkgdir(BreezeLab), "output", "tracer_mip_outer_$(case)" * (parent === :era5 ? "" : "_EXPLORATORY_$(parent)")))
 output_interval = 1hour             # Grid-1: 60-min full output
@@ -51,7 +51,8 @@ mkpath(output_dir)
 # ## Build
 
 extra = terrain_choice == "flat" ? (; terrain = nothing) : NamedTuple()
-closure_choice == "none" && (extra = merge(extra, (; closure = nothing)))
+closure_choice == "tke" && (extra = merge(extra, (; closure = TKEBasedTurbulenceClosure(Float32))))
+closure_choice == "smagorinsky" && (extra = merge(extra, (; closure = SmagorinskyLilly(Float32))))
 run_case = tracer_mip_outer_simulation(arch; case, parent, era5_dir, Nx, Ny, stop_time, radiation, Δt, extra...)
 parent === :era5 || @warn "EXPLORATORY run with synthetic boundaries: software test of the machinery, not a TRACER-MIP control"
 simulation = run_case.simulation
