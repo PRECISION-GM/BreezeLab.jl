@@ -138,15 +138,18 @@ function BreezeLab.tracer_mip_inner_simulation(arch; outer_run_dir,
                                       latitude = extent.latitude, topology = (Bounded, Bounded, Flat))
     land = SlabLand(land_grid)
     mask = sea_mask(grid)
+    # Lowest-level air temperature of the initialized child (the parent's state interpolated onto the inner
+    # grid) as the slab's initial skin temperature and the default sea surface temperature (static).
+    T₁ = Field{Center, Center, Nothing}(land_grid)
+    interior(T₁) .= interior(child.temperature, :, :, 1)
+    fill_halo_regions!(T₁)
     if land_init === :outer_skin
-        T₁ = Field{Center, Center, Nothing}(land_grid)
-        interpolate!(T₁, Field(view(parent.temperature[1], :, :, 1)))
         set!(land; T = T₁, M = 0.5 * default_saturated_storage(land))
     else
         throw(ArgumentError("land_init must be :outer_skin (ERA5 inner-box initialization not staged yet)"))
     end
-    sst = something(sea_surface_temperature, Field(view(parent.temperature[1], :, :, 1)))
-    pinning = SeaSurfacePinning(land, mask, sst isa Field ? (T = Field{Center, Center, Nothing}(land_grid); interpolate!(T, sst); T) : sst)
+    sst = something(sea_surface_temperature, T₁)
+    pinning = SeaSurfacePinning(land, mask, sst)
     pin_sea_surface!(pinning, 0.0)
 
     albedo = surface_albedo_field(mask; sea = sea_albedo, land = land_albedo)
