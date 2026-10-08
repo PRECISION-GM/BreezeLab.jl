@@ -221,7 +221,8 @@ end
     cm, cr = covert_aerosol_modes(Float64; reference_density=1.2)
     @test cm[1].number_mixing_ratio + cm[2].number_mixing_ratio ≈ 75e6 / 1.2
     @test cm[1].mean_radius == 0.018e-6 && cm[2].geometric_std == 1.78 && cm[1].mass_fraction_soluble == 1
-    @test cr.setting == "covert_n75" && cr.N₁ + cr.N₂ ≈ 75 / (0.4 + 0.15) atol=40   # ≈ 75/activatable fraction of aer2 ≈ 150 cm⁻³ total
+    @test cr.setting == "covert_n75"
+    @test isapprox(cr.N₁ + cr.N₂, 75 / (cr.activatable_fraction₁ * 276 + cr.activatable_fraction₂ * 281) * 557; rtol=1e-6)   # total scaled so the capped activatable part is 75 cm⁻³
     @test 0.2 < cr.scale_factor < 0.35
     p3c, rec = BreezeLab.build_microphysics(Float64, :p3_covert_n75; droplet_number=75e6, surface_density=1.2)
     @test rec.scheme == :p3_covert_n75 && rec.prognostic_aerosol && rec.target_droplet_number == 75e6
