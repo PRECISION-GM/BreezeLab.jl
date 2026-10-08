@@ -64,9 +64,14 @@ Returns a named tuple with `simulation`, `model`, `nest`, `land`, `grid`, `accum
 - Land: `SlabLand` initialized from ERA5 skin temperature and ERA5-Land soil moisture (or constants for
   the synthetic parent); sea cells (terrain ≤ 0 m) pinned to the ERA5 skin temperature each step.
 - Radiation: RRTMGP all-sky every `radiation_interval` (protocol 60 s), constant land/sea albedo.
-- `Δt` fixed at the protocol's 3 s. `closure` defaults to `nothing` (numerical diffusion only, as in NumericalEarth's
-  ERA5 downscaling example): `SmagorinskyLilly` on the 50 m × 2 km anisotropic grid drove the first step to negative
-  pressure in every CPU smoke; `TKEBasedTurbulenceClosure(FT)` (vertical, implicit) is the PBL candidate under evaluation.
+- `Δt` fixed at the protocol's 3 s. `closure` defaults to Breeze's `TKEBasedTurbulenceClosure(FT)` (vertical eddy
+  diffusivity with prognostic TKE, vertically implicit): without a closure (job 233) the surface stress is deposited only
+  in the 50 m lowest layer, which decelerates to ≈0.6 of ERA5's 10 m wind while the level above stays at the free-stream
+  value (a 2–3× jump across one cell). `SmagorinskyLilly` is unusable here: its isotropic filter width (2000·2000·50)^(1/3)
+  ≈ 585 m gives ν ≈ (0.16·585)²|S| ≳ 10³ m²/s near the surface, so the explicit vertical diffusion violates νΔt/Δz² ≲ 1/2
+  on 50 m cells and the first step blows up (negative pressure). A horizontal-only Smagorinsky would be the consistent
+  mesoscale companion to a 1-D PBL closure, but the pinned Breeze cannot combine two closures (tuples of closures are
+  post-pin, #1036), so horizontal mixing remains the advection scheme's.
 """
 function BreezeLab.tracer_mip_outer_simulation(arch;
         case = :aug07,
@@ -83,7 +88,7 @@ function BreezeLab.tracer_mip_outer_simulation(arch;
         initial_droplet_number = 100e6,
         radiation = :rrtmgp,
         radiation_interval = protocol["forcing"]["radiation_interval_s"],
-        closure = nothing,
+        closure = TKEBasedTurbulenceClosure(FT),
         terrain = parent === :era5 ? ETOPO2022() : nothing,
         relaxation_width = 5,
         relaxation_rate = 1/300,
