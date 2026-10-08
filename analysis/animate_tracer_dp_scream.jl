@@ -58,6 +58,7 @@ hours_s = t_s ./ 3600
 #####
 
 qxy = FieldTimeSeries(slice_file, "qᶜˡ_xy")
+lxy = FieldTimeSeries(slice_file, "lwp")
 wxy = FieldTimeSeries(slice_file, "w_xy")
 qxz = FieldTimeSeries(slice_file, "qᶜˡ_xz")
 rxz = FieldTimeSeries(slice_file, "qʳ_xz")
@@ -79,6 +80,7 @@ if isfile(prov)
 end
 
 q_xy(n) = 1e3 .* slab(qxy[n], 3)                 # g kg⁻¹ at the slice height
+l_xy(n) = 1e3 .* slab(lxy[n], 3)                 # g m⁻², cloud liquid water path
 w_xy(n) = slab(wxy[n], 3)                       # m s⁻¹
 q_xz(n) = 1e3 .* slab(qxz[n], 2)                 # g kg⁻¹, (x, z)
 r_xz(n) = 1e3 .* slab(rxz[n], 2)                 # g kg⁻¹, (x, z)
@@ -87,13 +89,14 @@ w_xz(n) = slab(wxz[n], 2)                       # m s⁻¹, (x, z faces)
 qmax = max(0.2, quantile(vcat([vec(q_xz(n)) for n in 1:max(1, Nt ÷ 40):Nt]...), 0.999))
 rmax = max(0.05, quantile(vcat([vec(r_xz(n)) for n in 1:max(1, Nt ÷ 40):Nt]...), 0.999))
 wmax = 6.0
+lmax = max(100.0, quantile(vcat([vec(l_xy(n)) for n in 1:max(1, Nt ÷ 40):Nt]...), 0.995))
 
 function slice_figure()
     n = Observable(1)
     fig = Figure(size = (width, round(Int, 1.05width)), fontsize = 11)
     Label(fig[0, 1:2], @lift(string("Breeze LES 200 m, TRACER–DP-SCREAM forcing — ", stamp(times[$n]))), fontsize = 15, tellwidth = false)
-    ax1 = Axis(fig[1, 1], title = @sprintf("cloud liquid qᶜˡ (g kg⁻¹) at %.0f m", slice_height), xlabel = "x (km)", ylabel = "y (km)", aspect = DataAspect())
-    hm1 = heatmap!(ax1, x, y, @lift(q_xy($n)), colormap = :Blues, colorrange = (0, qmax))
+    ax1 = Axis(fig[1, 1], title = "cloud liquid water path (g m⁻²)", xlabel = "x (km)", ylabel = "y (km)", aspect = DataAspect())
+    hm1 = heatmap!(ax1, x, y, @lift(l_xy($n)), colormap = :Blues, colorrange = (0, lmax))
     Colorbar(fig[1, 1][1, 2], hm1, width = 8)
     ax2 = Axis(fig[1, 2], title = @sprintf("w (m s⁻¹) at %.0f m", slice_height), xlabel = "x (km)", ylabel = "y (km)", aspect = DataAspect())
     hm2 = heatmap!(ax2, x, y, @lift(w_xy($n)), colormap = :balance, colorrange = (-wmax, wmax))
@@ -141,8 +144,8 @@ figm = Figure(size = (2width, round(Int, 2.1width)), fontsize = 11)
 for (k, n) in enumerate(picks)
     sub = figm[(k - 1) ÷ 2 + 1, (k - 1) % 2 + 1] = GridLayout()
     Label(sub[0, 1:2], stamp(times[n]), fontsize = 14, tellwidth = false)
-    a1 = Axis(sub[1, 1], title = @sprintf("qᶜˡ (g kg⁻¹) at %.0f m", slice_height), aspect = DataAspect(), xlabel = "x (km)", ylabel = "y (km)")
-    heatmap!(a1, x, y, q_xy(n), colormap = :Blues, colorrange = (0, qmax))
+    a1 = Axis(sub[1, 1], title = "cloud liquid water path (g m⁻²)", aspect = DataAspect(), xlabel = "x (km)", ylabel = "y (km)")
+    heatmap!(a1, x, y, l_xy(n), colormap = :Blues, colorrange = (0, lmax))
     a2 = Axis(sub[1, 2], title = @sprintf("w (m s⁻¹) at %.0f m", slice_height), aspect = DataAspect(), xlabel = "x (km)")
     heatmap!(a2, x, y, w_xy(n), colormap = :balance, colorrange = (-wmax, wmax))
     a3 = Axis(sub[2, 1:2], title = "qᶜˡ shading, qʳ contours, w = ±2 m s⁻¹ at y = Ly/2", xlabel = "x (km)", ylabel = "z (km)")
@@ -235,7 +238,7 @@ open(joinpath(out_dir, "README.md"), "w") do io
     println(io, "Run: `$(abspath(run_dir))` (Breeze LES, 256² × 200 m, 160 levels to 22 km; forcing = DP-SCREAM TRACER IOP file; start $(start) UTC; CDT = UTC−5). Rendered by `analysis/animate_tracer_dp_scream.jl` at BreezeLab commit $commit on $(Dates.now(Dates.UTC)) UTC from outputs reaching t = $(round(times[end] / 86400, digits=2)) days.\n")
     println(io, "| File | Content | Cadence |")
     println(io, "| --- | --- | --- |")
-    println(io, "| `convection.mp4` | xy: cloud-liquid mass fraction qᶜˡ (g kg⁻¹, colour range 0–$(round(qmax, digits=2))) and vertical velocity w (m s⁻¹, ±$wmax) at $(round(Int, slice_height)) m; xz at y = Ly/2: qᶜˡ shading, rain qʳ contours (0.01/0.1/0.5 g kg⁻¹), w = ±2 m s⁻¹ contours; below: domain-mean LWP and IWP (g m⁻²) and surface rain + ice flux (mm day⁻¹) with a cursor | one frame per saved slice (every $(round(Int, (times[2] - times[1]) / 60)) min), $framerate fps, $Nt frames |")
+    println(io, "| `convection.mp4` | xy: cloud liquid water path (g m⁻², colour range 0–$(round(Int, lmax))) and vertical velocity w (m s⁻¹, ±$wmax) at $(round(Int, slice_height)) m (the saved qᶜˡ slice at that height is mostly below the ~3 km cloud base and is not shown); xz at y = Ly/2: qᶜˡ shading, rain qʳ contours (0.01/0.1/0.5 g kg⁻¹), w = ±2 m s⁻¹ contours; below: domain-mean LWP and IWP (g m⁻²) and surface rain + ice flux (mm day⁻¹) with a cursor | one frame per saved slice (every $(round(Int, (times[2] - times[1]) / 60)) min), $framerate fps, $Nt frames |")
     println(io, "| `time_height.mp4` / `time_height.png` | total (liquid + ice) cloud fraction, LES 30-min horizontal means vs archived DP-SCREAM 3 km (August run) and 0.5 km (5–15 Aug cold start) TOT_CLOUD_FRAC on their mean Z3 heights, same UTC window; bottom: precipitation (LES rain + ice; DP-SCREAM PRECL, mm day⁻¹ inferred) | one frame per $(stride) profile records ($(stride * round(Int, (tp[2] - tp[1]) / 60)) min), $(max(4, framerate ÷ 2)) fps |")
     println(io, "| `convection_montage.png` | four `convection.mp4` frames at the largest domain-mean LWP of four distinct days: $(join([stamp(times[n]) for n in picks], "; ")) | — |")
     println(io, "\nUnits: mass fractions in g kg⁻¹, water paths in g m⁻², fluxes converted to mm day⁻¹ of liquid water, heights in km above the surface. The DP-SCREAM archive time labels are local (CDT) and were shifted +5 h to UTC. The LES is an intentional physics/resolution departure from DP-SCREAM (see docs/cases/tracer_dp_scream.md); agreement is not implied.")
