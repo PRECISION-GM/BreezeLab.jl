@@ -80,14 +80,16 @@ function inner_fields(n)
 end
 
 # Makie ≥ 0.24 renamed `arrows` → `arrows2d`; support both.
-arrowfn! = isdefined(CairoMakie.Makie, :arrows2d!) ? CairoMakie.Makie.arrows2d! : CairoMakie.Makie.arrows!
+const new_arrows = isdefined(CairoMakie.Makie, :arrows2d!)
+arrowfn! = new_arrows ? CairoMakie.Makie.arrows2d! : CairoMakie.Makie.arrows!
+arrow_style = new_arrows ? (shaftwidth = 1, tipwidth = 4, tiplength = 5) : (linewidth = 0.8, arrowsize = 6)
 function wind_arrows!(ax, xs, ys, u::Observable, v::Observable; step, lengthscale)
     xi = 1:step:length(xs); yi = 1:step:length(ys)
     pts = [Point2f(x, y) for x in xs[xi], y in ys[yi]]
     dirs = lift(u, v) do uu, vv
         [Vec2f(uu[i, j], vv[i, j]) for i in xi, j in yi]
     end
-    arrowfn!(ax, vec(pts), lift(vec, dirs); lengthscale, color = :black, linewidth = 0.8, arrowsize = 6)
+    arrowfn!(ax, vec(pts), lift(vec, dirs); lengthscale, color = :black, arrow_style...)
 end
 
 function finish_record(fig, path, draw!, frames)
