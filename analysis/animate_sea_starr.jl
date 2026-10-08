@@ -109,13 +109,18 @@ function montage(frames, path; frame_titles=nothing)
 end
 
 function record_with_montage(fig, update!, frames, mp4_path, png_path; montage_frames)
-    first_frame = Ref(true)
-    record(fig, mp4_path, frames; framerate, compression) do n
+    # H.264 "high" profile with 4:2:0 pixels plays in browsers (Makie's default is high422)
+    record(fig, mp4_path, frames; framerate, compression, profile = "high", pixel_format = "yuv420p") do n
         update!(n)
     end
+    # `colorbuffer` returned the last recorded frame after `record`; saving re-renders the scene
     images = map(montage_frames) do n
         update!(n)
-        colorbuffer(fig)
+        tmp = tempname() * ".png"
+        save(tmp, fig)
+        img = CairoMakie.Makie.FileIO.load(tmp)
+        rm(tmp)
+        img
     end
     montage(images, png_path)
     return nothing
