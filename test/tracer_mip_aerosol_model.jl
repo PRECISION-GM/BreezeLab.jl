@@ -134,18 +134,19 @@ end
     @test cb isa Oceananigans.Simulations.Callback
 
     # Writer and reset on the same schedule: the saved interval must be the completed, non-zero one
-    set!(model; T=col(T_profile), qᵛ=col(qᵛ₀))
-    reset_process_accumulators!(acc); acc.pending_reset[] = false
-    sim2 = Simulation(model; Δt=1.0, stop_iteration=4)
-    add_callback!(sim2, acc, IterationInterval(1))
+    model2 = AtmosphereModel(grid; dynamics, microphysics=p3, thermodynamic_constants=constants,
+                             momentum_advection=WENO(order=5), scalar_advection=BreezeLab.scalar_advection_schemes(5, p3, :qᵛ))
+    set!(model2; T=col(T_profile), qᵛ=col(qᵛ₀))
+    acc2 = ProcessRateAccumulators(model2)
+    sim2 = Simulation(model2; Δt=1.0, stop_iteration=4)
+    add_callback!(sim2, acc2, IterationInterval(1))
     tmp = mktempdir()
-    sim2.output_writers[:acc] = JLD2Writer(model, acc.fields; schedule=IterationInterval(2), filename=joinpath(tmp, "acc.jld2"), overwrite_files=true)
-    add_callback!(sim2, cb)
+    sim2.output_writers[:acc] = JLD2Writer(model2, acc2.fields; schedule=IterationInterval(2), filename=joinpath(tmp, "acc.jld2"), overwrite_files=true)
+    add_callback!(sim2, process_rate_output_callback(acc2, IterationInterval(2)))
     run!(sim2)
     saved = FieldTimeSeries(joinpath(tmp, "acc.jld2"), "liquid_condensation")
     @test length(saved.times) == 3                                   # iterations 0, 2, 4
-    @test maximum(interior(saved[2])) > 0 && maximum(interior(saved[3])) > 0
-    @test maximum(interior(saved[3])) < 1.5 * maximum(interior(saved[2])) * 2   # one interval each, not cumulative
-    @test !acc.pending_reset[] || true
+    @test maximum(interior(saved[1])) == 0                           # nothing accumulated before the first step
+    @test maximum(interior(saved[2])) > 0 && maximum(interior(saved[3])) > 0   # each hourly-like interval saved before its reset
     rm(tmp; recursive=true)
 end
