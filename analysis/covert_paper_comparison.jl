@@ -96,7 +96,10 @@ sections = Any[]
 profiles_to_plot = Any[]
 summary_rows = String[]
 for (i, (label, dir)) in enumerate(runs)
-    isfile(joinpath(dir, "COMPLETE")) || (println("skipping $label: $dir has no COMPLETE marker"); continue)
+    # a run is usable when its saved time series reaches the end of the window (the docs run has no COMPLETE marker)
+    tsfile = filter(f -> endswith(f, "_timeseries.jld2"), readdir(dir; join = true))
+    (length(tsfile) == 1 && last(FieldTimeSeries(only(tsfile), "lwp").times) ≥ window[2] - 1) ||
+        (println("skipping $label: $dir has no time series reaching $(window[2]) s"); continue)
     stage("$label: profiles")
     p = window_profiles(dir); c = colors[mod1(i, 7)]
     cloudy = p.qᶜˡ .≥ QC_THRESHOLD                       # the paper's definition applied to the mean profile
@@ -174,7 +177,8 @@ save(joinpath(output_dir, "rain_sections.png"), fs; px_per_unit = 2)
 
 stage("nc sensitivity")
 # Nc sensitivity across the P3 members (prescribed or diagnosed in-cloud Nc)
-pts = [(results[l]["nc_cm3"], results[l]["cloud_base_m_profile"], results[l]["cloud_top_m_profile"], l) for (l, _) in runs if haskey(results, l) && isfinite(results[l]["nc_cm3"])]
+pts = [(results[l]["nc_cm3"], results[l]["cloud_base_m_profile"], results[l]["cloud_top_m_profile"], l) for (l, _) in runs
+       if haskey(results, l) && isfinite(results[l]["nc_cm3"]) && !startswith(l, "one_moment")]   # P3 members only
 if length(pts) ≥ 2
     fn = Figure(size = (900, 500), fontsize = 13)
     ax = Axis(fn[1, 1], xlabel = "droplet number Nc (cm⁻³)", ylabel = "height (m)", title = "Cloud base/top (mean qᶜˡ ≥ 0.01 g kg⁻¹) vs Nc, 09–12 UTC; paper: base +10 m, top +25 m per +25 cm⁻³")
@@ -189,13 +193,14 @@ if length(pts) ≥ 2
     axislegend(ax, position = :lt, labelsize = 9)
     save(joinpath(output_dir, "nc_sensitivity.png"), fn; px_per_unit = 2)
     sorted = sort(pts; by = first)
+    slope(y) = (A = hcat(ones(length(nc)), nc); c = A \ y; 25 * c[2])      # least-squares m per 25 cm⁻³
     results["nc_sensitivity"] = Dict("members" => [p[4] for p in sorted], "nc_cm3" => [p[1] for p in sorted],
                                      "base_m" => [p[2] for p in sorted], "top_m" => [p[3] for p in sorted],
-                                     "base_shift_per_25_cm3" => 25 * (last(sorted)[2] - first(sorted)[2]) / (last(sorted)[1] - first(sorted)[1]),
-                                     "top_shift_per_25_cm3" => 25 * (last(sorted)[3] - first(sorted)[3]) / (last(sorted)[1] - first(sorted)[1]))
+                                     "base_shift_per_25_cm3" => slope([p[2] for p in pts]),
+                                     "top_shift_per_25_cm3" => slope([p[3] for p in pts]), "fit" => "least squares over the P3 members")
 end
 open(io -> TOML.print(io, results), joinpath(output_dir, "paper_comparison.toml"), "w")
 println("prescribed fluxes 09–12 UTC: H = ", round(shf_in; digits = 1), " W/m², LE = ", round(lhf_in; digits = 1), " W/m² (paper: 11.8 / 105.8)")
 foreach(println, summary_rows)
-haskey(results, "nc_sensitivity") && println("Nc sensitivity (ends): base ", round(results["nc_sensitivity"]["base_shift_per_25_cm3"]; digits = 1), " m, top ", round(results["nc_sensitivity"]["top_shift_per_25_cm3"]; digits = 1), " m per 25 cm⁻³ (paper 10 / 25)")
+haskey(results, "nc_sensitivity") && println("Nc sensitivity (least squares, P3 members): base ", round(results["nc_sensitivity"]["base_shift_per_25_cm3"]; digits = 1), " m, top ", round(results["nc_sensitivity"]["top_shift_per_25_cm3"]; digits = 1), " m per 25 cm⁻³ (paper 10 / 25)")
 println("wrote ", output_dir)
