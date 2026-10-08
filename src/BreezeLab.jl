@@ -57,7 +57,14 @@ export
     KappaAerosolMode, kappa_aerosol_activation, kappa_critical_supersaturation,
     SurfaceAerosolSource, EvaporationRegeneration, EvaporationRateUpdater, cloud_evaporation_rate_field, aerosol_number_columns,
     InversionFollowingNudging, InversionMaskUpdater, inversion_height_field, nudging_mask_weights,
-    sea_starr, sea_starr_driver_path
+    sea_starr, sea_starr_driver_path,
+    # TRACER-MIP (regional nested coastal control; the regional constructor lives in the NumericalEarth extension)
+    tracer_mip_protocol, tracer_mip_case_window, acpc_vertical_faces, tracer_mip_horizontal_extent, tracer_mip_grid,
+    TracerMIPAerosolProfile, tracer_mip_aerosol_profile, aerosol_shape, surface_number_mixing_ratios,
+    mode_number_mixing_ratios, total_number_mixing_ratio, aerosol_profile_table, tracer_mip_p3_aerosol_modes,
+    PrescribedAerosolProfile,
+    ProcessRateAccumulators, accumulate_process_rates!, reset_process_accumulators!, process_rate_output_callback,
+    PROCESS_RATE_NAMES, PROCESS_RATE_UNITS, tracer_mip_outer_simulation, tracer_mip_inner_simulation
 
 using Oceananigans
 using Oceananigans.Units
@@ -86,5 +93,13 @@ include("dephy_driver.jl")
 include("sea_starr_aerosol.jl")
 include("sea_starr_forcings.jl")
 include("sea_starr.jl")
+include("tracer_mip/protocol.jl")
+include("tracer_mip/aerosol_profiles.jl")
+include("tracer_mip/prescribed_aerosol.jl")
+include("tracer_mip/process_diagnostics.jl")
+
+# Regional (ERA5-nested, land/sea-coupled) constructor: implemented in the NumericalEarth extension.
+function tracer_mip_outer_simulation end
+function tracer_mip_inner_simulation end
 
 end # module

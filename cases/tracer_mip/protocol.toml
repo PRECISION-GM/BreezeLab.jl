@@ -1,0 +1,116 @@
+# TRACER-MIP Tier 1 control protocol, transcribed from the pinned roadmap
+# (ARM-Synergy/tracer-mip @ 416423ac, Roadmap.md and TRACER-MIP-Roadmap-2025_March_20250719.pdf,
+# both pinned by inputs.toml). Every value below was re-read from those files on 2026-10-07.
+# Entries under [breezelab] are implementation choices, NOT protocol values.
+
+[source]
+roadmap_md = "Roadmap.md"
+roadmap_pdf = "TRACER-MIP-Roadmap-2025_March_20250719.pdf"
+aerosol_notebook = "Pyplt.TRACER_Aerosol_Profiles_MIP.ipynb"
+commit = "416423ac1c5ea7673a07dacf14622af74ebd3b3e"
+notebook_commit_cited_by_roadmap = "59c0249519558d79ee4130eee52f2d5cf1148033"
+
+[cases.jun17]
+start_utc = 2022-06-17T06:00:00
+duration_hours = 24
+description = "Widespread sea-breeze convection, high aerosol (~4000 cm-3, >10 nm); ESCAPE aircraft overlap"
+[cases.aug07]
+start_utc = 2022-08-07T06:00:00
+duration_hours = 24
+description = "Early sea-breeze, isolated convection, cleaner (~1700 cm-3, >10 nm); polluted early then clean marine"
+
+[grids]
+center_latitude = 29.4719
+center_longitude = -95.0792
+nests = 2
+nesting = "one-way only (no interactive nests); all nests share the same center"
+map_projection = "polar stereographic or similar model option"
+[grids.outer]   # Grid-1
+spacing_m = 2000.0
+Nx = 750
+Ny = 750
+corners_polar_stereo = { NW = [35.941, -103.376], SW = [22.552, -102.347], NE = [35.941, -86.782], SE = [22.552, -87.812] }
+timestep_s = 3.0
+output_interval_s = 3600.0       # "60-min full simulation"
+[grids.inner]   # Grid-2 (same as the innermost ACPC-MIP nest)
+spacing_m = 500.0
+Nx = 500
+Ny = 500
+corners_polar_stereo = { NW = [30.602, -96.378], SW = [28.348, -96.350], NE = [30.602, -93.759], SE = [28.348, -93.788] }
+timestep_s = 1.5
+output_interval_s = 600.0        # "10-min full simulation"
+tracking_output_interval_s = 120.0
+tracking_window_utc = ["17:00 event day", "01:00 next day"]   # 12 PM - 8 PM LT Houston
+
+[vertical]
+model_top = "approx. 22 km / 50 hPa; use the provided levels"
+n_levels_quoted = 95
+levels_description = "95 scalar levels in meters AGL (same as ACPC MIP); the first (-24 m) is below ground (RAMS sigma-z convention)"
+scalar_levels_m_agl = [-24, 24, 76, 130, 186, 245, 308, 373, 442, 514, 590, 669, 752, 840, 932, 1028, 1130, 1236, 1348, 1466, 1589, 1718, 1854, 1997, 2147, 2304, 2470, 2643, 2825, 3016, 3217, 3428, 3650, 3882, 4126, 4383, 4652, 4935, 5230, 5531, 5831, 6131, 6431, 6731, 7031, 7331, 7631, 7931, 8231, 8531, 8831, 9131, 9431, 9731, 10031, 10331, 10631, 10931, 11231, 11531, 11831, 12131, 12431, 12731, 13031, 13331, 13631, 13931, 14231, 14531, 14831, 15131, 15431, 15731, 16031, 16331, 16631, 16931, 17231, 17531, 17831, 18131, 18431, 18731, 19031, 19331, 19631, 19931, 20231, 20531, 20831, 21131, 21431, 21731, 22031]
+# Base-state density per scalar level used by the aerosol notebook (kg m-3, from the RAMS Aug 7 setup)
+notebook_base_density_kg_m3 = [1.164, 1.159, 1.154, 1.149, 1.143, 1.138, 1.132, 1.126, 1.120, 1.113, 1.106, 1.098, 1.090, 1.081, 1.071, 1.062, 1.052, 1.041, 1.030, 1.019, 1.007, 0.995, 0.982, 0.968, 0.954, 0.940, 0.924, 0.909, 0.892, 0.875, 0.857, 0.840, 0.821, 0.803, 0.784, 0.764, 0.744, 0.723, 0.701, 0.678, 0.657, 0.636, 0.616, 0.597, 0.579, 0.561, 0.544, 0.527, 0.510, 0.494, 0.478, 0.463, 0.448, 0.434, 0.420, 0.407, 0.393, 0.380, 0.367, 0.355, 0.343, 0.331, 0.319, 0.307, 0.296, 0.285, 0.273, 0.262, 0.251, 0.240, 0.229, 0.219, 0.209, 0.200, 0.191, 0.182, 0.173, 0.165, 0.157, 0.148, 0.141, 0.134, 0.127, 0.120, 0.114, 0.108, 0.102, 0.097, 0.092, 0.088, 0.083, 0.079, 0.075, 0.071, 0.067]
+
+[forcing]
+initialization_and_boundaries = "3-hourly ERA-5 0.25-degree reanalysis (pressure levels)"
+cds_dataset = "reanalysis-era5-pressure-levels"
+topography = "use highest resolution available"
+coriolis = true
+convection_scheme = "none"
+land_surface = "interactive land-surface model, with urban physics if available"
+diffusion_pbl = "best option for your model, called every timestep"
+radiation = "best LW and SW option, called every 60 seconds"
+radiation_interval_s = 60.0
+microphysics = "two-moment bulk or bin with prognostic droplet number"
+aerosol_tier1 = "fixed aerosols at each model step"
+aerosol_tier2 = "interactive aerosols (optional)"
+aerosol_radiation = "radiatively inactive aerosols"
+
+[aerosol]
+units_note = "surface numbers quoted in ambient cm-3; converted to mg-1 (per kg air x 1e-6) with rho_sfc = 1.159 kg m-3"
+reference_density_kg_m3 = 1.159
+kappa = 0.26
+shape_profile = "Bo Chen (TAMU) lidar-derived fit, 7 Aug 2022 1200-1400 LT, applied to both cases"
+minimum_total_number_mg = 50.0    # total (mode-1 + mode-2) never below 50 mg-1; split by surface mode fractions
+above_6km = "floor value only (notebook forces the floor above 6 km AGL)"
+sensitivity_high_factor = 3.0
+sensitivity_low_factor_text = "3x lower (i.e., multiply by a coefficient of 0.3)"   # roadmap also writes 1/3 x; unresolved for the LOW variant
+[aerosol.jun17.mode1]
+number_cm3 = 3443.0
+number_mg = 2970.0        # as printed in Table 3 (3443/1.159 = 2970.7)
+median_diameter_nm = 30.0
+sigma = 1.5
+[aerosol.jun17.mode2]
+number_cm3 = 531.0
+number_mg = 458.0         # 531/1.159 = 458.2
+median_diameter_nm = 136.0
+sigma = 1.5
+[aerosol.aug07.mode1]
+number_cm3 = 1425.0
+number_mg = 1229.0        # 1425/1.159 = 1229.5
+median_diameter_nm = 49.0
+sigma = 1.8
+[aerosol.aug07.mode2]
+number_cm3 = 263.0
+number_mg = 226.0         # 263/1.159 = 226.9
+median_diameter_nm = 175.0
+sigma = 1.4
+[aerosol.shape_fit]   # f(z) = x0 exp(-gam z) - xerf erf((z - rm)/s) + xc, z in km; normalized by its maximum (at z = 0)
+x0 = 4.85856762
+gam = 0.75814697
+xerf = 1.40855631
+rm = 1.94524093
+s = 0.51943654
+xc = 1.44155834
+
+[outputs]
+state_3d = ["pressure", "temperature", "height", "air_density", "u", "v", "w"]
+water_3d = ["qv", "qc", "nc", "qr", "nr", "qX/nX per ice class"]
+surface_2d = ["lat/lon", "topography", "instantaneous precip rate (mm/s)", "accumulated precip (mm)", "sea-level pressure", "SH/LH fluxes", "albedo", "sfc+TOA up/down SW+LW (8)", "T2m, wind10m if available"]
+process_rates_3d = ["latent heating net (K/s)", "liquid condensation", "liquid evaporation", "ice deposition", "ice sublimation", "melting (total)", "freezing (total, excl. riming)", "droplet nucleation (#/mg per interval)", "new ice nucleation (#/mg per interval, excl. secondary)", "riming of cloud droplets", "riming of rain", "autoconversion+accretion"]
+process_rate_units = "kg/kg per output time interval (sum of rates between output writes) preferred; or kg/kg/s, stated"
+
+[breezelab]
+# Implementation choices (departures or interpretations), recorded here and in docs/cases/tracer_mip.md
+horizontal_grid = "LatitudeLongitudeGrid (Oceananigans), NOT polar stereographic: extents chosen so that the cell size is 2 km x 2 km (outer) / 500 m x 500 m (inner) at the center latitude; zonal spacing varies 1.85-2.12 km across the outer domain"
+vertical_faces = "94 cells: faces at midpoints of consecutive scalar levels (RAMS zt -> zm), bottom face 0 m, top face extrapolated to 22181 m"
+earth_radius_m = 6371000.0

@@ -1,0 +1,42 @@
+# Case sub-environment for the regional TRACER-MIP control.
+#
+# NumericalEarth (ERA5 parent, nesting, slab land, coupled fluxes) is pinned HERE rather than in the
+# package environment: its weak-dependency compat forces RRTMGP 1.0.1 -> 0.22.3, which must not change
+# the shared BreezeLab environment used by the ENA campaign. The package itself only declares
+# NumericalEarth as a weak dependency (extension `BreezeLabNumericalEarthExt`).
+#
+#   julia --project=cases/tracer_mip -e 'using Pkg; Pkg.instantiate()'
+#   julia --project=cases/tracer_mip data_wrangling/fetch_era5_tracer_mip.jl aug07
+#   julia --project=cases/tracer_mip cases/tracer_mip.jl
+[deps]
+Breeze = "660aa2fb-d4c8-4359-a52c-9c057bc511da"
+BreezeLab = "95b707ca-5eb7-4d90-9406-35d7ad170877"
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
+CloudMicrophysics = "6a9e3e04-43cd-43ba-94b9-e8782df3c71b"
+CopernicusClimateDataStore = "bce3f73f-acea-4481-bd86-df89ecc2cb46"
+Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
+JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
+NCDatasets = "85f8d34a-cbdd-5861-8df4-14fed0d494ab"
+NumericalEarth = "904d977b-046a-4731-8b86-9235c0d1ef02"
+Oceananigans = "9e8cae18-63c1-5223-a75c-80ca9d6e9a09"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+RRTMGP = "a01a1ee8-cea4-48fc-987c-fc7878d79da1"
+SHA = "ea8e919c-243c-51af-8825-aaa63cd721ce"
+Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
+TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[sources]
+BreezeLab = {path = "../.."}
+Breeze = {url = "https://github.com/NumericalEarth/Breeze.jl", rev = "5264d3c"}
+Oceananigans = {url = "https://github.com/CliMA/Oceananigans.jl", rev = "847e125"}
+NumericalEarth = {url = "https://github.com/NumericalEarth/NumericalEarth.jl", rev = "d07eb240a5679b7a6913e4d979e8378e76786ad7"}
+
+[compat]
+Breeze = "0.11"
+CopernicusClimateDataStore = "0.2"
+NumericalEarth = "0.8"
+Oceananigans = "0.113"
+RRTMGP = "0.22"
+julia = "1.12"

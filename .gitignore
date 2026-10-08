@@ -45,3 +45,4 @@ logs/
 runs/
 # Agent working directories (cluster-specific, never committed)
 env.sh
+# Agent-local build/run artifacts

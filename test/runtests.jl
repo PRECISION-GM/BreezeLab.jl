@@ -607,3 +607,10 @@ include("manifest_download.jl")
 include("ena_execution.jl")
 include("tracer_dp_scream.jl")
 include("sea_starr.jl")
+include("tracer_mip.jl")
+include("tracer_mip_aerosol_model.jl")
+if !isnothing(Base.find_package("NumericalEarth"))
+    include("tracer_mip_regional.jl")   # case sub-environment only (cases/tracer_mip/Project.toml)
+else
+    @info "NumericalEarth not in the test environment: skipping the TRACER-MIP regional machinery tests"
+end

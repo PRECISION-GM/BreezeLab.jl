@@ -54,6 +54,7 @@ mkpath(generated)
 cp(joinpath(@__DIR__, "cases", "ena.md"), joinpath(generated, "ena_protocols.md"); force=true)
 cp(joinpath(@__DIR__, "cases", "ena_lasso.md"), joinpath(generated, "ena_lasso.md"); force=true)
 # cases/ena_lasso.jl is not executed here: it needs the staged ARM bundle and a GPU.
+cp(joinpath(@__DIR__, "cases", "tracer_mip.md"), joinpath(generated, "tracer_mip.md"); force=true)
 
 # Add further runnable case scripts here as their implementations land. SEA STARR
 # and TRACER are currently specifications, so they are not executable examples yet.
@@ -70,4 +71,5 @@ makedocs(; root=@__DIR__,
                 "ENA example" => "generated/eastern_north_atlantic.md",
                 "ENA protocols" => "generated/ena_protocols.md",
                 "ENA-LASSO audit" => "generated/ena_lasso.md",
+                "TRACER-MIP" => "generated/tracer_mip.md",
                 "Case API" => "api.md"])
