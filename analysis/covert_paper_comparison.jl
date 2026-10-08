@@ -136,7 +136,8 @@ end
 stage("profile figure")
 fig = Figure(size = (1800, 700), fontsize = 13)
 titles = ("qᶜˡ (g kg⁻¹)", "qᵗ = qᵛ + qᶜˡ (g kg⁻¹)", "θˡ (K)", "qʳ (g kg⁻¹, log)", "w variance (m² s⁻²)")
-axes = [Axis(fig[1, k], title = t, ylabel = k == 1 ? "z (m)" : "", limits = (nothing, (0, 1600)),
+xlims = (nothing, (0, 13), (288, 312), nothing, nothing)
+axes = [Axis(fig[1, k], title = t, ylabel = k == 1 ? "z (m)" : "", limits = (xlims[k], (0, 1600)),
              xscale = (k == 4 ? log10 : identity)) for (k, t) in enumerate(titles)]
 for ax in axes
     hlines!(ax, [PAPER.cloud_base, PAPER.cloud_top]; color = :black, linestyle = :dot)
