@@ -57,6 +57,49 @@ function covert_public_bin_vertical_faces(; Nz=192, top=20000.0, Δz=10.0, unifo
     return faces
 end
 
+"""
+    covert_inversion_refined_vertical_faces(; Δz=10.0, Δz_fine=5.0, fine_bottom=800.0, fine_top=1400.0,
+                                             uniform_top=1500.0, top=20000.0, N_stretch=42)
+
+The [`covert_public_bin_vertical_faces`](@ref) reconstruction with the inversion layer
+refined to `Δz_fine` between `fine_bottom` and `fine_top` (5 m over 800–1400 m, the spacing
+Covert et al. (2022) use "near the surface and inversion layer"), `Δz` elsewhere below
+`uniform_top`, and the same `N_stretch` geometrically stretched cells to `top` as the
+reference grid. With the defaults this gives 80 + 120 + 10 + 42 = 252 cells (the reference
+has 192). A labelled sensitivity grid for the cloud-top/inversion bias test, not the
+paper's grid (which is 5 m near the surface as well and 192 levels in total).
+"""
+function covert_inversion_refined_vertical_faces(; Δz=10.0, Δz_fine=5.0, fine_bottom=800.0, fine_top=1400.0,
+                                                   uniform_top=1500.0, top=20000.0, N_stretch=42)
+    0 < fine_bottom < fine_top ≤ uniform_top < top || throw(ArgumentError("need 0 < fine_bottom < fine_top ≤ uniform_top < top"))
+    faces = collect(0.0:Δz:fine_bottom)
+    append!(faces, (fine_bottom + Δz_fine):Δz_fine:fine_top)
+    fine_top < uniform_top && append!(faces, (fine_top + Δz):Δz:uniform_top)
+    all(f -> isinteger(round(f; digits=9)) || true, faces)
+    r = geometric_growth_ratio((top - uniform_top) / Δz, N_stretch)
+    for n in 1:N_stretch
+        push!(faces, faces[end] + Δz * r^n)
+    end
+    faces[end] = top
+    issorted(faces) && all(>(0), diff(faces)) || error("refined vertical grid is not strictly increasing")
+    return faces
+end
+
+"""
+    ena_vertical_faces(name)
+
+Named vertical grids of the ENA cases: `:covert` ([`covert_public_bin_vertical_faces`](@ref)),
+`:covert_inversion_5m` ([`covert_inversion_refined_vertical_faces`](@ref)) and `:lasso`
+([`lasso_ena_vertical_faces`](@ref)). The name is what run scripts record in provenance.
+"""
+function ena_vertical_faces(name)
+    name = Symbol(name)
+    name === :covert && return covert_public_bin_vertical_faces()
+    name === :covert_inversion_5m && return covert_inversion_refined_vertical_faces()
+    name === :lasso && return lasso_ena_vertical_faces()
+    throw(ArgumentError("unknown vertical grid $name (covert, covert_inversion_5m, lasso)"))
+end
+
 function require_namelist!(namelist, required, preset)
     missing_keys = [k for k in required if !haskey(namelist, k)]
     isempty(missing_keys) || throw(ArgumentError("preset $preset requires namelist parameters $(missing_keys) (found $(sort(collect(keys(namelist)))))"))

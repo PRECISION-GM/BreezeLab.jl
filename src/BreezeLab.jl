@@ -33,7 +33,7 @@ export
     SoundingProfiles, saturation_partition, InitialPerturbation, initial_state_columns, perturbation_array,
     # case
     eastern_north_atlantic, ena_simulation, ena_protocol_settings, lasso_ena_simulation, build_case, lasso_aerosol_modes, covert_aerosol_modes, activated_fraction, write_provenance, read_sam_grd, faces_from_centers, epoch_from_day_of_year,
-    covert_public_bin_vertical_faces, AerosolReplenishment, DiagnosticCCNProjection, initial_sounding, perturbation_amplitudes,
+    covert_public_bin_vertical_faces, covert_inversion_refined_vertical_faces, ena_vertical_faces, AerosolReplenishment, DiagnosticCCNProjection, initial_sounding, perturbation_amplitudes,
     # LASSO-ENA bundle and case
     LassoMember, parse_lasso_member, lasso_variant_tokens, lasso_samin_filename, lasso_reference_filenames,
     read_sam_namelist_groups, lasso_scalar_levels, inspect_lasso_bundle, validate_lasso_bundle, lasso_bundle_record,
