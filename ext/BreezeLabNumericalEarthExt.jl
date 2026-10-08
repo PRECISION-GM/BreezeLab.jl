@@ -28,6 +28,7 @@ using Breeze
 using Breeze.Microphysics.PredictedParticleProperties: CloudDroplets
 using Dates: DateTime, Hour, Second
 using Printf: @sprintf
+using Statistics: mean
 
 # Rain-to-land shim. NumericalEarth d07eb240's Breeze extension imports
 # `Breeze.AtmosphereModels.surface_precipitation_flux`, renamed `bottom_precipitation_flux` before the
@@ -53,5 +54,6 @@ end
 include("tracer_mip_regional/coastal_surface.jl")
 include("tracer_mip_regional/synthetic_parent.jl")
 include("tracer_mip_regional/outer_domain.jl")
+include("tracer_mip_regional/inner_domain.jl")
 
 end # module
