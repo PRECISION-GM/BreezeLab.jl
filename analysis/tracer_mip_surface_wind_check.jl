@@ -30,7 +30,12 @@ Nz = size(grid, 3)
 z_site = [znode(i_range[i_site], j_range[j_site], k, grid, Center(), Center(), Center()) for k in 1:Nz]
 z_sfc = znode(i_range[i_site], j_range[j_site], 1, grid, Center(), Center(), Face())
 
-speed2d(n) = (u = dropdims(Array(interior(u_s[n])); dims = 3); v = dropdims(Array(interior(v_s[n])); dims = 3); sqrt.(u .^ 2 .+ v .^ 2))
+centered(a, dim) = dim == 1 ? 0.5 .* (a[1:end-1, :] .+ a[2:end, :]) : 0.5 .* (a[:, 1:end-1] .+ a[:, 2:end])
+function speed2d(n)   # u_sfc / v_sfc are face-located; average to cell centers
+    u = dropdims(Array(interior(u_s[n])); dims = 3); v = dropdims(Array(interior(v_s[n])); dims = 3)
+    size(u, 1) == length(λ) + 1 && (u = centered(u, 1)); size(v, 2) == length(φ) + 1 && (v = centered(v, 2))
+    return sqrt.(u .^ 2 .+ v .^ 2)
+end
 rim = falses(length(λ), length(φ)); rim[1:10, :] .= true; rim[end-9:end, :] .= true; rim[:, 1:10] .= true; rim[:, end-9:end] .= true
 model_mean = Float64[]; model_site = Float64[]; model_interior_mean = Float64[]
 for n in 1:nt
