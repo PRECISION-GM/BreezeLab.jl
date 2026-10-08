@@ -118,7 +118,10 @@ end
     @test maximum(cond[k_cloud]) > 0 && all(cond[k_clear] .== 0)        # condensation only in the supersaturated layer
     @test maximum(nuc[k_cloud]) > 0                                       # droplets nucleated (#/mg per interval)
     @test maximum(heat[k_cloud]) > 0                                      # condensational heating, K per interval
-    @test all(interior(acc.fields.ice_deposition) .== 0) && all(interior(acc.fields.melting) .== 0)   # warm column
+    k_warm = findall(z -> 295.0 - 0.0065z > 273.15, zc)                    # ice processes only below 0 °C
+    @test all(Array(interior(acc.fields.ice_deposition, 1, 1, :))[k_warm] .== 0)
+    @test all(Array(interior(acc.fields.melting, 1, 1, :))[k_warm] .== 0)
+    @test all(interior(acc.fields.ice_deposition) .>= 0) && all(interior(acc.fields.ice_sublimation) .>= 0)
     @test all(f -> all(≥(0), interior(f)), (acc.fields.liquid_condensation, acc.fields.liquid_evaporation,
                                             acc.fields.cloud_riming, acc.fields.autoconversion_accretion))
     # Explicit single accumulation adds exactly one rate × Δt on top of the current state
