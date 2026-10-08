@@ -105,8 +105,17 @@ chemistry and scales their number so that the SBM-capped activatable total is ex
 75 cm⁻³ at the surface density (≈ 146 cm⁻³ total aerosol, scale factor ≈ 0.26), with the
 diagnostic-CCN projection; it is labelled as this package's configuration, not as a
 Covert or ARM prescription. Relaunch: Slurm job 263 (`runs/covert_p3_covert_n75_job263/`,
-6 h, Δt = 0.5 s, next physically idle A100). Expected: in-cloud nᶜˡ ≤ 75 cm⁻³ and drizzle
-comparable with the N75 members; the result will be appended here.
+6 h, Δt = 0.5 s, A100, 313.6 min wall, COMPLETE).
+
+**Result (job 263, `runs/ena_aerosol_audit_n75/`, `runs/ena_covert_analysis_n75/`).** The
+Covert-consistent aerosol does what it was built for: initial nᵃ = 6.22×10⁷ kg⁻¹
+(146 cm⁻³ total), in-cloud nᶜˡ 79 cm⁻³ (06–12 UTC last hour) / 82 cm⁻³ (09–12 UTC mean)
+against the observed 75 cm⁻³, nᵃ + nᶜˡ conserved at the capped total, and drizzle is
+restored: mean surface rain 0.0039 mm hr⁻¹ (06–12 UTC; N75 members 0.0023–0.0031,
+disdrometer 0.0015), RWP 4.9 g m⁻² (09–12 UTC), LWP 161 / 192 g m⁻² (mean / 12 UTC) and
+cloud base/top 755/1235 m — indistinguishable from the prescribed-N75 members. The P3
+aerosol member of the Covert benchmark is therefore `p3_covert_n75`; the `p3_aer2`
+members remain the LASSO-aerosol sensitivity.
 
 ## Comparison with Covert et al. (2022)
 
@@ -138,24 +147,24 @@ column of the hourly x–z slices, averaged over cloudy columns (an ARSCL-like d
 Inversion: level of maximum dθˡ/dz of the window-mean profile. LWC = mean `qᶜˡ`.
 Nc for the aerosol members: in-cloud mean of the hourly-mean `nᶜˡ`/cloudy-fraction.
 
-| quantity, 09–12 UTC | paper (control) | one_moment | n75 Δt 0.5 | n75 Δt 0.25 | aer2 Δt 0.5 | aer2 Δt 0.25 | aer2 + SS cap (244) |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| cloud base, profile / column (m) | 821 | 815 / 939 | 785 / 802 | 765 / 791 | 815 / 822 | 795 / 814 | 805 / 816 |
-| cloud top, profile / column (m) | 1109 | 1265 / 1234 | 1245 / 1214 | 1245 / 1219 | 1265 / 1243 | 1275 / 1241 | 1265 / 1239 |
-| inversion (m) | 1132.5 (initial, 895 hPa) | 1260 | 1240 | 1240 | 1260 | 1260 | 1250 |
-| peak LWC (g kg⁻¹) @ height | ≈ 0.5 "close to the mean cloud top" | 0.52 @ 1185 | 0.66 @ 1135 | 0.68 @ 1135 | 0.63 @ 1135 | 0.66 @ 1135 | 0.64 @ 1135 |
-| in-cloud Nc (cm⁻³) | 75 (prescribed, observed) | 75 (1M autoconversion) | 75 | 75 | 433 | 409 | 296 |
-| mixed-layer qᵗ / θˡ (below 600 m) | 11.2 g kg⁻¹ / 292.2 K (initial) | 10.2 / 292 | 10.0 / 292 | 10.0 / 292 | 9.95 / 292 | 9.95 / 292 | 9.96 / 292 |
-| max qʳ (g kg⁻¹) @ height | not stated | 4.1×10⁻³ @ 945 | 6.2×10⁻³ @ 1005 | 7.8×10⁻³ @ 995 | 3.0×10⁻⁴ @ 1055 | 3.7×10⁻⁴ @ 1035 | 6.6×10⁻⁴ @ 1045 |
-| rain water path, mean / max (g m⁻²) | not stated | 3.5 / 3.9 | 3.2 / 3.6 | 4.2 / 4.7 | 0.14 / 0.15 | 0.18 / 0.20 | 0.32 / 0.36 |
-| surface rain, mean (mm hr⁻¹) | not stated | 0.0045 | 0.0031 | 0.0044 | ≈ 0 (1×10⁻⁵) | ≈ 0 | ≈ 0 |
-| max w variance (m² s⁻²) @ height | peaks "within the upper stratocumulus layer" | 0.30 @ 1050 | 0.54 @ 680 | 0.51 @ 600 | 0.58 @ 690 | 0.55 @ 680 | 0.56 @ 660 |
+| quantity, 09–12 UTC | paper (control) | one_moment | n75 Δt 0.5 | n75 Δt 0.25 | aer2 Δt 0.5 | aer2 Δt 0.25 | aer2 + SS cap (244) | covert_n75 (263) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| cloud base, profile / column (m) | 821 | 815 / 939 | 785 / 802 | 765 / 791 | 815 / 822 | 795 / 814 | 805 / 816 | 775 / 797 |
+| cloud top, profile / column (m) | 1109 | 1265 / 1234 | 1245 / 1214 | 1245 / 1219 | 1265 / 1243 | 1275 / 1241 | 1265 / 1239 | 1235 / 1206 |
+| inversion (m) | 1132.5 (initial, 895 hPa) | 1260 | 1240 | 1240 | 1260 | 1260 | 1250 | 1230 |
+| peak LWC (g kg⁻¹) @ height | ≈ 0.5 "close to the mean cloud top" | 0.52 @ 1185 | 0.66 @ 1135 | 0.68 @ 1135 | 0.63 @ 1135 | 0.66 @ 1135 | 0.64 @ 1135 | 0.67 @ 1135 |
+| in-cloud Nc (cm⁻³) | 75 (prescribed, observed) | 75 (1M autoconversion) | 75 | 75 | 433 | 409 | 296 | 82 (prognostic) |
+| mixed-layer qᵗ / θˡ (below 600 m) | 11.2 g kg⁻¹ / 292.2 K (initial) | 10.2 / 292 | 10.0 / 292 | 10.0 / 292 | 9.95 / 292 | 9.95 / 292 | 9.96 / 292 | 10.0 / 292 |
+| max qʳ (g kg⁻¹) @ height | not stated | 4.1×10⁻³ @ 945 | 6.2×10⁻³ @ 1005 | 7.8×10⁻³ @ 995 | 3.0×10⁻⁴ @ 1055 | 3.7×10⁻⁴ @ 1035 | 6.6×10⁻⁴ @ 1045 | 9.4×10⁻³ @ 995 |
+| rain water path, mean / max (g m⁻²) | not stated | 3.5 / 3.9 | 3.2 / 3.6 | 4.2 / 4.7 | 0.14 / 0.15 | 0.18 / 0.20 | 0.32 / 0.36 | 4.9 / 6.1 |
+| surface rain, mean (mm hr⁻¹) | not stated | 0.0045 | 0.0031 | 0.0044 | ≈ 0 (1×10⁻⁵) | ≈ 0 | ≈ 0 | 0.0052 |
+| max w variance (m² s⁻²) @ height | peaks "within the upper stratocumulus layer" | 0.30 @ 1050 | 0.54 @ 680 | 0.51 @ 600 | 0.58 @ 690 | 0.55 @ 680 | 0.56 @ 660 | 0.51 @ 580 |
 
 - **Cloud base** agrees with the paper's 821 m to within ±40 m in every member (profile
   definition; the column definition of the one-moment run is 120 m higher because its
   mean profile has a diffuse base below 0.01 g kg⁻¹ in many columns).
-- **Cloud top and inversion are ≈ 130–165 m too high** in every member (top 1245–1275 vs
-  1109 m; inversion 1240–1260 vs the 1132.5 m initial inversion), the same bias we see
+- **Cloud top and inversion are ≈ 100–165 m too high** in every member (top 1235–1275 vs
+  1109 m; inversion 1230–1260 vs the 1132.5 m initial inversion), the same bias we see
   against the ARSCL tops (≈ 1090 m, [above](#results-06–12-utc-means-unless-stated)).
   The bias is present already in the first hour (dotted profiles in
   `runs/ena_covert_analysis/profiles_all_runs.png`) and grows with time, i.e. the layer
@@ -164,21 +173,27 @@ Nc for the aerosol members: in-cloud mean of the hourly-mean `nᶜˡ`/cloudy-fra
   radiatively driven top, and the simple longwave scheme plus WENO/Smagorinsky mixing at
   cloud top entrains more than SAM's TKE closure; a secondary contribution is the
   constant 10 m grid that also places the cloud top one cell higher by construction.
-  Proposed test: rerun `p3_n75` (Δt = 0.5 s) on a grid with 5 m spacing from 800 to 1400 m
-  (`z_faces` override, recorded in provenance), everything else unchanged, and compare the
-  09–12 UTC cloud-top/inversion heights; if the bias halves, add the Covert 5-m grid as the
-  benchmark's default.
+  Test (queued, see the status file): `p3_n75` on the inversion-refined grid
+  `--grid covert_inversion_5m` (5 m faces over 800–1400 m, `covert_inversion_refined_vertical_faces`,
+  recorded in provenance; Δt 0.25–0.5 s under the CFL wizard), everything else unchanged
+  (job 346, `runs/covert_p3_n75_inversion5m_job346/`), then two isolation runs on the
+  reference grid — `--closure none` (job 347) and `--radiation rrtmgp` (job 348) — so that
+  grid, SGS closure and longwave scheme contributions to the bias can be separated with
+  `analysis/covert_paper_comparison.jl` over 09–12 UTC. If the bias disappears with the
+  5-m grid, that grid becomes the covert default.
 - **Peak LWC** 0.63–0.68 g kg⁻¹ (P3) is ≈ 30 % above the paper's ≈ 0.5, consistent with the
   deeper layer (adiabatic LWC grows with depth above cloud base); the one-moment run gives
   0.52. Mixed-layer qᵗ (≈ 10.0 g kg⁻¹) is 1 g kg⁻¹ below the paper's initial 11.2, which is
   the public bin-repository sounding, not a model drift (its first-hour value is the same).
 - **Nc sensitivity.** The paper: "mean cloud bases increasing by ∼ 10 m but mean cloud tops
   increasing by closer to 25 m with each increase in Nc" (50 → 75 → 100 cm⁻³, i.e. per
-  25 cm⁻³). Over our P3 members (75 → 296 → 409–433 cm⁻³) a least-squares fit gives
-  +2.3 m (base) and +1.8 m (top) per 25 cm⁻³ — the same sign for the base, but a
-  5–15× weaker response, and over a far larger Nc range than the paper's; within the
-  paper's 50–100 cm⁻³ range we have only the 75 cm⁻³ members (`nc_sensitivity.png`).
-  The `p3_covert_n75` member (job 263) will be added to this table when it completes.
+  25 cm⁻³). Over our six P3 members (75, 75, 82 → 296 → 409–433 cm⁻³) a least-squares fit
+  gives +2.3 m (base) and +2.1 m (top) per 25 cm⁻³ — the same sign for the base, but a
+  4–12× weaker response, and over a far larger Nc range than the paper's; within the
+  paper's 50–100 cm⁻³ range we have only the 75–82 cm⁻³ members (`nc_sensitivity.png`).
+  The prognostic-aerosol `p3_covert_n75` member reproduces the prescribed-N75 members
+  (base/top 775/1235 vs 765–785/1245 m, RWP 4.9 vs 3.2–4.2 g m⁻²), so the P3 result is
+  not an artefact of prescribing Nc.
 - **Rain** (`rain_sections.png`: hourly-mean qʳ time–height sections on one log scale with
   the rain-water-path series). The paper states no rain values; its Fig. 6 shows two
   instantaneous x–z sections of qc and qr and notes that "regions of rainwater mixing ratio
