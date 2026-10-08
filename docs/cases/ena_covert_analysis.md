@@ -67,3 +67,43 @@ high bias in cloud top/base that the public forcing produces in all members. The
 runs are a LASSO-aerosol sensitivity whose droplet number is unphysical for 18 July 2017;
 they should not be read as the Covert case. No numerical flaw (NaN, runaway, Δt
 dependence) was found in any of the five.
+
+## Addendum (8 October 2026): the capped-aerosol relaunch, job 244
+
+`runs/covert_p3_aer2_sscap_job244/` — `p3_aer2`, Δt = 0.5 s, with the aerosol-audit fix
+(`--aerosol_ss_cap 0.003`, fully soluble SBM chemistry; provenance: `maximum_supersaturation
+= 0.003`, `n₁ + n₂ = 2.37×10⁸ kg⁻¹` ≈ 286 cm⁻³ activatable), on A100 `GPU-c764cc9c`,
+43 200 steps, finite. Analysis: `runs/ena_aerosol_audit_sscap/` and
+`runs/ena_covert_analysis_sscap/` (six-run overlay including this run).
+
+| quantity (06–12 UTC) | obs | p3_aer2 (168, uncapped) | p3_aer2 + cap (244) | p3_n75 (165) |
+| --- | --- | --- | --- | --- |
+| in-cloud nᶜˡ, last hour (cm⁻³) | 75 | 394 | **279** | 75 (prescribed) |
+| in-cloud nᵃ, last hour (cm⁻³) | — | 219 | 49 | — |
+| nᵃ + nᶜˡ (10⁸ kg⁻¹, conserved) | — | 4.618 | 2.369 | — |
+| LWP mean / at 12 UTC (g m⁻²) | 168 ± 13 / ≈ 120 | 155 / 190 | 157 / 193 | 160 / 195 |
+| rain mean / max (mm hr⁻¹) | 0.0015 / 0.39 | 1×10⁻⁵ / 2×10⁻⁵ | 2×10⁻⁵ / 1×10⁻⁴ | 0.0023 / 0.0037 |
+| cloud base / top at 12 UTC (m) | ≈ 650 / ≈ 1090 | 805 / 1275 | 795 / 1265 | 765 / 1245 |
+
+The cap works as designed: the in-cloud droplet number falls from 394 to 279 cm⁻³, i.e. to
+the SBM's activatable aer2 total (≈ 286 cm⁻³; the diagnostic-CCN projection keeps
+`nᵃ + nᶜˡ` at that total, so nearly the whole reservoir is activated in cloud), and the
+SAM-side expectation for aer2 is met. But for the **Covert case** the droplet number is
+still 3.7× the observed 75 cm⁻³ and drizzle is still suppressed (2×10⁻⁵ vs 0.002–0.003
+mm hr⁻¹ for the 75 cm⁻³ members and 0.0015 observed); LWP and cloud boundaries are
+indistinguishable from the other P3 members. **Remaining cause: the member choice** —
+LASSO aer2 (557 cm⁻³ total, ≈ 286 cm⁻³ activatable) is not the aerosol of the Covert case.
+
+What the Covert case prescribes: the bulk paper (Covert, Mechem & Zhang 2022, ACP 22, 1159)
+uses the observed `Nc = 75 cm⁻³` ("based on airborne in situ measurements of the 18 July
+2017 case"; sensitivities 50 and 100 cm⁻³); the public bin repository carries only
+`snd/lsf/sfc/prm` with no aerosol specification (the HUJI-SBM spectrum is compiled into
+SAM, and no bin-microphysics ENA paper by these authors exists in Mechem's 2024
+publication list). A Covert-consistent aerosol therefore has to be *built*: the new
+`:p3_covert_n75` member (`covert_aerosol_modes`) keeps the LASSO mode shapes and SBM
+chemistry and scales their number so that the SBM-capped activatable total is exactly
+75 cm⁻³ at the surface density (≈ 146 cm⁻³ total aerosol, scale factor ≈ 0.26), with the
+diagnostic-CCN projection; it is labelled as this package's configuration, not as a
+Covert or ARM prescription. Relaunch: Slurm job 263 (`runs/covert_p3_covert_n75_job263/`,
+6 h, Δt = 0.5 s, next physically idle A100). Expected: in-cloud nᶜˡ ≤ 75 cm⁻³ and drizzle
+comparable with the N75 members; the result will be appended here.
