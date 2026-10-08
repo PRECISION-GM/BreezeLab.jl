@@ -13,8 +13,13 @@ configuration without running it. For official LASSO inputs, use
 [`ena_simulation`](@ref) with the corresponding protocol; see
 [ENA experiment definitions](generated/ena_protocols.md).
 
-SEA STARR and TRACER-MIP currently have case specifications and input manifests;
-their simulation adapters are not implemented yet.
+The other cases are implemented as exported constructors with readable case scripts
+under `cases/` and Slurm launchers under `execution/`: the official LASSO-ENA member
+([`ena_lasso`](@ref)), SEA STARR ([`sea_starr`](@ref)), the periodic TRACER–DP-SCREAM
+experiment ([`tracer_dp_scream`](@ref)) and the regional TRACER-MIP outer domain
+(`tracer_mip_outer_simulation`, in the NumericalEarth extension). Their scripts are
+rendered in this manual without execution, and the
+[campaign results](generated/campaign_results.md) page summarizes the completed runs.
 
 ## Build this manual
 
