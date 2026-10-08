@@ -108,8 +108,9 @@ end
 montage_hours = [0, 6, 12, 18]        # 06, 12, 18, 00 UTC
 function montage_frames()
     picks = Int[]; labels = String[]
+    tt = Float64.(collect(times[frames]))
     for h in montage_hours
-        n = findfirst(t -> abs(t - 3600h) < 1, times[frames])
+        n = findfirst(t -> abs(t - 3600.0 * h) < 1, tt)
         if isnothing(n)
             push!(picks, n_common); push!(labels, "latest available")
         else
@@ -131,7 +132,7 @@ function plan_view(; zoom = false)
     ax1 = Axis(fig[1, 1]; xlabel = "longitude", ylabel = "latitude", aspect = DataAspect(),
                title = zoom ? "lowest-level T (K), wind" : "lowest-level T (K), 10 m-level wind")
     ax2 = Axis(fig[1, 3]; xlabel = "longitude", aspect = DataAspect(),
-               title = zoom ? "LWP (g m⁻²), rain rate contours 1/5/20 mm h⁻¹" : "rain rate (mm h⁻¹); cloud water at 2 km (white)")
+               title = zoom ? "LWP (g m⁻²), rain rate contours 1/5/20 mm h⁻¹" : "rain rate (mm h⁻¹); cloud water at 2 km (grey contours)")
     T = Observable(zeros(Float32, length(xs), length(ys))); u = Observable(zeros(Float32, length(xs), length(ys))); v = Observable(zeros(Float32, length(xs), length(ys)))
     B = Observable(zeros(Float32, length(xs), length(ys))); C = Observable(zeros(Float32, length(xs), length(ys)))
     hm1 = heatmap!(ax1, xs, ys, T; colormap = :thermal, colorrange = zoom ? (294, 310) : (285, 312))
@@ -140,7 +141,7 @@ function plan_view(; zoom = false)
         hm2 = heatmap!(ax2, xs, ys, B; colormap = :dense, colorrange = (0, 800))
         contour!(ax2, xs, ys, C; levels = [1, 5, 20], colormap = :OrRd, colorrange = (0, 20), linewidth = 1)
     else
-        hm2 = heatmap!(ax2, xs, ys, B; colormap = Reverse(:Blues), colorrange = (0, 20), lowclip = :white)
+        hm2 = heatmap!(ax2, xs, ys, B; colormap = :Blues, colorrange = (0, 20))
         contour!(ax2, xs, ys, C; levels = [0.05, 0.5], color = :grey40, linewidth = 0.6)
     end
     Colorbar(fig[1, 4], hm2)
@@ -153,7 +154,7 @@ function plan_view(; zoom = false)
             lines!(ax, λb, φb; color = :black, linestyle = :dash, linewidth = 1)
         end
     end
-    wind_arrows!(ax1, xs, ys, u, v; step = zoom ? 8 : 30, lengthscale = zoom ? 0.012 : 0.03)
+    wind_arrows!(ax1, xs, ys, u, v; step = zoom ? 8 : 30, lengthscale = zoom ? 0.02 : 0.06)
     function draw!(n)
         if zoom
             f = inner_fields(n)
@@ -204,9 +205,14 @@ products = [("plan_view_domain", () -> plan_view(; zoom = false)),
 report = Dict{String, Any}("run_dir" => run_dir, "n_frames" => n_common, "first" => stamp(times[1]), "last" => stamp(times[n_common]),
                            "cadence_s" => length(times) > 1 ? times[2] - times[1] : 0.0, "framerate" => framerate)
 picks, labels = montage_frames()
+@info "montage frames" picks labels Float64.(collect(times[1:min(3, n_common)]))
+report["montage_frames"] = picks
 for (name, make) in products
     fig, draw! = make()
     mp4 = joinpath(out_dir, "tracer_mip_aug07_$(name).mp4")
+    # Frame-change diagnostic: fraction of pixels that differ between the first and last frames.
+    draw!(1); first_img = colorbuffer(fig); draw!(n_common); last_img = colorbuffer(fig)
+    report[name * "_changed_pixel_fraction"] = round(count(first_img .!= last_img) / length(first_img); digits = 4)
     mb = finish_record(fig, mp4, draw!, frames)
     report[name * "_mp4_MB"] = round(mb; digits = 2)
     # 4-frame montage: one full figure per pick, rendered to PNG then composed
