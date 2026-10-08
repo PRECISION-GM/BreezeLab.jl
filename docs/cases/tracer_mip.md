@@ -69,9 +69,18 @@ Missing or mismatched for this protocol:
 - **Radiation**: RRTMGP all-sky every 60 s; aerosols are radiatively inactive (protocol).
 - **Boundaries**: hourly ERA5 (the protocol minimum is 3-hourly), interpolated linearly in time; Davies relaxation over the
   outermost cells; no interior large-scale tendency is applied (forcing enters only through the boundaries and the surface).
-- **Turbulence/PBL**: no explicit closure by default. `SmagorinskyLilly` (isotropic length on 50 m × 2 km cells) drove the
-  first step to negative pressure in every CPU smoke of the real ERA5 state; `TKEBasedTurbulenceClosure` (vertical,
-  implicit) steps stably and is the PBL candidate (`TRACER_MIP_CLOSURE=tke`), not yet used in a GPU run.
+- **Turbulence/PBL**: `TKEBasedTurbulenceClosure` (vertical eddy diffusivity with prognostic TKE, vertically implicit) is
+  the control's closure. The first 24-h control (job 233) ran without a closure and shows a surface-layer defect
+  (`runs/outer_era5_control_aug07_job233/diagnostics/surface_wind_check.{toml,png}`): the lowest-level (25 m) wind,
+  initialised at ERA5's 1000 hPa value (domain mean 7.2 m/s vs ERA5 10 m 4.9 m/s — the ERA5 pressure levels carry no
+  surface layer), falls within one hour to 2.6–3.0 m/s, 0.58–0.83 of ERA5's 10 m wind for the rest of the run, while the
+  second level (76 m) keeps the free-stream value (site profiles: 3.1 vs 8.0 m/s at 3 h, 1.9 vs 4.4 m/s at 9 h, with
+  ERA5 5.3 and 3.8 m/s at ≈160 m). The surface stress is confined to the 50 m lowest layer because nothing mixes
+  momentum vertically; the Monin-Obukhov fluxes then see an unphysically weak wind. Judged a defect of the no-closure
+  configuration; the control is rerun with the TKE closure. `SmagorinskyLilly` cannot be used on 50 m × 2 km cells: its
+  isotropic filter width (≈585 m) makes the explicit vertical diffusion unstable (νΔt/Δz² > 1/2) in the first step. A
+  horizontal-only Smagorinsky with the 1-D TKE closure would be the LES-consistent mesoscale choice, but the pinned
+  Breeze cannot combine closures (post-pin #1036); horizontal mixing is the WENO scheme's.
 - **Rain to land**: NumericalEarth imports the renamed `surface_precipitation_flux`; the extension defines it at run
   time in `Breeze.AtmosphereModels` as the sign-flipped `bottom_precipitation_flux` so the child's rain reaches the bucket.
 - **Nesting**: one-way and offline — the outer run saves its state on the inner region + halo every 10 min, and
@@ -83,7 +92,8 @@ Missing or mismatched for this protocol:
 | --- | --- | --- |
 | CPU smokes (jobs 204–215) | real ERA5, 32×32×94, 36 s | stable without closure and with TKE closure; Smagorinsky fails in step 1 |
 | GPU pilot (job 217) | real ERA5, 750×750×94, 1 h, A100-80GB | completed; 40.3 GB; 4.3 s wall per 3 s step (≈86 min per simulated hour) |
-| GPU control (job 233) | same, 24 h | running |
+| GPU control (job 233) | same, 24 h, no closure | running; surface-layer wind defect diagnosed (see Turbulence/PBL) |
+| GPU control (job TKE_JOB) | same, 24 h, TKE closure | queued after job 233 (replacement August 7 control) |
 | Inner-nest CPU test (job 227) | parent from the pilot's saved state, 8×8×24 child, 6 s | passes |
 
 ## Status
