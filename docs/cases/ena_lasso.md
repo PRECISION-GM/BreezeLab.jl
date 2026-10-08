@@ -54,9 +54,24 @@ cloud fraction 1 from t = 10 min, LWP 53 → 91 → 61 g m⁻², max |w| ≤ 2.9
 `qᶜˡ` 1.6 g kg⁻¹, rain 0.002 mm d⁻¹, T ∈ [252.3, 295.6] K. Aerosol check (`runs/lasso_aer2_1h_job243/checks/`):
 `nᵃ + nᶜˡ` equals the capped total everywhere (2.384×10⁸ kg⁻¹), `nᵃ` constant outside
 cloud, in-cloud `nᶜˡ`/CF ≈ 2.1–2.7×10⁸ kg⁻¹ (≈ 250–320 cm⁻³), i.e. the activation still
-reaches the cap (the Breeze ratchet, now bounded by the SBM's own maximum). The full
-24-h run (job 249, `runs/lasso_aer2_24h_job249/`) was queued for the next physically idle
-A100 at 06:25 UTC; its comparison with `samstat`/`sam2d` and the ARM observations
+reaches the cap (the Breeze ratchet, now bounded by the SBM's own maximum).
+
+First-hour comparison with the SAM member (`runs/lasso_aer2_1h_job243/checks/sam/`,
+`analysis/compare_sam_reference.jl`; SAM `samstat` is a 2-min domain statistic, Breeze a
+60-s domain mean): cloud water path 72.8 (SAM) vs 67.3 g m⁻² (Breeze) over the hour, both
+rising to a peak of ≈ 115 / 100 g m⁻² at 00:37 UTC and relaxing; shaded cloud fraction 1.00
+vs 0.98; surface precipitation ≈ 0 in both; Breeze's rain water path reaches 0.06 g m⁻²
+against SAM's 0.002 (earlier drizzle onset in P3). The hour-1 profiles of θ, qᵛ, u and v
+coincide with SAM's to within the line width up to 3 km, and both models carry two cloud
+layers (≈ 500–800 m and ≈ 1200–1500 m) with the same shapes; Breeze additionally holds a
+thin layer at ≈ 250 m that SAM does not, and its lower-layer `qᶜˡ` peaks at 0.13 vs SAM's
+0.17 g kg⁻¹ (`sam_profiles.png`). The member starts with near-saturated air below the
+stratocumulus, which is why both models report very low cloud bases in hour 1 (SAM's GCSS
+`ZCB/ZCT` are undefined/≈ 0 there). MWRRET has no samples before 03:10 UTC.
+
+The full 24-h run (Slurm job 249, `runs/lasso_aer2_24h_job249/`, `--time=22:00:00`,
+≈ 17 h expected) was queued for the next physically idle A100 at 06:25 UTC; its
+comparison with `samstat`/`sam2d` and the ARM observations over 03:10–24:00 UTC
 (`analysis/compare_sam_reference.jl`, `analysis/compare_ena_observations.jl`) is plan step 7.
 
 ## 2. What `protocol = :lasso_ena_official` does
