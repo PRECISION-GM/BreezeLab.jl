@@ -228,7 +228,7 @@ function sea_starr(; member = :CTRL,
     set!(Tₛ, FT(driver.sst[1]))
     sst_updater = SeaSurfaceTemperatureUpdater(Tₛ, driver.times, FT.(driver.sst))
     boundary_conditions = if surface === :bulk_sst
-        bulk_surface_flux_boundary_conditions(grid, Tₛ; moisture_name, roughness_length=z₀, gustiness)
+        first(bulk_surface_flux_boundary_conditions(grid, Tₛ; moisture_name, roughness_length=z₀, gustiness))  # (bcs, record)
     elseif isnothing(surface)
         NamedTuple()
     else
