@@ -358,7 +358,7 @@ end
     @test bcs.ρqᵛ.bottom.condition.coefficient.polynomial == laws.latent
     @test bcs.ρu.bottom.condition.coefficient.polynomial == laws.drag
     bcs_b, record_b = bulk_surface_flux_boundary_conditions(grid, Tₛ; moisture_name=:qᵛ)
-    @test record_b.gustiness == 0.1 && isnothing(bcs_b.ρE.bottom.condition.coefficient.polynomial)
+    @test record_b.gustiness == 0.1 && bcs_b.ρE.bottom.condition.coefficient.polynomial == (1.28e-4, 6.8e-5, 2.43e-3)   # Breeze fills Large & Yeager
     @test_throws ArgumentError bulk_surface_flux_boundary_conditions(grid, Tₛ; moisture_name=:qᵛ, law=:other)
 end
 
