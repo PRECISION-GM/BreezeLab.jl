@@ -8,11 +8,14 @@ using Oceananigans
 using Oceananigans.Grids: Center, znodes
 using Oceananigans.Fields: interior
 
+stage(msg) = (println(stderr, "[", Dates.format(Dates.now(), "HH:MM:SS"), "] ", msg); flush(stderr))
+stage("loaded")
 run_dir, samstat = ARGS[1], ARGS[2]
 obs_dir = length(ARGS) ≥ 3 ? ARGS[3] : nothing
 output_dir = length(ARGS) ≥ 4 ? ARGS[4] : joinpath(run_dir, "sam_comparison")
 mkpath(output_dir)
 
+stage("reading run output")
 series = breezelab_timeseries(run_dir)
 bounds = breezelab_cloud_boundaries(run_dir)
 prov = TOML.parsefile(joinpath(run_dir, "provenance.toml"))
@@ -21,6 +24,7 @@ year = Dates.year(series.epoch)
 t0, t1 = first(series.time), last(series.time)
 
 # SAM time axis: fractional day of year, 1.0 = 1 January 00 UTC (as day0)
+stage("opening samstat")
 sam = NCDataset(samstat)
 sam_days = Float64.(sam["time"][:])
 sam_time = [DateTime(year, 1, 1) + Millisecond(round(Int, (d - 1) * 86400e3)) for d in sam_days]
@@ -35,21 +39,29 @@ result = Dict{String, Any}(
     "run" => Dict("directory" => abspath(run_dir), "member" => member, "label" => series.label, "window" => Dict("start" => string(t0), "stop" => string(t1))),
     "sam" => Dict("file" => abspath(samstat), "sim_name" => sam_sim, "model_source_git_hash" => sam_hash, "samples_in_window" => count(inwin)))
 
-pairs = [("CWP", "lwp", "cloud water path (g m⁻²)", 1.0),
+quantities = [("CWP", "lwp", "cloud water path (g m⁻²)", 1.0),
          ("RWP", "rwp", "rain water path (g m⁻²)", 1.0),
          ("PREC", "rain_rate", "surface precipitation (mm hr⁻¹)", 1 / 24),   # SAM mm/day → mm/hr
          ("CLDSHD", "cloud_fraction", "shaded cloud fraction", 1.0)]
+stage("time series figure")
 fig = Figure(size = (1300, 1300), fontsize = 13)
 hours(t) = [Dates.value(x - t0) / 3.6e6 for x in t]
-for (k, (sname, bname, title, scale)) in enumerate(pairs)
+for (k, (sname, bname, title, scale)) in enumerate(quantities)
+    stage("panel $sname: axis")
     ax = Axis(fig[(k - 1) ÷ 2 + 1, (k - 1) % 2 + 1], title = title, xlabel = "hours since $(t0) UTC")
+    stage("panel $sname: read")
     s = sv(sname) .* scale
+    stage("panel $sname: lines (SAM)")
     lines!(ax, hours(sam_time[inwin]), s[inwin]; color = :gray30, label = "SAM $sname")
     b = getproperty(series, Symbol(bname))
+    stage("panel $sname: lines (Breeze)")
     lines!(ax, hours(series.time), b; color = :dodgerblue, label = "Breeze $bname")
+    stage("panel $sname: legend")
     axislegend(ax, position = :lt, labelsize = 10)
+    stage("panel $sname: stats")
     result[sname] = Dict("sam" => Dict(pairs(stats(s[inwin]))), "breeze" => Dict(pairs(stats(b))))
 end
+stage("cloud boundaries panel")
 ax5 = Axis(fig[3, 1], title = "cloud base/top (m): SAM GCSS ZCB/ZCT vs Breeze profile boundaries", xlabel = "hours since $(t0) UTC")
 zcb = 1e3 .* sv("ZCB"); zct = 1e3 .* sv("ZCT")
 lines!(ax5, hours(sam_time[inwin]), zcb[inwin]; color = :gray30, label = "SAM ZCB")
@@ -74,7 +86,9 @@ if !isnothing(obs_dir)
     end
 end
 Label(fig[0, :], "Breeze vs SAM reference $sam_sim (SAM $sam_hash); Breeze is an adapter of the forcing, not the SAM model", fontsize = 13, tellwidth = false)
+stage("saving time series figure")
 save(joinpath(output_dir, "sam_comparison.png"), fig; px_per_unit = 2)
+stage("profiles")
 
 # profiles at the last common hour: θ, qᵛ, qᶜˡ, u, v
 file = only(filter(f -> endswith(f, "_profiles.jld2"), readdir(run_dir; join = true)))
@@ -94,6 +108,7 @@ for (k, (sname, bname, scale, title)) in enumerate((("THETA", "θ", 1.0, "θ (K)
     k == 1 && axislegend(ax, position = :rb, labelsize = 9)
 end
 Label(fp[0, :], "Profiles at the last common hour (SAM instantaneous statistics sample vs Breeze hourly mean)", fontsize = 13, tellwidth = false)
+stage("saving profiles figure")
 save(joinpath(output_dir, "sam_profiles.png"), fp; px_per_unit = 2)
 close(sam)
 open(io -> TOML.print(io, result), joinpath(output_dir, "sam_comparison.toml"), "w")
