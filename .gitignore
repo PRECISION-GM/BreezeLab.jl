@@ -37,3 +37,9 @@ results/
 analysis/Manifest.toml
 docs/Manifest.toml
 docs/src/generated/
+
+# Agent working directories (cluster-specific, never committed)
+depot/
+logs/
+runs/
+env.sh

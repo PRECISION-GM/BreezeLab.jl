@@ -3,7 +3,7 @@
 | File | Status |
 | --- | --- |
 | [eastern_north_atlantic.jl](eastern_north_atlantic.jl) | Runnable public Covert ENA case; edit the readable settings, then run with `julia --project cases/eastern_north_atlantic.jl` |
-| [sea_starr.jl](sea_starr.jl) | Specification only; model assembly is not implemented and direct execution fails explicitly |
+| [sea_starr.jl](sea_starr.jl) | Runnable SEA STARR CTRL/N100/N030 from the official DEPHY drivers via the exported `sea_starr(; member, ...)` constructor; exploratory CTRL with labelled departures (see [docs/cases/sea_starr.md](../docs/cases/sea_starr.md)) |
 | [tracer_mip.jl](tracer_mip.jl) | Specification only; model assembly is not implemented and direct execution fails explicitly |
 
 The ENA example runs from top to bottom: call the exported
