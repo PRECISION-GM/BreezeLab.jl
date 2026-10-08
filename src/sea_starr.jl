@@ -239,9 +239,17 @@ function sea_starr(; member = :CTRL,
     ##### Radiation
     #####
 
-    o3_profile = ozone === :driver ? (z -> interpolate_profile(driver.z, view(driver.forcing.o3, :, 1), z)) :
-                 ozone isa Number || ozone isa Function ? ozone :
-                 throw(ArgumentError("ozone must be :driver, a number or a function of z"))
+    # The ozone profile is materialized here as a Field (a closure over the driver would be
+    # carried into Breeze's GPU kernels as a non-isbits FunctionField).
+    o3_profile = if ozone === :driver
+        o3_field = Field{Nothing, Nothing, Center}(grid)
+        set!(o3_field, reshape(FT.(interpolate_profile(driver.z, view(driver.forcing.o3, :, 1), z_centers)), 1, 1, Nz))
+        o3_field
+    elseif ozone isa Number
+        ozone
+    else
+        throw(ArgumentError("ozone must be :driver or a number (volume mixing ratio)"))
+    end
     background_atmosphere = BackgroundAtmosphere(; CO₂, CH₄, N₂O, O₃ = o3_profile)
     radiation_model = if radiation === :rrtmgp
         RadiativeTransferModel(grid, AllSkyOptics(), constants;
