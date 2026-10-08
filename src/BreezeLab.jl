@@ -42,7 +42,7 @@ export
     mode_number_mixing_ratios, total_number_mixing_ratio, aerosol_profile_table, tracer_mip_p3_aerosol_modes,
     PrescribedAerosolProfile,
     ProcessRateAccumulators, accumulate_process_rates!, reset_process_accumulators!, process_rate_output_callback,
-    PROCESS_RATE_NAMES, PROCESS_RATE_UNITS, tracer_mip_outer_simulation
+    PROCESS_RATE_NAMES, PROCESS_RATE_UNITS, tracer_mip_outer_simulation, tracer_mip_inner_simulation
 
 using Oceananigans
 using Oceananigans.Units
@@ -67,5 +67,6 @@ include("tracer_mip/process_diagnostics.jl")
 
 # Regional (ERA5-nested, land/sea-coupled) constructor: implemented in the NumericalEarth extension.
 function tracer_mip_outer_simulation end
+function tracer_mip_inner_simulation end
 
 end # module
