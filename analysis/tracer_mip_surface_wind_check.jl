@@ -47,7 +47,7 @@ function ncvar(path, candidates)
     ds = NCDataset(path)
     name = first(filter(c -> haskey(ds, c), candidates))
     lon = Array(ds["longitude"][:]); lat = Array(ds["latitude"][:])
-    data = Array(ds[name][:])
+    data = Array(ds[name])
     close(ds)
     return lon, lat, dropdims(data; dims = Tuple(findall(==(1), size(data))))
 end
