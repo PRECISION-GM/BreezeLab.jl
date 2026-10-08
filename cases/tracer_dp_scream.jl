@@ -162,7 +162,8 @@ _, R = read_series("column_radiative_heating")
 Δz = diff(Array(znodes(case.grid, Face())))
 # the forcing profiles are held piecewise constant, so the record at or before `tt` is exact
 function column_source(fts, tt)
-    n = max(1, searchsortedlast(fts.times, tt))
+    times = Array(fts.times)        # the FieldTimeSeries clock lives on the GPU; no scalar indexing
+    n = max(1, searchsortedlast(times, tt))
     column = Array(interior(fts[n], 1, 1, :))
     return sum(ρᵣ[k] * column[k] * Δz[k] for k in eachindex(Δz))
 end
