@@ -4,7 +4,8 @@
 # SAM's samstat carries domain statistics every nstat steps (time in fractional day of year);
 # BreezeLab's run carries its UTC epoch in provenance. Writes sam_comparison.{toml,png}.
 using BreezeLab, NCDatasets, CairoMakie, Dates, TOML, Statistics
-using Oceananigans, Oceananigans.Grids: Center, znodes
+using Oceananigans
+using Oceananigans.Grids: Center, znodes
 using Oceananigans.Fields: interior
 
 run_dir, samstat = ARGS[1], ARGS[2]
