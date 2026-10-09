@@ -71,7 +71,8 @@ Keyword arguments (protocol defaults):
 - `sponge = SAMSponge(damping_depth_fraction=0.15)`: numerical damping of the top 15 % (not in the protocol)
 - `closure = SmagorinskyLilly()`, `advection_order = 5`, `perturbation = InitialPerturbation()`
 - output: `output_dir`, `output_prefix`, `statistics_interval = 15minutes`, `timeseries_interval = 60`,
-  `fields_2d_interval = 15minutes`, `fields_3d_interval = 1hour`, `checkpoint_interval = 3hours` (or `nothing`),
+  `fields_2d_interval = 3minutes` (plan-view fields, lowest-level fields and x–z slices for animations; ≥ 4× finer than the 15-min statistics),
+  `fields_3d_interval = 1hour`, `checkpoint_interval = 3hours` (or `nothing`),
   `write_output = true`, `progress_interval = 10minutes`
 """
 function sea_starr(; member = :CTRL,
@@ -118,7 +119,7 @@ function sea_starr(; member = :CTRL,
                      output_prefix = "sea_starr_$(lowercase(string(member)))",
                      statistics_interval = 15minutes,
                      timeseries_interval = 60,
-                     fields_2d_interval = 15minutes,
+                     fields_2d_interval = 3minutes,
                      fields_3d_interval = 1hour,
                      checkpoint_interval = 3hours,
                      write_output = true,
@@ -401,7 +402,7 @@ function sea_starr(; member = :CTRL,
                 time_stepping = max_Δt == Δt ? "fixed Δt = $Δt s (protocol dt = 1 s; the CFL wizard may only shorten it)" : "adaptive (initial Δt = $Δt s, cfl = $cfl, max_Δt = $max_Δt s)",
                 perturbation=string(perturbation),
                 write_output, output_dir=abspath(output_dir), output_prefix, statistics_interval, timeseries_interval,
-                fields_2d_interval, fields_3d_interval, checkpoint_interval=something(checkpoint_interval, 0), progress_interval,
+                fields_2d_interval, fields_3d_interval, output_storage_estimate_GB=sea_starr_storage_estimate_GB(Nx, Ny, Nz, stop_time; fields_2d_interval, fields_3d_interval, checkpoint_interval), checkpoint_interval=something(checkpoint_interval, 0), progress_interval,
                 driver_case=driver.case, driver_version=string(get(driver.attributes, "version", "")),
                 departures=departures)
 
@@ -458,7 +459,14 @@ function add_sea_starr_output_writers!(simulation; output_dir, output_prefix, st
         JLD2Writer(model, timeseries; filename = joinpath(output_dir, output_prefix * "_timeseries.jld2"),
                    schedule = TimeInterval(timeseries_interval), overwrite_files = true)
 
-    fields_2d = (; cwp, rwp, rain, zi, nᵃ_column = columns.nᵃ, n_total_column = columns.total)
+    # Plan-view fields, lowest-level fields and x–z slices through the domain centre at the animation
+    # cadence (`fields_2d_interval`, 3 min by default: ≥ 4× finer than the 15-min statistics so that
+    # animations are smooth); the 15-min statistics, 1-min time series and hourly 3D follow the protocol.
+    j = max(1, size(grid, 2) ÷ 2)
+    fields_2d = (; cwp, rwp, rain, zi, nᵃ_column = columns.nᵃ, n_total_column = columns.total,
+                   u_sfc = view(u, :, :, 1), v_sfc = view(v, :, :, 1), T_sfc = view(T, :, :, 1), qᵛ_sfc = view(μ.qᵛ, :, :, 1),
+                   qᶜˡ_xz = view(qᶜˡ, :, j, :), qʳ_xz = view(qʳ, :, j, :), nᵃ_xz = view(μ.nᵃ, :, j, :), nᶜˡ_xz = view(μ.nᶜˡ, :, j, :),
+                   w_xz = view(w, :, j, :), T_xz = view(T, :, j, :))
     simulation.output_writers[:fields_2d] =
         JLD2Writer(model, fields_2d; filename = joinpath(output_dir, output_prefix * "_2d.jld2"),
                    schedule = TimeInterval(fields_2d_interval), overwrite_files = true)
@@ -468,4 +476,18 @@ function add_sea_starr_output_writers!(simulation; output_dir, output_prefix, st
         JLD2Writer(model, fields_3d; filename = joinpath(output_dir, output_prefix * "_3d.jld2"),
                    schedule = TimeInterval(fields_3d_interval), overwrite_files = true)
     return nothing
+end
+
+"""
+    sea_starr_storage_estimate_GB(Nx, Ny, Nz, stop_time; fields_2d_interval, fields_3d_interval, checkpoint_interval)
+
+Float32 output volume of the default writers: 10 plan-view/lowest-level fields (Nx Ny) and 6 x–z slices
+(Nx Nz) per 2D record, 10 fields (Nx Ny Nz) per 3D record, one retained checkpoint of ≈ 17 prognostic +
+timestepper fields (Nx Ny Nz, Float32 ×2 for the Gⁿ/G⁻ stages), plus < 0.2 GB of statistics/time series.
+"""
+function sea_starr_storage_estimate_GB(Nx, Ny, Nz, stop_time; fields_2d_interval, fields_3d_interval, checkpoint_interval)
+    two_d = (10 * Nx * Ny + 6 * Nx * Nz) * 4 * (stop_time / fields_2d_interval + 1)
+    three_d = 10 * Nx * Ny * Nz * 4 * (stop_time / fields_3d_interval + 1)
+    checkpoint = isnothing(checkpoint_interval) ? 0 : 17 * 3 * Nx * Ny * Nz * 4
+    return round((two_d + three_d + checkpoint) / 1e9 + 0.2; digits = 2)
 end
