@@ -113,3 +113,9 @@ re-evaluate with the fixed rerun). Without wind nudging (as the archived DP-SCRE
 stays near the 1 August profile: upper-tropospheric easterlies reach −14 m s⁻¹ at 12 km against ≈ −5 m s⁻¹
 in VARANAL (RMS 4.2 m s⁻¹ in u over 0–12 km); the archive has no winds to compare. Agreement with DP-SCREAM
 is not observational validation, and the point observations are not domain means.
+
+**Fixed reruns** (main 0bb3406, after the formulation-aware cross-term fix, PR #21), queued 2026-10-09 on
+the A100 partition with `execution/tracer_dp_scream_autogpu.sbatch` (`--no-requeue`, 6-h checkpoints,
+slices every 5 min at 3 km): job 514 `baseline_fixed_aug01_15` (256² × 200 m) and job 515
+`baseline512_fixed_aug01_15` (512² × 100 m, starts after 514). Their budgets are computed with
+`analysis/tracer_dp_scream_budget.jl` (the case script on this branch writes the moist-enthalpy budget).
