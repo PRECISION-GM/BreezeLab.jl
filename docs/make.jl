@@ -12,7 +12,7 @@ CairoMakie.activate!(type="png")
 function prepare_example(content)
     run_name = smoke ? "ena_smoke" : "ena"
     content = replace(content,
-        "output_dir = joinpath(pkgdir(BreezeLab), \"output\", \"eastern_north_atlantic\")" =>
+        "output_dir = joinpath(pkgdir(BreezeLab), \"output\", \"ena_covert\")" =>
         "output_dir = joinpath(pkgdir(BreezeLab), \"output\", \"documentation\", $(repr(run_name)))")
     if smoke
         replacements = [
@@ -83,7 +83,7 @@ else
 end
 
 # The ENA Covert example is executed (GPU in the full build, a CPU smoke variant otherwise).
-Literate.markdown(joinpath(dirname(@__DIR__), "cases", "eastern_north_atlantic.jl"), generated;
+Literate.markdown(joinpath(dirname(@__DIR__), "cases", "ena_covert.jl"), generated;
                  flavor=Literate.DocumenterFlavor(), execute=true,
                  preprocess=prepare_example)
 
@@ -113,7 +113,7 @@ makedocs(; root=@__DIR__,
          pages=["Home" => "index.md",
                 "Campaign results" => "generated/campaign_results.md",
                 "Eastern North Atlantic" => [
-                    "ENA example (executed)" => "generated/eastern_north_atlantic.md",
+                    "ENA example (executed)" => "generated/ena_covert.md",
                     "ENA protocols" => "generated/ena_protocols.md",
                     "ENA-covert analysis" => "generated/ena_covert_analysis.md",
                     "ENA aerosol audit" => "generated/ena_aerosol_audit.md",

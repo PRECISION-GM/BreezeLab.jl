@@ -59,12 +59,15 @@ Returns a named tuple with `simulation`, `model`, `nest`, `land`, `grid`, `accum
   `data_wrangling/fetch_era5_tracer_mip.jl`); `parent = :synthetic` (software testing only) builds
   `synthetic_parent_atmosphere` and labels the configuration `exploratory_synthetic_boundaries = true`.
 - `Nx`, `Ny` default to the protocol's 750²; reduce them for tests (extent stays the protocol's).
-- Microphysics: P3 with prognostic droplet number activated from the Tier-1 prescribed two-mode profile
-  (`PrescribedAerosolProfile`); `aerosol_multiplier` = 1 (CTRL), 3 (HIGH), low variants explicit.
+- `microphysics = nothing` builds the Tier-1 protocol P3: prognostic droplet number activated from the
+  case's prescribed two-mode profile (`PrescribedAerosolProfile(tracer_mip_aerosol_profile(case))`) with a
+  100 cm⁻³ construction-time droplet number. For the aerosol sensitivities pass the Breeze object, e.g.
+  `P3Microphysics(; cloud, aerosol = PrescribedAerosolProfile(tracer_mip_aerosol_profile(case; multiplier = 3)))`
+  (HIGH). Precision follows `Oceananigans.defaults.FloatType`.
 - Land: `SlabLand` initialized from ERA5 skin temperature and ERA5-Land soil moisture (or constants for
   the synthetic parent); sea cells (terrain ≤ 0 m) pinned to the ERA5 skin temperature each step.
 - Radiation: RRTMGP all-sky every `radiation_interval` (protocol 60 s), constant land/sea albedo.
-- `Δt` fixed at the protocol's 3 s. `closure` defaults to Breeze's `TKEBasedTurbulenceClosure(FT)` (vertical eddy
+- `Δt` fixed at the protocol's 3 s. `closure` defaults to Breeze's `TKEBasedTurbulenceClosure()` (vertical eddy
   diffusivity with prognostic TKE, vertically implicit): without a closure (job 233) the surface stress is deposited only
   in the 50 m lowest layer, which decelerates to ≈0.6 of ERA5's 10 m wind while the level above stays at the free-stream
   value (a 2–3× jump across one cell). `SmagorinskyLilly` is unusable here: its isotropic filter width (2000·2000·50)^(1/3)
@@ -78,17 +81,15 @@ function BreezeLab.tracer_mip_outer_simulation(arch;
         parent = :era5,
         era5_dir = joinpath(pkgdir(BreezeLab), "data", "era5"),
         protocol = tracer_mip_protocol(),
-        FT = Float32,
         Nx = protocol["grids"]["outer"]["Nx"],
         Ny = protocol["grids"]["outer"]["Ny"],
         z_faces = BreezeLab.acpc_vertical_faces(protocol["vertical"]["scalar_levels_m_agl"]),
         stop_time = Hour(protocol["cases"][String(case)]["duration_hours"]).value * 3600,
         Δt = protocol["grids"]["outer"]["timestep_s"],
-        aerosol_multiplier = 1,
-        initial_droplet_number = 100e6,
-        radiation = :rrtmgp,
+        microphysics = nothing,
+        radiation = true,
         radiation_interval = protocol["forcing"]["radiation_interval_s"],
-        closure = TKEBasedTurbulenceClosure(FT),
+        closure = TKEBasedTurbulenceClosure(),
         terrain = parent === :era5 ? ETOPO2022() : nothing,
         relaxation_width = 5,
         relaxation_rate = 1/300,
@@ -104,19 +105,22 @@ function BreezeLab.tracer_mip_outer_simulation(arch;
         label = "tracer_mip_outer")
 
     start, stop = tracer_mip_case_window(protocol, case)
-    Oceananigans.defaults.FloatType = FT
-    grid = tracer_mip_grid(arch, :outer; protocol, FT, Nx, Ny, z_faces)
-    constants = ThermodynamicConstants(FT)
+    grid = tracer_mip_grid(arch, :outer; protocol, Nx, Ny, z_faces)
+    FT = eltype(grid)
+    constants = ThermodynamicConstants()
 
     # Tier-1 microphysics: P3 with droplet number activated from the prescribed profile.
-    profile = tracer_mip_aerosol_profile(case; protocol, FT = Float64, multiplier = aerosol_multiplier)
-    aerosol = PrescribedAerosolProfile(profile; FT, thermodynamic_constants = constants)
-    p3 = P3Microphysics(FT; cloud = CloudDroplets(FT; number_concentration = initial_droplet_number), aerosol)
-    scalar_advection = scalar_advection_schemes(advection_order, p3, :qᵛ; energy_name = :ρθ)
+    protocol_microphysics = isnothing(microphysics)
+    if protocol_microphysics
+        aerosol = PrescribedAerosolProfile(tracer_mip_aerosol_profile(case; protocol); thermodynamic_constants = constants)
+        microphysics = P3Microphysics(; cloud = CloudDroplets(; number_concentration = 100e6), aerosol)
+    end
+    BreezeLab.check_precision(microphysics, FT)
+    scalar_advection = scalar_advection_schemes(advection_order, microphysics, :qᵛ; energy_name = :ρθ)
     momentum_advection = WENO(order = advection_order)
 
     nest_kw = (; relaxation_rate, relaxation_width, terrain, terrain_blend_width = relaxation_width, damping_rate,
-                 microphysics = p3, momentum_advection, scalar_advection, closure, thermodynamic_constants = constants)
+                 microphysics, momentum_advection, scalar_advection, closure, thermodynamic_constants = constants)
     isnothing(damping_depth) || (nest_kw = merge(nest_kw, (; damping_depth = FT(damping_depth))))
 
     dates = (start, stop)
@@ -183,15 +187,13 @@ function BreezeLab.tracer_mip_outer_simulation(arch;
     #####
 
     albedo = surface_albedo_field(mask; sea = sea_albedo, land = land_albedo)
-    rtm = if radiation === :rrtmgp
+    rtm = if radiation
         RadiativeTransferModel(grid, AllSkyOptics(), constants;
                                solar_position = ApparentSolarPosition(epoch = start),
                                surface_albedo = albedo, surface_emissivity,
                                schedule = TimeInterval(radiation_interval))
-    elseif isnothing(radiation)
-        nothing
     else
-        throw(ArgumentError("radiation must be :rrtmgp or nothing"))
+        nothing
     end
 
     atmosphere = Simulation(nest; Δt)
@@ -207,15 +209,17 @@ function BreezeLab.tracer_mip_outer_simulation(arch;
                 exploratory_synthetic_boundaries = exploratory, start = string(start), stop = string(stop),
                 arch = string(typeof(arch)), FT = string(FT), Nx, Ny, Nz = length(z_faces) - 1,
                 longitude = collect(extent.longitude), latitude = collect(extent.latitude),
-                Δt, stop_time, aerosol_multiplier, initial_droplet_number, radiation = string(radiation), radiation_interval,
+                Δt, stop_time, protocol_microphysics,
+                microphysics = protocol_microphysics ? "P3 two-moment, Tier-1 PrescribedAerosolProfile (fixed, height-dependent), radiatively inactive" : summary(microphysics),
+                aerosol = isnothing(microphysics.aerosol) ? "none" : summary(microphysics.aerosol),
+                radiation = radiation ? "RRTMGP all-sky" : "none", radiation_interval,
                 closure = isnothing(closure) ? "nothing" : summary(closure), relaxation_width, relaxation_rate, advection_order,
                 damping_depth = isnothing(damping_depth) ? "Lz/4 (NumericalEarth default)" : damping_depth, damping_rate,
                 time_stepping = isnothing(adaptive_cfl) ? "fixed Δt = $Δt s" : "adaptive: CFL wizard cfl = $adaptive_cfl, max_Δt = $Δt s, initial Δt = $Δt s",
                 terrain = isnothing(terrain) ? "none (flat)" : summary(terrain), land_albedo, sea_albedo, surface_emissivity,
                 land = "SlabLand (skin temperature + bucket); sea cells pinned to prescribed skin temperature with saturated bucket",
-                microphysics = "P3 two-moment, Tier-1 PrescribedAerosolProfile (fixed, height-dependent), radiatively inactive",
                 process_rates, era5_dir = parent === :era5 ? abspath(era5_dir) : "none")
 
     return (; simulation, model, nest, child, parent = parent_atmosphere, land, grid, land_grid, sea_mask = mask,
-              pinning, accumulators, radiation = rtm, config, profile)
+              pinning, accumulators, radiation = rtm, config)
 end

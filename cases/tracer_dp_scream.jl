@@ -17,6 +17,9 @@
 # `execution/tracer_dp_scream.sbatch` sets the environment variables read below.
 
 using BreezeLab
+using BreezeLab: day_to_seconds, interpolate_profile
+using Breeze
+using Breeze.Microphysics.PredictedParticleProperties: CloudDroplets
 using Oceananigans, Oceananigans.Units
 using Dates: Dates, DateTime, Second, Hour
 using CairoMakie
@@ -38,6 +41,7 @@ stop_time = parse(Float64, get(ENV, "TRACER_DP_SCREAM_STOP_TIME", string(full_du
 checkpoint_interval = parse(Float64, get(ENV, "TRACER_DP_SCREAM_CHECKPOINT", "21600"))
 output_dir = get(ENV, "TRACER_DP_SCREAM_OUTPUT", joinpath(pkgdir(BreezeLab), "output", "tracer_dp_scream"))
 pickup_from = get(ENV, "TRACER_DP_SCREAM_PICKUP_FROM", "")
+Oceananigans.defaults.FloatType = Float32
 arch = GPU()
 # Horizontal grid: the baseline uses 256² cells of 200 m (51.2 km). `TRACER_DP_SCREAM_NX`
 # and `TRACER_DP_SCREAM_DX` override both so that a 512² × 100 m run covers the same domain.
@@ -56,7 +60,7 @@ slice_interval = slice_minutes * 60
 
 case = tracer_dp_scream(; iop_path = joinpath(data_dir, "TRACER_iopfile_4scam.nc"),
                         start, stop, stop_time, arch, Nx, Ny, Δx,
-                        microphysics = :p3_n75, droplet_number = 200e6,
+                        microphysics = P3Microphysics(; cloud = CloudDroplets(; number_concentration = 200e6)),
                         output_dir, output_prefix = "tracer", slice_interval, slice_height,
                         checkpoint_interval = checkpoint_interval > 0 ? checkpoint_interval : nothing)
 simulation = case.simulation;

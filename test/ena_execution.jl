@@ -1,12 +1,23 @@
 # Exercise the exported case constructor and its saved diagnostic outputs.
 using JLD2
 
-function test_ena_execution(arch, FT, microphysics)
+# The members of the Covert benchmark campaign, as Breeze microphysics objects.
+function ena_member(name, z_faces)
+    name === :one_moment && return one_moment_microphysics()
+    name === :p3_n75 && return p3_microphysics()
+    ρ₁ = first_level_reference_density(COVERT_DIR, z_faces)
+    name === :p3_aer2 && return p3_microphysics(; aerosol = lasso_aerosol(; reference_density = ρ₁, maximum_supersaturation = 0.003))
+    name === :p3_covert_n75 && return p3_microphysics(; aerosol = covert_aerosol(; reference_density = ρ₁))
+end
+
+function test_ena_execution(arch, FT, member)
+    z_faces = collect(range(0, 6000, length=25))
     mktempdir() do output
-        case = eastern_north_atlantic(; arch, FT, microphysics, output_dir=output,
-                                      Nx=8, Ny=8, z_faces=collect(range(0, 6000, length=25)),
-                                      stop_time=4.0, timeseries_interval=1.0,
-                                      profile_interval=4.0, slice_interval=4.0)
+        case = with_float_type(FT) do
+            ena_covert(; arch, data_dir=COVERT_DIR, microphysics=ena_member(member, z_faces), output_dir=output,
+                         Nx=8, Ny=8, z_faces, stop_time=4.0, timeseries_interval=1.0,
+                         profile_interval=4.0, slice_interval=4.0)
+        end
         @test case.model.clock.time == 0
         @test case.model.clock.iteration == 0
         write_provenance(joinpath(output, "provenance.toml"), case)
@@ -19,7 +30,7 @@ function test_ena_execution(arch, FT, microphysics)
                         "timeseries" => ("lwp", "rwp", "cloud_fraction", "rain_flux"),
                         "slices" => ("qᶜˡ_xz", "qʳ_xz", "w_xz", "lwp", "rain"))
         for (kind, fields) in expected
-            path = joinpath(output, "lasso_ena_$(kind).jld2")
+            path = joinpath(output, "ena_covert_$(kind).jld2")
             @test isfile(path)
             jldopen(path) do file
                 series = file["timeseries"]

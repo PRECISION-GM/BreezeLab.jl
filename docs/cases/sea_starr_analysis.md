@@ -105,7 +105,7 @@ the cloudy/slow side of the transition, not an outlier that breaks up too early.
    1040 m, back to 1160 m by 2 h) — a spin-up transient inside the protocol's 3 h spin-up.
 5. Not a cause: drizzle (≤ 0.006 mm d⁻¹; the model stays on the entrainment branch, consistent with N_d of 150–400 cm⁻³).
 
-**Fix applied and relaunch.** The radiation configuration is corrected on the branch (`radiation = :rrtmgp_extended`,
+**Fix applied and relaunch.** The radiation configuration is corrected on the branch (`extended_radiation_column = true`,
 `solar = :trajectory` are now the defaults of `sea_starr`): the RRTMGP column carries the driver's upper atmosphere above
 the LES top and the zenith angle follows the composite trajectory. CPU tests cover the upper layers, the top-of-domain
 fluxes and the zenith angle. The corrected CTRL is queued as `ctrl_r2_66h` (see the status file for the job ID). The

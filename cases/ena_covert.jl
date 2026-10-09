@@ -8,18 +8,23 @@
 # and the larger, nine-hour published experiment.
 #
 # Fetch the inputs with `julia data_wrangling/fetch_covert_inputs.jl`, then run
-# `julia --project cases/eastern_north_atlantic.jl` on an NVIDIA GPU.
+# `julia --project cases/ena_covert.jl` on an NVIDIA GPU.
 
 using BreezeLab
+using Breeze
+using Breeze.Microphysics.PredictedParticleProperties: CloudDroplets
 using Oceananigans, Oceananigans.Units
 using CairoMakie
 
 # ## Build the simulation
 #
-# The package constructor returns a case without advancing its clock. Here we
-# choose fixed-number P3 microphysics (`:p3_n75`); `:one_moment` and `:p3_aer2`
-# are also available. The aerosol-coupled member uses a prescribed CCN reservoir.
+# The package constructor returns a case without advancing its clock. Precision
+# is set once through Oceananigans' default, and the microphysics is a Breeze
+# object: here P3 with the observed 75 cm⁻³ droplet number. An aerosol-coupled
+# member would pass `P3Microphysics(; cloud, aerosol = covert_aerosol(; reference_density))`,
+# with `reference_density = first_level_reference_density(data_dir, z_faces)`.
 
+Oceananigans.defaults.FloatType = Float32
 arch = GPU()
 Nx, Ny = 256, 256
 z_faces = covert_public_bin_vertical_faces()
@@ -28,11 +33,12 @@ timeseries_interval = 60seconds
 profile_interval = 1hour
 slice_interval = 1hour
 
-output_dir = joinpath(pkgdir(BreezeLab), "output", "eastern_north_atlantic")
-case = eastern_north_atlantic(; arch, Nx, Ny, z_faces, stop_time,
-                              microphysics = :p3_n75,
-                              output_dir, output_prefix = "ena",
-                              timeseries_interval, profile_interval, slice_interval)
+microphysics = P3Microphysics(; cloud = CloudDroplets(; number_concentration = 75e6))
+
+output_dir = joinpath(pkgdir(BreezeLab), "output", "ena_covert")
+case = ena_covert(; arch, Nx, Ny, z_faces, stop_time, microphysics,
+                    output_dir, output_prefix = "ena",
+                    timeseries_interval, profile_interval, slice_interval)
 simulation = case.simulation;
 
 # ## Run
@@ -68,7 +74,7 @@ ax_rain = Axis(fig[2, 1], xlabel = "Hours since 06 UTC, 18 July 2017",
 lines!(ax_lwp, times, cloud_water_path)
 lines!(ax_rain, times, rain_rate)
 save(joinpath(output_dir, "cloud_water_and_rain.png"), fig)
-#md cp(joinpath(output_dir, "cloud_water_and_rain.png"), "eastern_north_atlantic.png"; force=true);
+#md cp(joinpath(output_dir, "cloud_water_and_rain.png"), "ena_covert.png"; force=true);
 fig #src
 
-#md # ![Cloud water path and surface rain rate](eastern_north_atlantic.png)
+#md # ![Cloud water path and surface rain rate](ena_covert.png)

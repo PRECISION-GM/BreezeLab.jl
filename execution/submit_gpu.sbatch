@@ -7,7 +7,7 @@
 #SBATCH --time=12:00:00
 #SBATCH --output=output/slurm-%j.out
 # Usage (from repository root):
-#   sbatch --partition=gpu-prod execution/submit_gpu.sbatch cases/eastern_north_atlantic.jl
+#   sbatch --partition=gpu-prod execution/submit_gpu.sbatch cases/ena_covert.jl
 #   sbatch --partition=gpu-p4de-2c execution/submit_gpu.sbatch cases/cli/run_case.jl --arch gpu ...
 set -euo pipefail
 if [ "$#" -eq 0 ]; then

@@ -604,3 +604,14 @@ function (projection::DiagnosticCCNProjection)(simulation)
     ρnᵃ .= max.(0, projection.n_initial .* ρ .- ρnᶜˡ .- ρnʳ)
     return nothing
 end
+
+"""
+    compact_forcing(forcing::AbstractDict)
+
+The `NamedTuple` of forcing tuples Breeze's `AtmosphereModel` takes, with absent (`nothing`)
+terms dropped and fields without any term left out.
+"""
+function compact_forcing(forcing::AbstractDict)
+    terms = Dict(name => Tuple(f for f in fs if !isnothing(f)) for (name, fs) in forcing)
+    return NamedTuple(name => fs for (name, fs) in terms if !isempty(fs))
+end

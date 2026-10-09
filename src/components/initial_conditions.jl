@@ -162,3 +162,70 @@ function perturbation_array(Nx, Ny, z_centers, perturbation::InitialPerturbation
     end
     return ϵ
 end
+
+"""
+    set_sounding_initial_state!(model, columns; perturbation, moisture_basis,
+                                initialization=:condensate_free, frame_velocity=(0, 0),
+                                initial_droplet_number=nothing)
+
+Set the model's initial state from the sounding `columns` of [`initial_state_columns`](@ref)
+with the `setperturb.f90` perturbation `perturbation` ([`perturbation_array`](@ref), the same
+random number multiplying the temperature and vapor perturbations of a cell). Winds are
+relative to `frame_velocity` (SAM's translating frame).
+
+With `moisture_basis = :mixing_ratio` the vapor perturbation is applied to the dry mixing
+ratio `r = q / (1 - q - qᶜ)`, as SAM perturbs its dry-basis vapor, and converted back.
+
+For P3, `initialization` selects
+- `:condensate_free` (SAM HUJI-SBM `micro_init`): no condensate, all water as vapor, cloud
+  forms through the scheme's own activation and condensation in the first steps;
+- `:equilibrium`: the warm-phase saturation partition (the one-moment control's first
+  adjustment), with `initial_droplet_number` [m⁻³] in cloudy cells when the scheme carries
+  an aerosol reservoir.
+Other microphysics schemes are initialized from (θˡ, qᵗ).
+"""
+function set_sounding_initial_state!(model, columns; perturbation, moisture_basis,
+                                     initialization = :condensate_free, frame_velocity = (0, 0),
+                                     initial_droplet_number = nothing)
+    initialization ∈ (:condensate_free, :equilibrium) ||
+        throw(ArgumentError("initialization must be :condensate_free or :equilibrium, got $initialization"))
+    FT = eltype(model.grid)
+    Nx, Ny, Nz = size(model.grid)
+    z = columns.z
+    ϵ = perturbation_array(Nx, Ny, z, perturbation)
+    column(values) = reshape(values, 1, 1, Nz)
+    δT_levels, δq_levels = perturbation_amplitudes(perturbation, z)
+    δT = column(δT_levels)
+    δq = column(δq_levels)
+    perturbed_moisture(q, ϵ, δq, qᶜ=0.0) = moisture_basis === :mixing_ratio ?
+        (r = q / (1 - q - qᶜ) + δq * ϵ; max(0, r * (1 - qᶜ) / (1 + r))) : max(0, q + δq * ϵ)
+
+    uᶠ, vᶠ = FT.(frame_velocity)
+    u₀ = repeat(column(columns.u .- uᶠ), Nx, Ny, 1)
+    v₀ = repeat(column(columns.v .- vᶠ), Nx, Ny, 1)
+
+    if is_p3(model.microphysics) && initialization === :condensate_free
+        T₀ = column(columns.T_condensate_free) .+ δT .* ϵ
+        qᵛ₀ = perturbed_moisture.(column(columns.qᵗ), ϵ, δq)
+        set!(model; T=T₀, qᵛ=qᵛ₀, u=u₀, v=v₀)
+    elseif is_p3(model.microphysics)
+        T₀ = column(columns.T) .+ δT .* ϵ
+        qᵛ₀ = perturbed_moisture.(column(columns.qᵛ), ϵ, δq, column(columns.qᶜˡ))
+        qᶜˡ₀ = repeat(column(columns.qᶜˡ), Nx, Ny, 1)
+        if isnothing(model.microphysics.aerosol)
+            set!(model; T=T₀, qᵛ=qᵛ₀, qᶜˡ=qᶜˡ₀, u=u₀, v=v₀)
+        else
+            isnothing(initial_droplet_number) &&
+                throw(ArgumentError("initialization = :equilibrium with aerosol activation needs `initial_droplet_number` [m⁻³]"))
+            ρᵣ = Array(interior(model.dynamics.reference_state.density, 1, 1, :))
+            nᶜˡ₀ = repeat(column(initial_droplet_number ./ ρᵣ .* (columns.qᶜˡ .> 0)), Nx, Ny, 1)
+            set!(model; T=T₀, qᵛ=qᵛ₀, qᶜˡ=qᶜˡ₀, nᶜˡ=nᶜˡ₀, u=u₀, v=v₀)
+        end
+    else
+        Π = columns.T ./ columns.θˡ
+        θ₀ = column(columns.θˡ) .+ δT .* ϵ ./ column(Π)
+        qᵗ₀ = perturbed_moisture.(column(columns.qᵗ), ϵ, δq)
+        set!(model; θ=θ₀, qᵗ=qᵗ₀, u=u₀, v=v₀)
+    end
+    return model
+end

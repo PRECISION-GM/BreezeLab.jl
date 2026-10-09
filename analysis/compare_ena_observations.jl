@@ -30,7 +30,7 @@ provenance = TOML.parsefile(joinpath(run_dir, "provenance.toml"))
 protocol = series.protocol
 benchmark = protocol == "covert_public_bin" ?
     "Covert-public-bin development benchmark (public inputs; NOT an official LASSO-ENA member)" :
-    protocol == "lasso_ena_official" ? "LASSO-ENA member $(get(provenance, "protocol_member", "undeclared")) (Breeze adapter; not a SAM result)" :
+    protocol == "lasso_ena_official" ? "LASSO-ENA member $(get(provenance["config"], "member", get(provenance, "protocol_member", "undeclared"))) (Breeze adapter; not a SAM result)" :
     "protocol $protocol"
 
 t0 = first(series.time)

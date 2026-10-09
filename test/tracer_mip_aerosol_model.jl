@@ -9,7 +9,7 @@ using Oceananigans.TimeSteppers: time_step!
 @testset "Tier-1 prescribed aerosol in P3" begin
     FT = Float64
     profile = tracer_mip_aerosol_profile(:aug07; FT)
-    aerosol = PrescribedAerosolProfile(profile; FT)
+    aerosol = with_float_type(() -> PrescribedAerosolProfile(profile), FT)
     @test !has_prognostic_aerosol(aerosol)
     @test aerosol.surface_number ≈ sum(surface_number_mixing_ratios(profile))
     @test length(aerosol.activation.modes) == 2
@@ -91,7 +91,7 @@ end
     constants = ThermodynamicConstants(FT)
     reference_state = ReferenceState(grid, constants; base_pressure=101300, potential_temperature=z -> 295 + 0.003z)
     dynamics = AnelasticDynamics(reference_state)
-    aerosol = PrescribedAerosolProfile(tracer_mip_aerosol_profile(:aug07; FT); FT)
+    aerosol = with_float_type(() -> PrescribedAerosolProfile(tracer_mip_aerosol_profile(:aug07; FT)), FT)
     p3 = P3Microphysics(FT; cloud=CloudDroplets(FT; number_concentration=100e6), aerosol)
     model = AtmosphereModel(grid; dynamics, microphysics=p3, thermodynamic_constants=constants,
                             momentum_advection=WENO(order=5), scalar_advection=BreezeLab.scalar_advection_schemes(5, p3, :qᵛ))

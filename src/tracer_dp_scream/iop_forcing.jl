@@ -1,6 +1,6 @@
 #####
-##### ARM VARANAL / E3SM "iopfile_4scam" forcing: reader and adapter to the SAM-record
-##### pipeline that `build_case` consumes.
+##### ARM VARANAL / E3SM "iopfile_4scam" forcing: reader, and adapter to the SAM-format
+##### records that `tracer_dp_scream` consumes.
 #####
 ##### The TRACER file (`TRACER_iopfile_4scam.nc`, datastream hou60v1varanaecmwfX12.c1,
 ##### doi 10.5439/1860369) is hourly, on 40 pressure levels (50–1025 hPa, ascending in the
@@ -151,7 +151,7 @@ end
                    constants=ThermodynamicConstants(Float64))
 
 The IOP records from `start` to `stop` (UTC `DateTime`s on records) as the input bundle
-of [`build_case`](@ref): one `SAMSounding` at `start` (pressure levels, `θ` from `T`, `q`
+of the SAM-forced cases: one `SAMSounding` at `start` (pressure levels, `θ` from `T`, `q`
 kept as the file's specific humidity ⇒ use `moisture_basis = :mass_fraction`), the
 `SAMLargeScaleForcing` records with
 

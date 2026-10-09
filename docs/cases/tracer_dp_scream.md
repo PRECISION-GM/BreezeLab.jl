@@ -43,7 +43,8 @@ from regional TRACER-MIP; it is not the ENA-SCREAM assignment. Constructor:
 
 ## Breeze implementation
 
-`iop_sam_inputs` maps the IOP window onto the SAM-record pipeline (`build_case`): initial
+`iop_sam_inputs` maps the IOP window onto SAM-format records, which `tracer_dp_scream` reads
+before building its model: initial
 sounding from the start record (θ from T, specific humidity as mass fraction), `tls/qls =`
 the 3-D tendencies, `wls = 0`, no geostrophic columns, `sfc = (Tg, shflx, lhflx)`, every
 record duplicated 1 s before the next so the linear interpolation holds the hourly value.

@@ -9,6 +9,26 @@ using Random
 using TOML
 using Dates: DateTime
 using CUDA
+using Breeze.Microphysics.PredictedParticleProperties: CloudDroplets, has_prognostic_aerosol, activated_number, AerosolActivation
+# Components exercised by the unit tests (the package exports only the case-level API).
+using BreezeLab: LargeScaleForcingProfiles, LargeScaleVerticalAdvection, LargeScaleEnergyForcing, LargeScaleMoistureForcing,
+                 MeanProfileNudging, TimeVaryingGeostrophicForcing, UpperBoundaryEnergyRelaxation, UpperBoundaryMoistureRelaxation,
+                 SimpleLongwaveRadiation, SoundingTargetProfiles, large_scale_thermodynamic_forcings, time_varying_geostrophic_forcings,
+                 upper_boundary_relaxation_forcings, sam_sponge_rates, profile_time_series,
+                 prescribed_stress_updater, prescribed_surface_flux_boundary_conditions, bulk_surface_flux_boundary_conditions,
+                 sam_oceflx_neutral_polynomials, perturbation_array, perturbation_amplitudes, saturation_partition,
+                 day_to_seconds, epoch_from_day_of_year, file_sha256, mass_fraction_from_mixing_ratio, record_heights,
+                 sam_hydrostatic_heights, sam_interpolate_column, interpolate_profile, initial_sounding, lasso_ena_cell_centers,
+                 faces_from_centers, lasso_bundle_available, lasso_bundle_record, lasso_documented_dimensions,
+                 lasso_reference_filenames, lasso_samin_filename, lasso_scalar_levels, lasso_variant_tokens,
+                 read_sam_namelist_groups, microphysics_record,
+                 EvaporationRegeneration, InversionFollowingNudging, InversionMaskUpdater, SurfaceAerosolSource,
+                 aerosol_number_columns, aerosol_number_per_kg, cloud_evaporation_rate_field, driver_initial_profile,
+                 driver_profile_time_series, inversion_height, kappa_critical_supersaturation, nudging_mask_weights,
+                 fractional_day_of_year, iop_column_integral, iop_datetimes, iop_index, iop_potential_temperature,
+                 iop_sam_inputs, iop_surface_albedo, parse_cf_time_units,
+                 upper_atmosphere_layers, TrajectorySolarPosition, trajectory_cos_zenith,
+                 accumulate_process_rates!, reset_process_accumulators!, surface_number_mixing_ratios, total_number_mixing_ratio
 
 const FIXTURES = joinpath(@__DIR__, "fixtures")
 const LASSO_FIXTURE = joinpath(FIXTURES, "lasso_bundle")   # synthetic SAM-style bundle, not an ARM archive
@@ -20,6 +40,24 @@ const HAVE_COVERT = isfile(joinpath(COVERT_DIR, "snd")) && isfile(joinpath(COVER
 # SpecificForcing (and several in MultipleForcings).
 inner(f::Breeze.Forcings.SpecificForcing) = f.forcing
 inner(f) = f
+
+# Microphysics objects for the constructors, at the current `Oceananigans.defaults.FloatType`.
+const ONE_MOMENT = Base.get_extension(Breeze, :BreezeCloudMicrophysicsExt)
+one_moment_microphysics() =
+    ONE_MOMENT.OneMomentCloudMicrophysics(; cloud_formation = SaturationAdjustment(; equilibrium = WarmPhaseEquilibrium()))
+p3_microphysics(number_concentration = 75e6; aerosol = nothing) =
+    P3Microphysics(; cloud = CloudDroplets(; number_concentration), aerosol)
+
+"Run `f()` with `Oceananigans.defaults.FloatType = FT`, restoring the previous default afterwards."
+function with_float_type(f, FT)
+    previous = Oceananigans.defaults.FloatType
+    Oceananigans.defaults.FloatType = FT
+    try
+        return f()
+    finally
+        Oceananigans.defaults.FloatType = previous
+    end
+end
 
 test_grid(; Nx=8, Ny=8, Nz=24, Lz=6000) =
     RectilinearGrid(CPU(), Float64; size=(Nx, Ny, Nz), x=(0, 800), y=(0, 800), z=(0, Lz),
@@ -207,36 +245,42 @@ end
 end
 
 @testset "Aerosol conversion" begin
-    modes, conversion = lasso_aerosol_modes(Float64; setting=:aer2, reference_density=1.2)
-    @test conversion.N₁ == 276 && conversion.N₂ == 281
-    @test modes[1].number_mixing_ratio ≈ 276e6 / 1.2
+  with_float_type(Float64) do
+    aer2 = lasso_aerosol(; reference_density=1.2)
+    modes = aer2.modes
+    @test has_prognostic_aerosol(aer2)                        # a depleting reservoir, as the SBM's
+    @test modes[1].number_mixing_ratio ≈ 276e6 / 1.2 && modes[2].number_mixing_ratio ≈ 281e6 / 1.2
     @test modes[2].mean_radius == 0.066e-6 && modes[2].geometric_std == 1.78
     @test modes[1].mass_fraction_soluble == 1 && modes[1].aerosol_density == 1790       # HUJI-SBM chemistry, fully soluble
-    @test conversion.maximum_supersaturation == 0 && conversion.activatable_fraction₂ == 1
-    @test_throws ArgumentError lasso_aerosol_modes(; setting=:aer9, reference_density=1.2)
+    @test lasso_aerosol(; setting=:aer3, reference_density=1.2).modes[1].number_mixing_ratio ≈ 552e6 / 1.2
+    @test_throws ArgumentError lasso_aerosol(; setting=:aer9, reference_density=1.2)
     # Köhler closure of the modes: the accumulation mode's median activates near 0.1 %, the
     # Aitken mode's near 0.7 %, so at the SBM cap (0.3 %) most of mode 2 and little of mode 1 can activate.
-    using Breeze.Microphysics.PredictedParticleProperties: activated_number, AerosolActivation
     f₁ = activated_fraction(0.018e-6, 1.53, 0.003); f₂ = activated_fraction(0.066e-6, 1.78, 0.003)
     @test 0.05 < f₁ < 0.12 && 0.85 < f₂ < 0.93
     @test activated_fraction(0.066e-6, 1.78, 0.05) > 0.999 && activated_fraction(0.018e-6, 1.53, 1e-4) < 1e-3
     # ... and agrees with Breeze's activated_number for the same mode
     aerosol = AerosolActivation(modes...)
     @test activated_number(modes[2], aerosol, 285.0, 0.003) / modes[2].number_mixing_ratio ≈ f₂ rtol=1e-3
-    capped, record = lasso_aerosol_modes(Float64; setting=:aer2, reference_density=1.2, maximum_supersaturation=0.003)
+    capped = lasso_aerosol(; reference_density=1.2, maximum_supersaturation=0.003).modes
     @test capped[1].number_mixing_ratio ≈ f₁ * 276e6 / 1.2 && capped[2].number_mixing_ratio ≈ f₂ * 281e6 / 1.2
-    @test record.maximum_supersaturation == 0.003 && record.activatable_fraction₁ ≈ f₁
     @test 0.4 < (capped[1].number_mixing_ratio + capped[2].number_mixing_ratio) / (modes[1].number_mixing_ratio + modes[2].number_mixing_ratio) < 0.55
     # Covert-consistent aerosol: the capped activatable number equals the observed 75 cm⁻³
-    cm, cr = covert_aerosol_modes(Float64; reference_density=1.2)
+    covert = covert_aerosol(; reference_density=1.2)
+    cm = covert.modes
+    @test has_prognostic_aerosol(covert)
     @test cm[1].number_mixing_ratio + cm[2].number_mixing_ratio ≈ 75e6 / 1.2
     @test cm[1].mean_radius == 0.018e-6 && cm[2].geometric_std == 1.78 && cm[1].mass_fraction_soluble == 1
-    @test cr.setting == "covert_n75"
-    @test isapprox(cr.N₁ + cr.N₂, 75 / (cr.activatable_fraction₁ * 276 + cr.activatable_fraction₂ * 281) * 557; rtol=1e-6)   # total scaled so the capped activatable part is 75 cm⁻³
-    @test 0.2 < cr.scale_factor < 0.35
-    p3c, rec = BreezeLab.build_microphysics(Float64, :p3_covert_n75; droplet_number=75e6, surface_density=1.2)
-    @test rec.scheme == :p3_covert_n75 && rec.prognostic_aerosol && rec.target_droplet_number == 75e6
-    @test sum(m.number_mixing_ratio for m in p3c.aerosol.modes) ≈ 75e6 / 1.2
+    scale = cm[1].number_mixing_ratio / capped[1].number_mixing_ratio       # the factor applies to the capped modes
+    @test cm[2].number_mixing_ratio / capped[2].number_mixing_ratio ≈ scale  # one factor for both modes
+    @test isapprox(scale, 75 / (f₁ * 276 + f₂ * 281); rtol=1e-6)
+    @test 0.2 < scale < 0.35
+    # the provenance record reads the modes off the Breeze object
+    record = microphysics_record(p3_microphysics(; aerosol = covert); reference_density = 1.2)
+    @test record.n₁ ≈ cm[1].number_mixing_ratio && record.N₁ + record.N₂ ≈ 75
+    @test record.mean_radius_1 == 0.018e-6 && record.cloud_droplet_number == 75e6
+    @test microphysics_record(one_moment_microphysics(); reference_density = 1.2).microphysics isa String
+  end
 end
 
 @testset "Forcing operators in a model" begin
@@ -470,8 +514,9 @@ end
 @testset "Scalar advection: bounded water masses, plain energy and moments" begin
     using Oceananigans.Advection: BoundsPreservingWENO
     is_bounded(scheme) = scheme isa BoundsPreservingWENO
-    for (scheme, moisture) in ((:p3_aer2, :qᵛ), (:p3_covert_n75, :qᵛ), (:p3_n75, :qᵛ), (:one_moment, :qᵗ))
-        microphysics, _ = BreezeLab.build_microphysics(Float64, scheme; droplet_number=75e6, surface_density=1.17)
+    aer2 = p3_microphysics(; aerosol = lasso_aerosol(; reference_density=1.17))
+    for (microphysics, moisture) in ((aer2, :qᵛ), (p3_microphysics(; aerosol = covert_aerosol(; reference_density=1.17)), :qᵛ),
+                                     (p3_microphysics(), :qᵛ), (one_moment_microphysics(), :qᵗ))
         schemes = BreezeLab.scalar_advection_schemes(5, microphysics, moisture)
         @test !is_bounded(schemes.ρs)
         @test is_bounded(schemes[Symbol("ρ", moisture)])
@@ -491,7 +536,6 @@ end
         @test is_bounded(plain[Symbol("ρ", moisture)])
         @test all(!is_bounded(plain[n]) for n in keys(plain) if n != Symbol("ρ", moisture))
     end
-    aer2, _ = BreezeLab.build_microphysics(Float64, :p3_aer2; droplet_number=75e6, surface_density=1.17)
     schemes = BreezeLab.scalar_advection_schemes(5, aer2, :qᵛ)
     @test all(s -> is_bounded(s) && s.bounds.maximum_value == 1, (schemes.ρqᶜˡ, schemes.ρqʳ, schemes.ρqⁱ, schemes.ρqᶠ, schemes.ρqʷⁱ))
     @test all(s -> is_bounded(s) && isinf(s.bounds.maximum_value), (schemes.ρnᶜˡ, schemes.ρnʳ, schemes.ρnⁱ, schemes.ρbᶠ, schemes.ρnᵃ))
@@ -570,26 +614,33 @@ end
 end
 
 if HAVE_COVERT
-    @testset "Covert public-bin preset builds and steps" begin
-        case = lasso_ena_simulation(COVERT_DIR; preset=:covert_public_bin, Nx=8, Ny=8, Lx=280, Ly=280,
-                                    z_faces=collect(range(0, 6000, length=25)), microphysics=:one_moment,
-                                    stop_time=4.0, write_output=false, progress_interval=100)
-        @test occursin("Covert-public-bin", case.config.label)
-        @test case.config.surface == "prescribed_fluxes" && case.config.radiation == "simple"
-        @test case.config.wind_nudging_timescale == 0
+    @testset "Covert protocol builds and steps" begin
+        z_faces = collect(range(0, 6000, length=25))
+        case = with_float_type(Float64) do
+            ena_covert(; arch=CPU(), data_dir=COVERT_DIR, microphysics=one_moment_microphysics(), Nx=8, Ny=8, z_faces,
+                         stop_time=4.0, write_output=false, progress_interval=100)
+        end
+        @test occursin("Covert-public-bin", case.config.label) && case.config.protocol == "covert_public_bin"
+        @test case.model.radiation isa SimpleLongwaveRadiation
+        @test !any(f -> f isa MeanProfileNudging, case.forcing.u)            # no wind nudging in the Covert protocol
         @test case.simulation.stop_time == 4.0
         run!(case.simulation)
         @test all(f -> all(isfinite, interior(f)), values(Oceananigans.prognostic_fields(case.model)))
-        @test_throws ArgumentError lasso_ena_simulation(COVERT_DIR; preset=:lasso_ena_official)
-        # preset fidelity: fixed SAM time step and namelist translation frame
-        @test case.config.Δt_initial == 0.5 && case.config.max_Δt == 0.5
+        # a Covert directory is never accepted as a LASSO bundle
+        @test_throws ArgumentError ena_lasso(; bundle_dir=COVERT_DIR, epoch=DateTime(2017, 7, 18, 6), arch=CPU())
+        # protocol fidelity: the namelist's domain spacing, fixed SAM time step and translation frame
+        @test case.config.Lx == 8 * 35 && case.config.Δt == 0.5 && case.config.max_Δt == 0.5
         @test case.config.translation_velocity_u == 5.0 && case.config.translation_velocity_v == -8.0
+        @test case.config.day0 == 199.25 && case.config.epoch == string(DateTime(2017, 7, 18, 6))
+        # namelist values the caller replaced are recorded and labelled
+        @test Set(case.config.overrides) == Set(["Nx", "Ny", "z_faces", "stop_time"])
+        @test occursin("[overrides: Nx, Ny, z_faces, stop_time]", case.config.label)
         # provenance round-trips through TOML
         path = joinpath(mktempdir(), "provenance.toml")
         write_provenance(path, case; extra=(; note="test", tuple=(1, 2)))
         record = TOML.parsefile(path)
-        @test record["preset"] == "covert_public_bin"
-        @test record["config"]["microphysics"] == "one_moment"
+        @test record["protocol"] == "covert_public_bin" && record["config"]["protocol"] == "covert_public_bin"
+        @test record["config"]["microphysics"] == case.config.microphysics
         @test haskey(record["inputs"], "snd_sha256") && haskey(record["inputs"], "prm_sha256")
         @test record["software"]["Breeze_source"] isa String
         # the recorded sources are the revisions pinned in Project.toml
@@ -597,13 +648,27 @@ if HAVE_COVERT
         @test occursin(pins["Oceananigans"]["rev"], record["software"]["Oceananigans_source"])
         @test occursin(pins["Breeze"]["rev"], record["software"]["Breeze_source"])
         @test record["extra"]["tuple"] == [1, 2]
-        # output writers build (profiles of already-averaged fields, time series, slices)
-        written = lasso_ena_simulation(COVERT_DIR; preset=:covert_public_bin, arch=CPU(), FT=Float32, Nx=8, Ny=8, Lx=280, Ly=280,
-                                       z_faces=collect(range(0, 6000, length=25)), microphysics=:p3_aer2,
-                                       aerosol_replenishment=:diagnostic_ccn, stop_time=1.0, write_output=true,
-                                       output_dir=mktempdir(), progress_interval=100)
+        # output writers build (profiles of already-averaged fields, time series, slices), and an
+        # aerosol reservoir switches the diagnostic-CCN projection on
+        written = with_float_type(Float32) do
+            ρ₁ = first_level_reference_density(COVERT_DIR, z_faces)
+            ena_covert(; arch=CPU(), data_dir=COVERT_DIR, Nx=8, Ny=8, z_faces,
+                         microphysics=p3_microphysics(; aerosol=lasso_aerosol(; reference_density=ρ₁)),
+                         stop_time=1.0, write_output=true, output_dir=mktempdir(), progress_interval=100)
+        end
         @test Set(keys(written.simulation.output_writers)) ⊇ Set((:profiles, :timeseries, :slices))
         @test :cloud_fraction ∈ keys(written.simulation.output_writers[:profiles].outputs)
+        @test written.config.diagnostic_ccn && written.config.FT == "Float32"
+        @test written.config.N₁ ≈ 276 rtol=1e-5                   # the first-level density is the constructor's own
+        # a microphysics object at another precision than the grid is refused
+        @test_throws ArgumentError with_float_type(Float64) do
+            ena_covert(; arch=CPU(), data_dir=COVERT_DIR, Nx=8, Ny=8, z_faces, write_output=false,
+                         microphysics=with_float_type(p3_microphysics, Float32))
+        end
+        @test_throws ArgumentError with_float_type(Float32) do
+            ena_covert(; arch=CPU(), data_dir=COVERT_DIR, Nx=8, Ny=8, z_faces, write_output=false,
+                         microphysics=with_float_type(one_moment_microphysics, Float64))
+        end
     end
 end
 
