@@ -75,8 +75,11 @@ scatterlines!(ax1, hours, [h["max_abs_w"] for h in hourly]; label = "3-D hourly"
 ax2 = Axis(fig[1, 2]; xlabel = "hours after 06 UTC", ylabel = "T (K)", title = "min T (3-D hourly) and surface T range")
 scatterlines!(ax2, hours, [h["min_T"] for h in hourly]; label = "min T 3-D"); lines!(ax2, t10, ten["min_T_sfc"]; label = "min T_sfc"); lines!(ax2, t10, ten["max_T_sfc"]; label = "max T_sfc"); axislegend(ax2; position = :lb)
 ax3 = Axis(fig[2, 1]; xlabel = "max |w| per level (m/s)", ylabel = "z (km)", title = "hourly profiles of max |w|", xscale = log10)
-for n in eachindex(hours); lines!(ax3, max.(per_level_maxw[n, :], 1e-2), zc ./ 1e3; color = n, colorrange = (1, length(hours)), colormap = :viridis); end
-hlines!(ax3, [0.75Lz / 1e3]; color = :red, linestyle = :dash); Colorbar(fig[2, 2], limits = (hours[1], hours[end]), colormap = :viridis, label = "hour")
+for n in eachindex(hours)
+    lines!(ax3, max.(per_level_maxw[n, :], 1e-2), zc ./ 1e3; color = n, colorrange = (1, length(hours)), colormap = :viridis)
+end
+hlines!(ax3, [0.75Lz / 1e3]; color = :red, linestyle = :dash)
+Colorbar(fig[2, 2]; limits = (hours[1], hours[end]), colormap = :viridis, label = "hour")
 ax4 = Axis(fig[2, 3]; xlabel = "hours", ylabel = "CFL", title = "max vertical advective CFL |w|Δt/Δz (hourly)")
 scatterlines!(ax4, hours, [h["max_vertical_advective_cfl"] for h in hourly]); hlines!(ax4, [1.0]; color = :red)
 save(joinpath(out_dir, "blowup_diagnosis.png"), fig; px_per_unit = 1)
@@ -85,7 +88,9 @@ fig2 = Figure(size = (1000, 450))
 for (p, n) in enumerate(max(1, length(hours) - 1):length(hours))
     w = Array(interior(w_fts[n])); colmax = dropdims(maximum(abs.(w); dims = 3); dims = 3)
     ax = Axis(fig2[1, p]; title = @sprintf("column max |w| (m/s), hour %.0f", hours[n]), aspect = DataAspect())
-    hm = heatmap!(ax, λ, φ, colmax; colormap = :magma, colorrange = (0, 20)); contour!(ax, λ, φ, Float32.(sea); levels = [0.5], color = :cyan); Colorbar(fig2[1, p + 2], hm)
+    hm = heatmap!(ax, λ, φ, colmax; colormap = :magma, colorrange = (0, 20))
+    contour!(ax, λ, φ, Float32.(sea); levels = [0.5], color = :cyan)
+    Colorbar(fig2[1, p + 2], hm)
 end
 save(joinpath(out_dir, "blowup_map.png"), fig2; px_per_unit = 1)
 @info "written" out_dir
