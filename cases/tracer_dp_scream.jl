@@ -25,6 +25,7 @@ using Dates: Dates, DateTime, Second, Hour
 using CairoMakie
 using Statistics: mean
 using TOML: TOML
+using Printf: @sprintf
 
 # ## Settings
 #
@@ -46,15 +47,33 @@ arch = GPU()
 # and `TRACER_DP_SCREAM_DX` override both so that a 512² × 100 m run covers the same domain.
 Nx = Ny = parse(Int, get(ENV, "TRACER_DP_SCREAM_NX", "256"))
 Δx = parse(Float64, get(ENV, "TRACER_DP_SCREAM_DX", "200"))
+# Fields used for animation (the xy maps at the slice height, the xz section, LWP and rain
+# maps) are saved at least four times finer than the 30-min profile means: every
+# `TRACER_DP_SCREAM_SLICE_MINUTES` (default 5) at `TRACER_DP_SCREAM_SLICE_HEIGHT` m (default
+# 3000, near the afternoon cloud base of this case; 1500 m sat below it in the 200 m baseline).
+# Profiles (30 min) and time series (60 s) are unchanged.
+slice_minutes = parse(Float64, get(ENV, "TRACER_DP_SCREAM_SLICE_MINUTES", "5"))
+slice_height = parse(Float64, get(ENV, "TRACER_DP_SCREAM_SLICE_HEIGHT", "3000"))
+slice_interval = slice_minutes * 60
 
 # ## Build the simulation
 
 case = tracer_dp_scream(; iop_path = joinpath(data_dir, "TRACER_iopfile_4scam.nc"),
                         start, stop, stop_time, arch, Nx, Ny, Δx,
                         microphysics = P3Microphysics(; cloud = CloudDroplets(; number_concentration = 200e6)),
-                        output_dir, output_prefix = "tracer",
+                        output_dir, output_prefix = "tracer", slice_interval, slice_height,
                         checkpoint_interval = checkpoint_interval > 0 ? checkpoint_interval : nothing)
 simulation = case.simulation;
+
+# Storage estimate for the slice file: three xz sections (Nx × Nz) and four xy maps (Nx × Ny)
+# in Float32 per save; job 202 (256² × 160, 30-min cadence) measured 0.76 of that interior
+# size per save (1.175 MB), which calibrates the estimate recorded in the provenance.
+Nz = case.config.Nz
+slice_saves = floor(Int, stop_time / slice_interval) + 1
+slice_bytes_per_save = 0.76 * 4 * (3 * Nx * Nz + 4 * Nx * Ny)
+slice_file_estimate_GB = slice_saves * slice_bytes_per_save / 1e9
+@info @sprintf("slice file estimate: %d saves every %.0f min at %.0f m ≈ %.1f GB (%.2f MB per save)",
+               slice_saves, slice_minutes, slice_height, slice_file_estimate_GB, slice_bytes_per_save / 1e6)
 
 # ## Run
 #
@@ -67,6 +86,8 @@ simulation = case.simulation;
 mkpath(output_dir)
 write_provenance(joinpath(output_dir, "provenance.toml"), case;
                  extra = (; stop_time, checkpoint_interval, pickup_from,
+                            slice_minutes, slice_height, slice_saves, slice_bytes_per_save, slice_file_estimate_GB,
+                            slice_estimate_basis = "0.76 × Float32 interior bytes of 3 xz + 4 xy fields per save, calibrated on job 202",
                             dp_scream_reference = "Zenodo 10.5281/zenodo.15271730 (3 km August run, case scream_dp_TRACER_AUGUST_decr; 0.5 km 5–15 August run)",
                             scmlib_script = "DPxx_SCREAM_SCRIPTS/run_dpxx_scream_TRACER.csh @ 2dc3f1073a5d03b5f32617e79d68fb20a63cfb43"))
 pickup = false

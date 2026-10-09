@@ -50,8 +50,10 @@ relaxation_width = parse(Int, get(ENV, "TRACER_MIP_RELAX_WIDTH", "5"))
 damping_depth = (d = parse(Float64, get(ENV, "TRACER_MIP_SPONGE_DEPTH", "0")); d > 0 ? d : nothing)
 era5_dir = get(ENV, "TRACER_MIP_ERA5_DIR", joinpath(pkgdir(BreezeLab), "data", "era5"))
 output_dir = get(ENV, "TRACER_MIP_OUTPUT_DIR", joinpath(pkgdir(BreezeLab), "output", "tracer_mip_outer_$(case)" * (parent === :era5 ? "" : "_EXPLORATORY_$(parent)")))
-output_interval = 1hour             # Grid-1: 60-min full output
-slice_interval = 10minutes          # lightweight monitoring slices
+output_interval = 1hour             # Grid-1: 60-min full 3-D output and process accumulators (protocol)
+# Fields used for animations are saved at ≥ 4× finer resolution than the 10-min protocol cadence
+# (surface fields, 2-km slices, inner-region state); the storage budget is in docs/cases/tracer_mip.md.
+fast_interval = parse(Float64, get(ENV, "TRACER_MIP_FAST_MINUTES", "2.5")) * 60
 mkpath(output_dir)
 
 # ## Build
@@ -75,20 +77,23 @@ state_3d = (; ρ = child.dynamics.total_density, T = child.temperature, p = Bree
 process_3d = isnothing(acc) ? NamedTuple() : acc.fields
 surface_2d = (; T_land = land.temperature, saturation = land.saturation, sea = run_case.sea_mask,
                 rain = surface_rain_flux(child))
+# Surface values only: the RTM's downwelling fluxes are 3-D (every interface); saving them whole made the surface
+# file 266 MB per write in job 233.
 radiation_2d = isnothing(run_case.radiation) ? NamedTuple() :
-               (; SW_down = run_case.radiation.downwelling_shortwave_flux, LW_down = run_case.radiation.downwelling_longwave_flux)
+               (; SW_down_sfc = view(run_case.radiation.downwelling_shortwave_flux, :, :, 1),
+                  LW_down_sfc = view(run_case.radiation.downwelling_longwave_flux, :, :, 1))
 
 simulation.output_writers[:state] = JLD2Writer(child, state_3d; schedule = TimeInterval(output_interval),
                                                filename = joinpath(output_dir, "outer_state.jld2"), overwrite_files = true)
 simulation.output_writers[:process] = JLD2Writer(child, process_3d; schedule = TimeInterval(output_interval),
                                                  filename = joinpath(output_dir, "outer_process_rates.jld2"), overwrite_files = true)
 isnothing(acc) || add_callback!(simulation, process_rate_output_callback(acc, TimeInterval(output_interval)))
-simulation.output_writers[:surface] = JLD2Writer(child, merge(surface_2d, radiation_2d); schedule = TimeInterval(slice_interval),
+simulation.output_writers[:surface] = JLD2Writer(child, merge(surface_2d, radiation_2d); schedule = TimeInterval(fast_interval),
                                                  filename = joinpath(output_dir, "outer_surface.jld2"), overwrite_files = true)
 # Inner-region prognostic state for the offline one-way 500 m nest: the raw thermodynamic/wind state
 # (what a `PrescribedAtmosphere` parent needs) over the inner extent plus a halo of `inner_halo`
 # outer cells (relaxation zone + interpolation stencil), every `inner_interval` (≥ 10 min).
-inner_interval = 10minutes
+inner_interval = fast_interval      # ≤ 2.5 min (≥ 4× the 10-min nest/animation cadence)
 inner_halo = 10
 inner_extent = BreezeLab.tracer_mip_horizontal_extent(tracer_mip_protocol(), :inner)
 λc = Array(Oceananigans.Grids.λnodes(child.grid, Center()))
@@ -112,7 +117,7 @@ end
 k_aloft = searchsortedfirst(Array(znodes(child.grid, Center())), 2000)
 slices = (; w_2km = view(w, :, :, k_aloft), qᶜˡ_2km = view(μ.qᶜˡ, :, :, k_aloft), T_sfc = view(child.temperature, :, :, 1),
             u_sfc = view(u, :, :, 1), v_sfc = view(v, :, :, 1))
-simulation.output_writers[:slices] = JLD2Writer(child, slices; schedule = TimeInterval(slice_interval),
+simulation.output_writers[:slices] = JLD2Writer(child, slices; schedule = TimeInterval(fast_interval),
                                                 filename = joinpath(output_dir, "outer_slices.jld2"), overwrite_files = true)
 
 wall = Ref(time_ns())

@@ -75,7 +75,7 @@ Defaults (the DP-SCREAM protocol facts are listed at the top of this file):
   `gustiness = 1` m/s
 - `sponge = SAMSponge(damping_depth_fraction = 0.25)`, `closure = SmagorinskyLilly()`,
   `advection_order = 5`, `Δt = 2`, `max_Δt = 5`, `cfl = 0.7`, `perturbation = InitialPerturbation()`
-- outputs: profiles every 30 min, time series every 60 s, slices every 30 min at 1500 m,
+- outputs: profiles every 30 min, time series every 60 s, slices (animation fields) every 5 min at 3000 m,
   `checkpoint_interval = nothing` (set e.g. `6hours` for resumable runs)
 """
 function tracer_dp_scream(;
@@ -113,8 +113,8 @@ function tracer_dp_scream(;
     output_prefix = "tracer",
     profile_interval = 30minutes,
     timeseries_interval = 60.0,
-    slice_interval = 30minutes,
-    slice_height = 1500.0,
+    slice_interval = 5minutes,
+    slice_height = 3000.0,
     progress_interval = 10minutes,
     checkpoint_interval = nothing,
     checkpoint_cleanup = true)

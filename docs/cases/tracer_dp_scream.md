@@ -67,3 +67,7 @@ writes `budget.toml` with column water and (approximate) static-energy closure r
 plots water paths, precipitation and time–height cloud fraction against the archived 3 km and
 0.5 km runs. Agreement with DP-SCREAM is not observational validation; the ARM products used
 in the paper (ARMBECLDRAD, VARANAL precipitation, MRMS) are not staged here.
+
+## Output cadence
+
+Animation fields (xy maps at the slice height, the xz section, LWP and rain maps) are saved every 5 min at 3000 m by default (`TRACER_DP_SCREAM_SLICE_MINUTES`, `TRACER_DP_SCREAM_SLICE_HEIGHT`); profiles are 30-min means and time series are 60 s. The case script writes the slice-file storage estimate (saves, bytes per save, GB) into `provenance.toml`; job 202 (256² × 160, 30-min cadence) measured 1.175 MB per save.
