@@ -15,7 +15,8 @@ using BreezeLab: LargeScaleForcingProfiles, LargeScaleVerticalAdvection, LargeSc
                  MeanProfileNudging, TimeVaryingGeostrophicForcing, UpperBoundaryEnergyRelaxation, UpperBoundaryMoistureRelaxation,
                  SimpleLongwaveRadiation, SoundingTargetProfiles, large_scale_thermodynamic_forcings, time_varying_geostrophic_forcings,
                  upper_boundary_relaxation_forcings, sam_sponge_rates, profile_time_series,
-                 prescribed_stress_updater, prescribed_surface_flux_boundary_conditions, bulk_surface_flux_boundary_conditions,
+                 prescribed_stress_updater, prescribed_surface_flux_boundary_conditions, prescribed_heat_flux_boundary_conditions,
+                 bulk_surface_flux_boundary_conditions, SAMSurfaceForcing,
                  sam_oceflx_neutral_polynomials, perturbation_array, perturbation_amplitudes, saturation_partition,
                  day_to_seconds, epoch_from_day_of_year, file_sha256, mass_fraction_from_mixing_ratio, record_heights,
                  sam_hydrostatic_heights, sam_interpolate_column, interpolate_profile, initial_sounding, lasso_ena_cell_centers,
@@ -326,6 +327,35 @@ end
         end
     end
 
+    @testset "tls/qls invariant in the potential-temperature formulation (no vapor cross term)" begin
+        # In the θ formulation an energy source F heats as cᵖᵐ dT = F and vapor added at fixed θ leaves T
+        # unchanged (to the Exner-composition effect), so the forcing must not add (cᵖᵛ − cᵖᵈ) T dqᵛ/dt.
+        spurious = (1850 - 1005) * 290 * 1e-7 * 100 / 1010          # ≈ 2.4e-3 K: what the cross term would add
+        zero_tls = profile_time_series(grid, times, [zeros(24), zeros(24)])
+        zero_qls = profile_time_series(grid, times, [zeros(24), zeros(24)])
+        for (τ, r, expected) in ((zero_tls, qls, 0.0), (tls, zero_qls, -5e-5 * 100), (tls, qls, -5e-5 * 100))
+            thermo_θ = large_scale_thermodynamic_forcings(τ, r; microphysics, thermodynamic_constants=constants,
+                                                          moisture_name=:qᵉ, moisture_basis=:mass_fraction)
+            model = AtmosphereModel(grid; formulation=:LiquidIcePotentialTemperature, dynamics, microphysics,
+                                    thermodynamic_constants=constants, forcing=(; E=thermo_θ.s, qᵉ=thermo_θ.qᵉ))
+            @test !inner(model.forcing.ρE).static_energy
+            set!(model; T=290.0, qᵗ=8e-3)
+            T₀ = copy(interior(model.temperature)); q₀ = copy(interior(model.microphysical_fields.qᵛ))
+            for _ in 1:10
+                time_step!(model, 10.0)
+            end
+            ΔT = interior(model.temperature) .- T₀
+            Δq = interior(model.microphysical_fields.qᵛ) .- q₀
+            # residual Exner-composition effect ≤ 2 % of the removed cross term over this 6-km column
+            @test maximum(abs, ΔT .- expected) < 0.06 * spurious
+            r === qls && @test all(isapprox.(Δq, 1e-7 * 100; rtol=1e-6))
+        end
+        # the static-energy model keeps the cross term (materialization sets it from the prognostic)
+        model_s = AtmosphereModel(grid; formulation=:StaticEnergy, dynamics, microphysics, thermodynamic_constants=constants,
+                                  forcing=(; s=thermo.s, qᵉ=thermo.qᵉ))
+        @test inner(model_s.forcing.ρs).static_energy
+    end
+
     @testset "tls/qls Jacobian in cloudy cells (P3 and one-moment moisture)" begin
         using Breeze.Thermodynamics: StaticEnergyState, MoistureMassFractions, temperature, mixture_heat_capacity
         # Apply the forcing kernels' s and qᵛ rates for Δt to a cloudy state (condensate fixed) and
@@ -481,6 +511,20 @@ end
         @test all(isapprox.(ΔT[:, :, 23:24], expected_ΔT; rtol=5e-3))
         @test all(isapprox.(Δq[:, :, 23:24], expected_Δq; rtol=5e-3))
         @test all(abs.(ΔT[:, :, 1:22]) .< 1e-8)
+
+        # the same relaxation in the θ formulation: no vapor cross term, the same temperature response
+        model3 = AtmosphereModel(grid; formulation=:LiquidIcePotentialTemperature, dynamics, microphysics,
+                                 thermodynamic_constants=constants, forcing=(; E=upper.s, qᵉ=upper.qᵉ))
+        @test !inner(model3.forcing.ρE).static_energy
+        set!(model3; T=290.0, qᵗ=5e-3)
+        T₀ = copy(interior(model3.temperature)); q₀ = copy(interior(model3.microphysical_fields.qᵛ))
+        for _ in 1:5
+            time_step!(model3, 10.0)
+        end
+        ΔT = interior(model3.temperature) .- T₀
+        expected_ΔT = @. -(T₀[:, :, 23:24] - 280) * (1 - exp(-50 / 3600))
+        # the removed cross term would add ≈ (cᵖᵛ − cᵖᵈ) T Δq / cᵖᵐ ≈ +0.013 K (≈ 10 %) here
+        @test all(isapprox.(ΔT[:, :, 23:24], expected_ΔT; rtol=1e-2))
     end
 end
 
@@ -491,7 +535,7 @@ end
     dynamics = AnelasticDynamics(reference_state)
     sfc = read_sam_surface_forcing(joinpath(FIXTURES, "sfc"))
     bcs, stress = prescribed_surface_flux_boundary_conditions(grid, sfc, 199.25; thermodynamic_constants=constants,
-                                                              surface_density=1.2, moisture_name=:qᵉ)
+                                                              surface_density=1.2, moisture_name=:qᵉ, formulation=:StaticEnergy)
     microphysics = SaturationAdjustment(Float64; equilibrium=WarmPhaseEquilibrium())
     model = AtmosphereModel(grid; formulation=:StaticEnergy, dynamics, microphysics, thermodynamic_constants=constants,
                             boundary_conditions=bcs)
@@ -505,10 +549,42 @@ end
     U = max(1, sqrt(ū^2 + v̄^2))
     @test τˣ[1, 1, 1] ≈ -1.2 * 0.0625 * ū / U
     @test τʸ[1, 1, 1] ≈ -1.2 * 0.0625 * v̄ / U
-    # energy flux includes the temperature-neutral evaporation term
+    # energy flux includes the temperature-neutral evaporation term in the static-energy formulation
     ℒ = constants.liquid.reference_latent_heat
     H = model.formulation.energy_density.boundary_conditions.bottom.condition[1, 1, 1, Time(0.0)]
     @test H ≈ 11.5361 + (1850 - 1005) * 294.937 * 85.8638 / ℒ
+    # ... and not in the potential-temperature formulation (the default)
+    bcs_θ, _ = prescribed_surface_flux_boundary_conditions(grid, sfc, 199.25; thermodynamic_constants=constants,
+                                                           surface_density=1.2, moisture_name=:qᵉ)
+    @test bcs_θ.ρE.bottom.condition[1, 1, 1, Time(0.0)] ≈ 11.5361
+    @test_throws ArgumentError prescribed_surface_flux_boundary_conditions(grid, sfc, 199.25; thermodynamic_constants=constants,
+                                                                           surface_density=1.2, moisture_name=:qᵉ, formulation=:θ)
+end
+
+@testset "Latent-heat-only surface flux leaves the surface temperature unchanged in both formulations" begin
+    grid = test_grid(; Nz=24, Lz=6000)
+    constants = ThermodynamicConstants(Float64)
+    reference_state = ReferenceState(grid, constants; base_pressure=101000, potential_temperature=z -> 300 + 0.004z)
+    dynamics = AnelasticDynamics(reference_state)
+    microphysics = SaturationAdjustment(Float64; equilibrium=WarmPhaseEquilibrium())
+    sfc = SAMSurfaceForcing([200.0, 201.0], [300.0, 300.0], [0.0, 0.0], [300.0, 300.0], [0.0, 0.0])
+    ΔT(formulation; kwargs...) = begin
+        heat = prescribed_heat_flux_boundary_conditions(grid, sfc, 200.0; thermodynamic_constants=constants,
+                                                        moisture_name=:qᵉ, formulation, kwargs...)
+        model = AtmosphereModel(grid; formulation, dynamics, microphysics, thermodynamic_constants=constants,
+                                boundary_conditions=heat.bcs)
+        set!(model; T=295.0, qᵗ=5e-3)
+        T₀ = interior(model.temperature)[1, 1, 1]
+        for _ in 1:10
+            time_step!(model, 10.0)
+        end
+        interior(model.temperature)[1, 1, 1] - T₀
+    end
+    # LE = 300 W m⁻² for 100 s into a 250-m cell: the wrong pairing changes T by ≈ 1e-2 K
+    @test abs(ΔT(:StaticEnergy)) < 5e-4
+    @test abs(ΔT(:LiquidIcePotentialTemperature)) < 5e-5
+    @test ΔT(:StaticEnergy; temperature_neutral_evaporation=false) < -5e-3
+    @test ΔT(:LiquidIcePotentialTemperature; temperature_neutral_evaporation=true) > 5e-3
 end
 
 @testset "Scalar advection: bounded water masses, plain energy and moments" begin
