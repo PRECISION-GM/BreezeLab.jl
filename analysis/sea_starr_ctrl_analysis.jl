@@ -8,7 +8,7 @@
 # Writes figures (PNG) and `summary.md` / `summary.toml` with the numbers under --out.
 
 using BreezeLab
-using BreezeLab: interpolate_profile
+using BreezeLab: interpolate_profile, driver_initial_profile
 using Breeze
 using Oceananigans
 using Oceananigans.Units

@@ -8,7 +8,7 @@
 # Partial runs are fine: every quantity is reported up to the last record available.
 
 using BreezeLab
-using BreezeLab: interpolate_profile
+using BreezeLab: interpolate_profile, driver_initial_profile
 using Oceananigans
 using Oceananigans.Fields: interior
 using CairoMakie

@@ -10,6 +10,7 @@
 using Oceananigans
 using Oceananigans.OutputReaders: OnDisk, InMemory
 using TOML
+using JLD2: jldopen
 
 struct StitchedSeries{G, S}
     times :: Vector{Float64}
@@ -49,9 +50,12 @@ end
 `StitchedSeries` of output `name` from `<dir>/<filename>` over the segment directories `dirs` (missing files in
 later segments are skipped, e.g. while a segment has not written yet).
 """
+# A segment that has started but not yet written a record has a file without `timeseries/t` entries.
+has_records(path) = isfile(path) && jldopen(f -> haskey(f, "timeseries/t") && !isempty(keys(f["timeseries/t"])), path, "r")
+
 function stitched_series(dirs, filename, name; backend = InMemory())
-    series = [FieldTimeSeries(joinpath(d, filename), name; backend) for d in dirs if isfile(joinpath(d, filename))]
-    present = [d for d in dirs if isfile(joinpath(d, filename))]
+    present = [d for d in dirs if has_records(joinpath(d, filename))]
+    series = [FieldTimeSeries(joinpath(d, filename), name; backend) for d in present]
     isempty(series) && error("no $filename in $(dirs)")
     times = Float64[]; sources = Tuple{Any, Int}[]
     for (k, fts) in enumerate(series)
