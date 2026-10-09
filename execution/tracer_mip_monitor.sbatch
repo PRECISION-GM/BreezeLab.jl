@@ -40,7 +40,28 @@ while /opt/slurm/bin/squeue -h -j "$GPU_JOB" -o %t | grep -q .; do
           end
       end' "$SNAP" "$CSV" "$(( $(wc -l < "$CSV") - 1 ))" 2>&1 | grep -v "^\s*$" | tail -2
     tail -1 "$CSV"
+    # Automatic replacement: the job-233 trajectory (inner-box |w| > 15 m/s before 8 h, or min T < 195 K) means the
+    # configuration is failing; cancel the GPU job and queue the stabilised configuration on the same GPU.
+    if [ -n "${AUTO_REPLACE:-}" ]; then
+      LAST=$(tail -1 "$CSV"); TH=$(echo "$LAST" | cut -d, -f3); WI=$(echo "$LAST" | cut -d, -f9); TI=$(echo "$LAST" | cut -d, -f11)
+      if awk -v th="$TH" -v wi="$WI" -v ti="$TI" 'BEGIN{exit !((wi > 15 && th < 8) || ti < 195)}'; then
+        echo "== $(date -u) criterion met (t=$TH h, inner max|w|=$WI, min T=$TI): cancelling $GPU_JOB and launching the stabilised configuration"
+        /opt/slurm/bin/scancel "$GPU_JOB"; sleep 20
+        NEW=$(/opt/slurm/bin/sbatch --partition=gpu-p4de-2c --nodelist=gpu-p4de-2c-st-gpu-p4de-2c-1 --gres=gpu:1 --cpus-per-task=12 --mem=96G --time=48:00:00 --dependency=afterany:$GPU_JOB \
+              --export=ALL,CHECKOUT=$CHECKOUT,EXPERIMENT=outer_era5_control_aug07_tke_stab,TRACER_MIP_NX=750,TRACER_MIP_NY=750,TRACER_MIP_STOP_HOURS=24,TRACER_MIP_PARENT=era5,TRACER_MIP_CLOSURE=tke,TRACER_MIP_CFL=0.5,TRACER_MIP_RELAX_WIDTH=20,TRACER_MIP_SPONGE_DEPTH=7000,TRACER_MIP_PROGRESS_SECONDS=600 \
+              "$CHECKOUT/execution/tracer_mip_outer.sbatch" GPU-bdbd7e9e-5b00-25f4-cbf3-a2954645c086 | awk '{print $NF}')
+        echo "== launched stabilised control job $NEW" | tee -a "$RUN/../AUTO_REPLACE_LOG"
+        exit 0
+      fi
+    fi
   fi
   sleep "$INTERVAL"
 done
 echo "== $(date -u) GPU job $GPU_JOB left the queue"
+if [ -n "${AUTO_REPLACE:-}" ] && [ ! -f "$RUN/COMPLETE" ]; then
+  echo "== $(date -u) GPU job $GPU_JOB ended without COMPLETE: launching the stabilised configuration"
+  NEW=$(/opt/slurm/bin/sbatch --partition=gpu-p4de-2c --nodelist=gpu-p4de-2c-st-gpu-p4de-2c-1 --gres=gpu:1 --cpus-per-task=12 --mem=96G --time=48:00:00 \
+        --export=ALL,CHECKOUT=$CHECKOUT,EXPERIMENT=outer_era5_control_aug07_tke_stab,TRACER_MIP_NX=750,TRACER_MIP_NY=750,TRACER_MIP_STOP_HOURS=24,TRACER_MIP_PARENT=era5,TRACER_MIP_CLOSURE=tke,TRACER_MIP_CFL=0.5,TRACER_MIP_RELAX_WIDTH=20,TRACER_MIP_SPONGE_DEPTH=7000,TRACER_MIP_PROGRESS_SECONDS=600 \
+        "$CHECKOUT/execution/tracer_mip_outer.sbatch" GPU-bdbd7e9e-5b00-25f4-cbf3-a2954645c086 | awk '{print $NF}')
+  echo "== launched stabilised control job $NEW after failure of $GPU_JOB" | tee -a "$RUN/../AUTO_REPLACE_LOG"
+fi
