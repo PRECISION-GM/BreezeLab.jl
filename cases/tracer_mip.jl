@@ -53,6 +53,12 @@ output_interval = 1hour             # Grid-1: 60-min full 3-D output and process
 # Fields used for animations are saved at ≥ 4× finer resolution than the 10-min protocol cadence
 # (surface fields, 2-km slices, inner-region state); the storage budget is in docs/cases/tracer_mip.md.
 fast_interval = parse(Float64, get(ENV, "TRACER_MIP_FAST_MINUTES", "2.5")) * 60
+# Checkpoints (restart after an outage): every TRACER_MIP_CHECKPOINT_HOURS simulated hours into a directory shared by
+# all segments of a run; TRACER_MIP_PICKUP = latest | <file> resumes from it. Each segment writes its outputs into its
+# own output_dir (writers overwrite their files), so a restart never clobbers an earlier segment.
+checkpoint_hours = parse(Float64, get(ENV, "TRACER_MIP_CHECKPOINT_HOURS", "3"))
+checkpoint_dir = get(ENV, "TRACER_MIP_CHECKPOINT_DIR", joinpath(output_dir, "checkpoints"))
+pickup = get(ENV, "TRACER_MIP_PICKUP", "")
 mkpath(output_dir)
 
 # ## Build
@@ -133,9 +139,31 @@ flush(stderr)   # progress lines reach the Slurm log while the job runs (stderr 
 add_callback!(simulation, sim -> flush(stderr), IterationInterval(100))
 Oceananigans.Diagnostics.erroring_NaNChecker!(simulation)
 
+# ## Checkpointing
+
+if checkpoint_hours > 0
+    simulation.output_writers[:checkpointer] = Checkpointer(simulation.model; schedule = TimeInterval(checkpoint_hours * 3600),
+                                                            dir = checkpoint_dir, prefix = "tracer_mip_outer", cleanup = true)
+end
+pickup_file = if pickup == ""
+    nothing
+elseif pickup == "latest"
+    files = isdir(checkpoint_dir) ? filter(f -> endswith(f, ".jld2"), readdir(checkpoint_dir; join = true)) : String[]
+    isempty(files) ? (@warn "TRACER_MIP_PICKUP=latest but no checkpoint in $checkpoint_dir: starting from t = 0"; nothing) :
+                     files[argmax(mtime.(files))]
+else
+    pickup
+end
+if !isnothing(pickup_file)
+    set!(simulation; checkpoint = pickup_file)
+    BreezeLab.sync_nested_parent_clock!(run_case)   # the parent clock (pressure-level heights) is not part of the checkpoint
+    @info "Picked up from $pickup_file at t = $(prettytime(simulation.model.clock.time)), iteration $(iteration(simulation))"
+end
+
 # ## Provenance
 
-provenance = Dict("generated_utc" => string(now(UTC)), "config" => Dict(string(k) => BreezeLab.toml_value(v) for (k, v) in pairs(run_case.config)),
+provenance = Dict("generated_utc" => string(now(UTC)), "pickup" => something(pickup_file, "none (t = 0)"),
+                  "checkpoints" => checkpoint_hours > 0 ? "every $(checkpoint_hours) h in $(checkpoint_dir)" : "none", "config" => Dict(string(k) => BreezeLab.toml_value(v) for (k, v) in pairs(run_case.config)),
                   "era5_manifest" => joinpath(era5_dir, "MANIFEST_era5_$(case).toml"),
                   "software" => Dict("BreezeLab" => BreezeLab.package_source_description(BreezeLab),
                                      "Breeze" => string(Base.pkgversion(Breeze)), "Oceananigans" => string(Base.pkgversion(Oceananigans)),

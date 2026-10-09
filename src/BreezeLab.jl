@@ -103,5 +103,6 @@ include("tracer_mip/process_diagnostics.jl")
 # Regional (ERA5-nested, land/sea-coupled) constructor: implemented in the NumericalEarth extension.
 function tracer_mip_outer_simulation end
 function tracer_mip_inner_simulation end
+function sync_nested_parent_clock! end
 
 end # module

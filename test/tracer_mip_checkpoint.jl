@@ -1,0 +1,36 @@
+# Restart reproducibility of the real-ERA5 outer domain (CPU, 16×16×94, no radiation): a run checkpointed at 36 s and
+# picked up to 72 s must reproduce the continuous 72 s run.
+using NumericalEarth, CopernicusClimateDataStore, CloudMicrophysics, RRTMGP
+using BreezeLab: tracer_mip_outer_simulation, sync_nested_parent_clock!
+using Oceananigans.Fields: interior
+
+era5_dir = get(ENV, "TRACER_MIP_ERA5_DIR", "/shared/home/greg/breezelab-work/tracer-mip/data/era5")
+build() = tracer_mip_outer_simulation(CPU(); parent = :era5, era5_dir, Nx = 16, Ny = 16, stop_time = 72.0,
+                                      radiation = nothing, process_rates = false)
+dir = mktempdir()
+
+@testset "TRACER-MIP outer checkpoint/pickup" begin
+    A = build()
+    A.simulation.output_writers[:ck] = Checkpointer(A.simulation.model; schedule = IterationInterval(12), dir, prefix = "ck")
+    run!(A.simulation)
+    @test A.simulation.model.clock.time ≈ 72
+    files = filter(f -> occursin("iteration12", f), readdir(dir; join = true))
+    @test length(files) == 1
+
+    B = build()
+    set!(B.simulation; checkpoint = only(files))
+    @test B.simulation.model.clock.time ≈ 36 && B.child.clock.time ≈ 36
+    sync_nested_parent_clock!(B)
+    @test B.nest.parent.clock.time ≈ 36
+    run!(B.simulation)
+    @test B.simulation.model.clock.time ≈ 72
+
+    for (name, a, b) in (("T", A.child.temperature, B.child.temperature), ("ρ", A.child.dynamics.total_density, B.child.dynamics.total_density),
+                         ("u", A.child.velocities.u, B.child.velocities.u), ("w", A.child.velocities.w, B.child.velocities.w),
+                         ("T_land", A.land.temperature, B.land.temperature))
+        diff = maximum(abs.(Array(interior(a)) .- Array(interior(b))))
+        scale = maximum(abs.(Array(interior(a))))
+        @info "restart difference $name: max |A − B| = $diff (max |A| = $scale)"
+        @test diff ≤ 1e-4 * max(scale, 1)
+    end
+end
