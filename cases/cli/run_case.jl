@@ -86,7 +86,7 @@ output_prefix = "lasso_ena"
 cap = getopt("aerosol_ss_cap", "nothing") == "nothing" ? nothing : parse(Float64, opts["aerosol_ss_cap"])
 
 if protocol === :covert_public_bin
-    for option in ("member", "epoch", "dimensions", "radiation", "nudging", "surface_flux_law", "liquid_reff")
+    for option in ("member", "epoch", "dimensions", "nudging", "surface_flux_law", "liquid_reff")
         haskey(opts, option) && error("--$option applies to --protocol lasso_ena_official only")
     end
     member_name = getopt("microphysics", "p3_n75")
@@ -94,6 +94,11 @@ if protocol === :covert_public_bin
     microphysics = microphysics_member(member_name; data, z_faces = faces, cap)
     output_dir = getopt("output", "output/covert_public_bin_$(getopt("microphysics", "p3_n75"))")
     @info "Building the Covert case on $(typeof(arch)) with $(Oceananigans.defaults.FloatType)" opts
+    # --radiation simple (protocol rad_simple, default) | rrtmgp_longwave (RRTMGP LW-only sensitivity)
+    if haskey(opts, "radiation")
+        opts["radiation"] in ("simple", "rrtmgp_longwave") || error("--radiation must be simple or rrtmgp_longwave with the Covert protocol")
+        kw[:radiation] = opts["radiation"] == "simple" ? :simple_longwave : :rrtmgp_longwave
+    end
     seed = parse(Int, getopt("seed", "1234"))
     case = ena_covert(; arch, data_dir = data, microphysics, output_dir, output_prefix,
                         perturbation = InitialPerturbation(; seed), kw...)

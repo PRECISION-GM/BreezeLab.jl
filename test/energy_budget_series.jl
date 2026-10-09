@@ -92,5 +92,20 @@ if HAVE_COVERT
         r = radiative_boundary_fluxes(case.model.radiation, case.model.grid)
         F = Array(interior(case.model.radiation.flux))
         @test domain_mean(r.surface_net_longwave) ≈ mean(F[:, :, 1]) && domain_mean(r.top_net_longwave) ≈ mean(F[:, :, end])
+
+        # the RRTMGP longwave-only sensitivity: SST surface, no shortwave, recorded as an override
+        @test_throws ArgumentError ena_covert(; arch=CPU(), data_dir=COVERT_DIR, Nx=8, Ny=8, z_faces, radiation=:rrtmgp,
+                                               write_output=false)
+        rrtmgp = with_float_type(Float32) do
+            ena_covert(; arch=CPU(), data_dir=COVERT_DIR, Nx=8, Ny=8, z_faces, radiation=:rrtmgp_longwave,
+                         stop_time=2.0, write_output=true, output_dir=mktempdir(), progress_interval=100)
+        end
+        @test rrtmgp.model.radiation isa Breeze.AtmosphereModels.RadiativeTransferModel
+        @test "radiation" ∈ rrtmgp.config.overrides && occursin("longwave only", rrtmgp.config.radiation)
+        @test :surface_net_shortwave ∈ keys(rrtmgp.simulation.output_writers[:timeseries].outputs)
+        run!(rrtmgp.simulation)
+        rr = radiative_boundary_fluxes(rrtmgp.model.radiation, rrtmgp.model.grid)
+        @test domain_mean(rr.surface_net_shortwave) == 0 && domain_mean(rr.top_downwelling_shortwave) == 0
+        @test domain_mean(rr.top_net_longwave) > domain_mean(rr.surface_net_longwave) > 0
     end
 end
