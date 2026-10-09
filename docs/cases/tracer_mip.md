@@ -86,6 +86,15 @@ Missing or mismatched for this protocol:
 - **Nesting**: one-way and offline — the outer run saves its state on the inner region + halo every 10 min, and
   `outer_run_parent` rebuilds a `PrescribedAtmosphere` on a static 3-D-height grid for `tracer_mip_inner_simulation`.
 
+## Output cadence and storage (per 24-h outer control)
+
+Animated fields are written every 2.5 min (`TRACER_MIP_FAST_MINUTES`, ≥ 4× finer than the 10-min protocol cadence):
+surface fields (land T, saturation, sea mask, rain flux, surface SW/LW down — surface values only, 6 × 2.25 MB ≈ 13.5 MB
+per write → 7.8 GB), 2-km/lowest-level slices (8.5 MB → 4.9 GB) and the inner-region 3-D state for the offline nest
+(52 MB → 30 GB). Hourly 3-D state (1.75 GB × 25 = 44 GB) and process accumulators (0.19 GB × 25 = 4.8 GB) are the
+protocol's. Total ≈ 92 GB per 24 h (job 233 at the 10-min cadence with the 3-D radiation fields in the surface writer
+would have reached ≈ 115 GB).
+
 ## Runs so far (all on wpcluster; see the status file for job IDs)
 
 | Run | Configuration | Result |
