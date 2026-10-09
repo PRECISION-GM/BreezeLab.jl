@@ -16,7 +16,10 @@
 # With no extra arguments the readable case script cases/ena_lasso.jl runs (member from
 # ENA_LASSO_MEMBER, bundle from ENA_LASSO_BUNDLE); outputs land in runs/<experiment>_job<id>/.
 set -euo pipefail
-W=/shared/home/greg/breezelab-work/ena-lasso
+# BREEZELAB_CHECKOUT selects the source tree (e.g. a worktree at a merged main); runs/ and the
+# launch record follow it. The per-CPU depot stays in the ena-lasso checkout so compile caches are shared.
+W=${BREEZELAB_CHECKOUT:-/shared/home/greg/breezelab-work/ena-lasso}
+D=/shared/home/greg/breezelab-work/ena-lasso
 C=/shared/home/greg/breezelab-runs/20261006
 GPU_UUID=${1:?GPU UUID or 'auto'}
 EXPERIMENT=${2:?experiment name}
@@ -44,8 +47,8 @@ export CUDA_VISIBLE_DEVICES="$GPU_UUID"
 GPU_NAME=$(nvidia-smi -i "$CUDA_VISIBLE_DEVICES" --query-gpu=name --format=csv,noheader)
 case "$GPU_NAME" in *H100*|*A100*) ;; *) echo "Unexpected GPU: $GPU_NAME"; exit 1 ;; esac
 CPU_TAG=$(awk -F ': ' '/model name/ {print $2; exit}' /proc/cpuinfo | tr -c 'A-Za-z0-9' '_')
-mkdir -p "$W/depot/$CPU_TAG"
-export JULIA_DEPOT_PATH="$W/depot/$CPU_TAG:/shared/home/greg/breezelab-runs/docs-20261007-8dc824d/depot-compute/$CPU_TAG:/shared/home/greg/breezelab-runs/docs-20261007-8dc824d/depot-login:$C/depot:$HOME/.julia:"
+mkdir -p "$D/depot/$CPU_TAG"
+export JULIA_DEPOT_PATH="$D/depot/$CPU_TAG:/shared/home/greg/breezelab-runs/docs-20261007-8dc824d/depot-compute/$CPU_TAG:/shared/home/greg/breezelab-runs/docs-20261007-8dc824d/depot-login:$C/depot:$HOME/.julia:"
 export JULIA_PKG_PRECOMPILE_AUTO=0
 export JULIA_NUM_PRECOMPILE_TASKS=6
 export JULIA_NUM_THREADS=6
