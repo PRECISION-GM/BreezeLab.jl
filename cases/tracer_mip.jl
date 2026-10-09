@@ -179,6 +179,9 @@ run!(simulation)
 
 # ## A surface snapshot
 
+# A segment picked up from a checkpoint writes no t-initial record; a short one may hold no record at all.
+T_series = FieldTimeSeries(joinpath(output_dir, "outer_slices.jld2"), "T_sfc"; backend = OnDisk())
+isempty(T_series.times) && (@info "No slice records in this segment: skipping the snapshot figure"; exit(0))
 T_series = FieldTimeSeries(joinpath(output_dir, "outer_slices.jld2"), "T_sfc")
 w_series = FieldTimeSeries(joinpath(output_dir, "outer_slices.jld2"), "w_2km")
 fig = Figure(size = (1100, 480))
