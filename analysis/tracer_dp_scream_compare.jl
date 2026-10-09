@@ -114,8 +114,7 @@ function arm_series(stream, names)
     times = DateTime[]; vals = Dict(n => Float64[] for n in names)
     for f in armfiles(stream)
         NCDataset(joinpath(arm_dir, f)) do ds
-            base = DateTime(1970) + Second(round(Int, ds["base_time"][]))
-            t = base .+ Millisecond.(round.(Int, 1000 .* Float64.(nomissing(ds["time_offset"][:], NaN))))
+            t = DateTime.(ds["time"][:])                 # NCDatasets decodes the CF time axis
             append!(times, t)
             for n in names
                 x = Float64.(nomissing(ds[n][:], NaN)); x[x .< -9000] .= NaN
@@ -134,8 +133,7 @@ function arscl_occurrence()
     occ = zeros(length(zgrid), length(hours)); cnt = zeros(length(hours))
     for f in armfiles("houarsclkazr1kolliasM1.c0")
         NCDataset(joinpath(arm_dir, f)) do ds
-            base = DateTime(1970) + Second(round(Int, ds["base_time"][]))
-            t = base .+ Millisecond.(round.(Int, 1000 .* Float64.(ds["time_offset"][:])))
+            t = DateTime.(ds["time"][:])
             B = Float64.(nomissing(ds["cloud_layer_base_height"][:, :], NaN)); Tt = Float64.(nomissing(ds["cloud_layer_top_height"][:, :], NaN))
             for n in eachindex(t)
                 h = cld(Dates.value(t[n] - start), 3_600_000)          # hourly bin (h − 1 h, h]
@@ -156,7 +154,7 @@ arscl_cf[:, arscl_count .== 0] .= NaN
 
 sondes = map(armfiles("housondewnpnM1.b1")) do f
     NCDataset(joinpath(arm_dir, f)) do ds
-        base = DateTime(1970) + Second(round(Int, ds["base_time"][]))
+        base = DateTime(ds["time"][1])
         z = Float64.(nomissing(ds["alt"][:], NaN)) .- 8.0
         T = Float64.(nomissing(ds["tdry"][:], NaN)) .+ 273.15; R = Float64.(nomissing(ds["rh"][:], NaN))
         good = isfinite.(z) .& isfinite.(T) .& isfinite.(R) .& (z .> 0)
