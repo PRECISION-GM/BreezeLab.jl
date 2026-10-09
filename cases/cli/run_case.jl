@@ -30,7 +30,7 @@ opts = parse_args(ARGS)
 getopt(k, default) = get(opts, k, default)
 allowed = Set(["data", "protocol", "arch", "float", "seed", "epoch", "member", "dimensions", "microphysics", "aerosol_ss_cap",
                "Nx", "Ny", "Lx", "Ly", "hours", "cfl", "dt", "max_dt", "lasso_grid", "grid", "initialization", "closure",
-               "profile_interval", "slice_interval", "radiation", "nudging", "surface_flux_law", "output"])
+               "profile_interval", "slice_interval", "liquid_reff", "radiation", "nudging", "surface_flux_law", "output"])
 unknown = setdiff(Set(keys(opts)), allowed)
 isempty(unknown) || error("unknown options: $(join(sort!(collect(unknown)), ", "))")
 
@@ -86,7 +86,7 @@ output_prefix = "lasso_ena"
 cap = getopt("aerosol_ss_cap", "nothing") == "nothing" ? nothing : parse(Float64, opts["aerosol_ss_cap"])
 
 if protocol === :covert_public_bin
-    for option in ("member", "epoch", "dimensions", "radiation", "nudging", "surface_flux_law")
+    for option in ("member", "epoch", "dimensions", "radiation", "nudging", "surface_flux_law", "liquid_reff")
         haskey(opts, option) && error("--$option applies to --protocol lasso_ena_official only")
     end
     member_name = getopt("microphysics", "p3_n75")
@@ -115,6 +115,9 @@ else
                                                  (kw[:wind_nudging_timescale] = parse(Float64, opts["nudging"]))
     end
     haskey(opts, "surface_flux_law") && (kw[:surface_flux_law] = Symbol(opts["surface_flux_law"]))
+    # --liquid_reff: RRTMGP liquid effective radius [m] in place of the bundle rule (compute_reffc ? 10 : 14 μm);
+    # recorded in config.overrides and the label
+    haskey(opts, "liquid_reff") && (kw[:liquid_effective_radius] = parse(Float64, opts["liquid_reff"]))
     # Without --microphysics the member's protocol P3 is built by ena_lasso (capped at 0.3 %). A
     # LASSO aerosol member from the CLI is capped at the SBM ss_max as well unless --aerosol_ss_cap says otherwise.
     member_name = get(opts, "microphysics", haskey(opts, "aerosol_ss_cap") ? "p3_" * string(parse_lasso_member(member).aerosol) : "protocol")
