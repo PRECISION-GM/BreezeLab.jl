@@ -223,3 +223,17 @@ function BreezeLab.tracer_mip_outer_simulation(arch;
     return (; simulation, model, nest, child, parent = parent_atmosphere, land, grid, land_grid, sea_mask = mask,
               pinning, accumulators, radiation = rtm, config)
 end
+
+"""
+    sync_nested_parent_clock!(case)
+
+After restoring a checkpoint, advance the nest's parent clock (which drives the ERA5 pressure-level heights and is
+not part of the checkpointed state) to the child's restored time, then refresh the exchanger's parent windows.
+"""
+function BreezeLab.sync_nested_parent_clock!(case)
+    nest = case.nest
+    nest.parent.clock.time = nest.child.clock.time
+    nest.parent.clock.iteration = nest.child.clock.iteration
+    NumericalEarth.NestedModels.exchange_state!(nest.exchanger, nest.child.clock.time)
+    return nothing
+end
