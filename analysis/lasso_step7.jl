@@ -23,7 +23,34 @@ end
 # ---------------------------------------------------------------- Breeze run
 stage("run output")
 series = breezelab_timeseries(run_dir)
-bounds = breezelab_cloud_boundaries(run_dir)
+# Cloud boundaries of the *stratocumulus* layer: the highest contiguous cloudy layer (cloudy-cell
+# fraction > threshold) of each profile, so that the surface fog / drizzle-moistened layer below
+# a clear gap does not set the base (SAM's GCSS ZCB/ZCT are column-wise means with their own rules).
+function layer_boundaries(run_dir; threshold = 0.05)
+    file = only(filter(f -> endswith(f, "_profiles.jld2"), readdir(run_dir; join = true)))
+    cf = FieldTimeSeries(file, "cloud_fraction"); z = collect(znodes(cf.grid, Center()))
+    base = Float64[]; top = Float64[]; fog_top = Float64[]
+    for n in eachindex(cf.times)
+        c = vec(Array(interior(cf[n]))) .> threshold
+        ks = findall(c)
+        if isempty(ks)
+            push!(base, NaN); push!(top, NaN); push!(fog_top, NaN); continue
+        end
+        # split into contiguous runs; take the highest run as the stratocumulus layer
+        runs = Vector{UnitRange{Int}}(); start = ks[1]; prev = ks[1]
+        for k in ks[2:end]
+            k == prev + 1 || (push!(runs, start:prev); start = k)
+            prev = k
+        end
+        push!(runs, start:prev)
+        main = last(runs)
+        push!(base, z[first(main)]); push!(top, z[last(main)])
+        push!(fog_top, length(runs) > 1 ? z[last(runs[1])] : NaN)
+    end
+    return (; seconds = collect(Float64, cf.times), base, top, fog_top, threshold)
+end
+bounds = layer_boundaries(run_dir)
+bounds_all = breezelab_cloud_boundaries(run_dir)   # lowest cloudy level of any layer (fog included)
 prov = TOML.parsefile(joinpath(run_dir, "provenance.toml"))
 member = get(prov, "protocol_member", "undeclared")
 epoch = series.epoch
@@ -57,6 +84,30 @@ sv(n) = fin(sam[n][:])
 samp(n, j) = fin(sam[n][:, j])
 sam_rho = samp("RHO", 1)
 sam_attr = Dict(k => string(v) for (k, v) in sam.attrib)
+# SAM layer boundaries from the QCL profiles with the paper/Breeze definition (highest contiguous layer
+# with qc ≥ 0.01 g kg⁻¹); the GCSS ZCB/ZCT series stored in samstat (units "km") average 0.03/0.10 km,
+# inconsistent with ZINV (1.5 km), ZCTMAX (1.7 km) and the QCL profiles, so they are quoted raw only.
+function sam_layer_boundaries(sam, zs; threshold = 0.01)
+    qcl = sam["QCL"][:, :]
+    base = Float64[]; top = Float64[]; fog_top = Float64[]
+    for j in axes(qcl, 2)
+        c = [!ismissing(v) && v ≥ threshold for v in qcl[:, j]]
+        ks = findall(c)
+        if isempty(ks)
+            push!(base, NaN); push!(top, NaN); push!(fog_top, NaN); continue
+        end
+        runs = Vector{UnitRange{Int}}(); start = ks[1]; prev = ks[1]
+        for k in ks[2:end]
+            k == prev + 1 || (push!(runs, start:prev); start = k)
+            prev = k
+        end
+        push!(runs, start:prev)
+        push!(base, zs[first(last(runs))]); push!(top, zs[last(last(runs))])
+        push!(fog_top, length(runs) > 1 ? zs[last(runs[1])] : NaN)
+    end
+    return (; base, top, fog_top)
+end
+sam_layers = sam_layer_boundaries(sam, zs)
 
 # ---------------------------------------------------------------- windows
 windows = Dict("00-24" => (0.0, 24.0), "06-12" => (6.0, 12.0), "09-12" => (9.0, 12.0))
@@ -75,8 +126,13 @@ for (wname, w) in windows
         d[sname] = Dict("sam" => todict(sam_window(sname, w, scale)), "breeze" => todict(breeze_window(hours_b, bvalues, w)))
     end
     hb = bounds.seconds ./ 3600
-    d["ZCB_m"] = Dict("sam" => todict(sam_window("ZCB", w, 1e3)), "breeze" => todict(breeze_window(hb, bounds.base, w)))
-    d["ZCT_m"] = Dict("sam" => todict(sam_window("ZCT", w, 1e3)), "breeze" => todict(breeze_window(hb, bounds.top, w)))
+    d["ZCB_m"] = Dict("sam" => todict(breeze_window(sam_hours, sam_layers.base, w)), "breeze" => todict(breeze_window(hb, bounds.base, w)),
+                      "sam_gcss_zcb_raw_km" => todict(sam_window("ZCB", w)),
+                      "breeze_lowest_cloudy_level" => todict(breeze_window(hb, bounds_all.base, w)),
+                      "breeze_fog_layer_top" => todict(breeze_window(hb, bounds.fog_top, w)), "sam_fog_layer_top" => todict(breeze_window(sam_hours, sam_layers.fog_top, w)),
+                      "definition" => "highest contiguous layer with qc ≥ 0.01 g kg⁻¹ (SAM: QCL profile; Breeze: cloudy-cell fraction > 0.05)")
+    d["ZCT_m"] = Dict("sam" => todict(breeze_window(sam_hours, sam_layers.top, w)), "breeze" => todict(breeze_window(hb, bounds.top, w)),
+                      "sam_gcss_zct_raw_km" => todict(sam_window("ZCT", w)), "sam_zinv_m" => todict(sam_window("ZINV", w, 1e3)), "sam_zctmax_m" => todict(sam_window("ZCTMAX", w, 1e3)))
     for n in ("SHF", "LHF", "LWNS", "SWNS", "LWNT", "SWNT")
         d[n] = Dict("sam" => todict(sam_window(n, w)), "breeze" => "not saved by the run")
     end
@@ -162,7 +218,7 @@ result["plan_views"] = plan_stats
 close(s2)
 
 # SAM series for the figures (read before plotting)
-sam_series = Dict(n => sv(n) for n in ("CWP", "RWP", "PREC", "CLDSHD", "ZCB", "ZCT", "SHF", "LHF", "LWNS", "SWNS"))
+sam_series = Dict(n => sv(n) for n in ("CWP", "RWP", "PREC", "CLDSHD", "ZCB", "ZCT", "ZINV", "SHF", "LHF", "LWNS", "SWNS"))
 close(sam)
 open(io -> TOML.print(io, result), joinpath(output_dir, "step7.toml"), "w")
 
@@ -191,8 +247,9 @@ end
 axislegend(ax3, position = :lt, labelsize = 9)
 ax4 = Axis(fig[2, 2], title = "cloud fraction"); shade!(ax4)
 lines!(ax4, sam_hours, sam_series["CLDSHD"]; color = :gray30, label = "SAM CLDSHD"); lines!(ax4, hours_b, series.cloud_fraction; color = :dodgerblue, label = "Breeze (LWP > 5 g m⁻²)"); axislegend(ax4, position = :lb, labelsize = 9)
-ax5 = Axis(fig[3, 1], title = "cloud base / top (m)", xlabel = "hours since $(epoch) UTC"); shade!(ax5)
-lines!(ax5, sam_hours, 1e3 .* sam_series["ZCB"]; color = :gray30, label = "SAM ZCB"); lines!(ax5, sam_hours, 1e3 .* sam_series["ZCT"]; color = :gray30, linestyle = :dash, label = "SAM ZCT")
+ax5 = Axis(fig[3, 1], title = "stratocumulus base / top (m): highest contiguous cloudy layer", xlabel = "hours since $(epoch) UTC", limits = (nothing, (0, 2500))); shade!(ax5)
+keep = isfinite.(sam_layers.base); lines!(ax5, sam_hours[keep], sam_layers.base[keep]; color = :gray30, label = "SAM base (QCL ≥ 0.01 g/kg)"); keep = isfinite.(sam_layers.top); lines!(ax5, sam_hours[keep], sam_layers.top[keep]; color = :gray30, linestyle = :dash, label = "SAM top")
+lines!(ax5, sam_hours, 1e3 .* sam_series["ZINV"]; color = :gray60, linestyle = :dot, label = "SAM ZINV")
 keep = isfinite.(bounds.base); lines!(ax5, hb[keep], bounds.base[keep]; color = :dodgerblue, label = "Breeze base"); keep = isfinite.(bounds.top); lines!(ax5, hb[keep], bounds.top[keep]; color = :dodgerblue, linestyle = :dash, label = "Breeze top")
 if !isnothing(cb_obs)
     sel = cb_obs.cloudy
