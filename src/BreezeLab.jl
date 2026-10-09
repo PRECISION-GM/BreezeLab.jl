@@ -33,7 +33,7 @@ export
     # observations and run output
     ARMSeries, read_arm_lwp, read_arm_rain_rate, read_arm_cloud_boundaries, window_statistics,
     cloud_fraction_from_boundaries, breezelab_timeseries, breezelab_cloud_boundaries,
-    read_dp_scream_output, dp_scream_window,
+    read_dp_scream_output, dp_scream_window, tracer_dp_scream_budget,
     # diagnostics
     cloud_liquid, rain_mass_fraction, liquid_water_path, ice_water_path, precipitable_water, total_condensate,
     cloud_fraction, cloud_fraction_profile, total_cloud_fraction_profile,
@@ -92,6 +92,7 @@ include("ena/lasso_bundle.jl")
 include("ena/lasso.jl")
 include("tracer_dp_scream/iop_forcing.jl")
 include("tracer_dp_scream/tracer_dp_scream.jl")
+include("tracer_dp_scream/budget.jl")
 include("sea_starr/dephy_driver.jl")
 include("sea_starr/aerosol.jl")
 include("sea_starr/forcings.jl")

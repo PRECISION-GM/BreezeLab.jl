@@ -179,6 +179,14 @@ const DPS_NS_FIXTURE = joinpath(FIXTURES, "dp_scream_ns_excerpt.nc")
             jldopen(joinpath(output, "tracer_profiles.jld2")) do file
                 @test haskey(file["timeseries"], "total_cloud_fraction")
             end
+            # moist-enthalpy and water budgets from the saved series (formulation-aware: no vapor cross term)
+            budget = tracer_dp_scream_budget(case, ts, joinpath(output, "tracer_profiles.jld2"); interval = 2.0)
+            @test !budget.applied_vapor_cross_term
+            @test length(budget.periods) == 2
+            @test all(isfinite, (budget.total.energy.ΔH, budget.total.energy.residual, budget.total.water.residual))
+            @test budget.total.energy.surface > 0 && budget.total.water.evaporation > 0      # IOP sensible + latent heat flux at 00 UTC
+            @test abs(budget.total.water.residual) < 1e-4                                   # Float32 column water ≈ 56 kg m⁻²
+            @test tracer_dp_scream_budget(case, ts, joinpath(output, "tracer_profiles.jld2"); applied_vapor_cross_term = true).total.vapor_cross_term_surface > 0
             checkpoints = filter(f -> startswith(f, "tracer_checkpoint") && endswith(f, ".jld2"), readdir(output))
             @test length(checkpoints) == 1                                                  # cleanup keeps the latest
             # pickup: a fresh case continues from the checkpoint to a later stop time
