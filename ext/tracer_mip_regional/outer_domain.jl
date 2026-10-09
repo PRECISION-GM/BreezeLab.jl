@@ -92,6 +92,9 @@ function BreezeLab.tracer_mip_outer_simulation(arch;
         terrain = parent === :era5 ? ETOPO2022() : nothing,
         relaxation_width = 5,
         relaxation_rate = 1/300,
+        damping_depth = nothing,            # upper ρw sponge depth [m]; nothing → NumericalEarth's Lz/4
+        damping_rate = 1/5,
+        adaptive_cfl = nothing,             # e.g. 0.5 → CFL time-step wizard with max_Δt = Δt (fixed Δt otherwise)
         advection_order = 5,
         land_albedo = 0.17, sea_albedo = 0.06, surface_emissivity = 0.98,
         soil_porosity = 0.45,
@@ -112,8 +115,9 @@ function BreezeLab.tracer_mip_outer_simulation(arch;
     scalar_advection = scalar_advection_schemes(advection_order, p3, :qᵛ; energy_name = :ρθ)
     momentum_advection = WENO(order = advection_order)
 
-    nest_kw = (; relaxation_rate, relaxation_width, terrain, terrain_blend_width = relaxation_width,
+    nest_kw = (; relaxation_rate, relaxation_width, terrain, terrain_blend_width = relaxation_width, damping_rate,
                  microphysics = p3, momentum_advection, scalar_advection, closure, thermodynamic_constants = constants)
+    isnothing(damping_depth) || (nest_kw = merge(nest_kw, (; damping_depth = FT(damping_depth))))
 
     dates = (start, stop)
     exploratory = parent !== :era5
@@ -193,6 +197,7 @@ function BreezeLab.tracer_mip_outer_simulation(arch;
     atmosphere = Simulation(nest; Δt)
     model = AtmosphereLandModel(atmosphere, land; radiation = rtm)
     simulation = Simulation(model; Δt, stop_time)
+    isnothing(adaptive_cfl) || conjure_time_step_wizard!(simulation, IterationInterval(5); cfl = adaptive_cfl, max_Δt = Δt, min_Δt = Δt / 20)
     add_callback!(simulation, pinning, IterationInterval(1))
 
     accumulators = process_rates ? ProcessRateAccumulators(child) : nothing
@@ -203,7 +208,9 @@ function BreezeLab.tracer_mip_outer_simulation(arch;
                 arch = string(typeof(arch)), FT = string(FT), Nx, Ny, Nz = length(z_faces) - 1,
                 longitude = collect(extent.longitude), latitude = collect(extent.latitude),
                 Δt, stop_time, aerosol_multiplier, initial_droplet_number, radiation = string(radiation), radiation_interval,
-                closure = summary(closure), relaxation_width, relaxation_rate, advection_order,
+                closure = isnothing(closure) ? "nothing" : summary(closure), relaxation_width, relaxation_rate, advection_order,
+                damping_depth = isnothing(damping_depth) ? "Lz/4 (NumericalEarth default)" : damping_depth, damping_rate,
+                time_stepping = isnothing(adaptive_cfl) ? "fixed Δt = $Δt s" : "adaptive: CFL wizard cfl = $adaptive_cfl, max_Δt = $Δt s, initial Δt = $Δt s",
                 terrain = isnothing(terrain) ? "none (flat)" : summary(terrain), land_albedo, sea_albedo, surface_emissivity,
                 land = "SlabLand (skin temperature + bucket); sea cells pinned to prescribed skin temperature with saturated bucket",
                 microphysics = "P3 two-moment, Tier-1 PrescribedAerosolProfile (fixed, height-dependent), radiatively inactive",

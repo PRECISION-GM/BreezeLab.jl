@@ -42,6 +42,11 @@ radiation = get(ENV, "TRACER_MIP_RADIATION", "rrtmgp") == "none" ? nothing : :rr
 terrain_choice = get(ENV, "TRACER_MIP_TERRAIN", "etopo")
 Δt = parse(Float64, get(ENV, "TRACER_MIP_DT", "3"))
 closure_choice = get(ENV, "TRACER_MIP_CLOSURE", "tke")   # tke (default, PBL) | none | smagorinsky
+# Stabilisation knobs (protocol-neutral numerics): adaptive CFL time step (0 = fixed Δt), lateral relaxation width
+# (cells), upper ρw sponge depth (m; 0 = NumericalEarth's Lz/4).
+adaptive_cfl = (c = parse(Float64, get(ENV, "TRACER_MIP_CFL", "0")); c > 0 ? c : nothing)
+relaxation_width = parse(Int, get(ENV, "TRACER_MIP_RELAX_WIDTH", "5"))
+damping_depth = (d = parse(Float64, get(ENV, "TRACER_MIP_SPONGE_DEPTH", "0")); d > 0 ? d : nothing)
 era5_dir = get(ENV, "TRACER_MIP_ERA5_DIR", joinpath(pkgdir(BreezeLab), "data", "era5"))
 output_dir = get(ENV, "TRACER_MIP_OUTPUT_DIR", joinpath(pkgdir(BreezeLab), "output", "tracer_mip_outer_$(case)" * (parent === :era5 ? "" : "_EXPLORATORY_$(parent)")))
 output_interval = 1hour             # Grid-1: 60-min full output
@@ -53,7 +58,7 @@ mkpath(output_dir)
 extra = terrain_choice == "flat" ? (; terrain = nothing) : NamedTuple()
 closure_choice == "none" && (extra = merge(extra, (; closure = nothing)))
 closure_choice == "smagorinsky" && (extra = merge(extra, (; closure = SmagorinskyLilly(Float32))))
-run_case = tracer_mip_outer_simulation(arch; case, parent, era5_dir, Nx, Ny, stop_time, radiation, Δt, extra...)
+run_case = tracer_mip_outer_simulation(arch; case, parent, era5_dir, Nx, Ny, stop_time, radiation, Δt, adaptive_cfl, relaxation_width, damping_depth, extra...)
 parent === :era5 || @warn "EXPLORATORY run with synthetic boundaries: software test of the machinery, not a TRACER-MIP control"
 simulation = run_case.simulation
 child = run_case.child
@@ -119,6 +124,8 @@ function progress(sim)
                    minimum(ρ), maximum(ρ), minimum(p), maximum(p), maximum(μ.qᶜˡ), maximum(μ.nᶜˡ))
 end
 add_callback!(simulation, progress, TimeInterval(parse(Float64, get(ENV, "TRACER_MIP_PROGRESS_SECONDS", "300"))))
+flush(stderr)   # progress lines reach the Slurm log while the job runs (stderr is block-buffered under Slurm)
+add_callback!(simulation, sim -> flush(stderr), IterationInterval(100))
 Oceananigans.Diagnostics.erroring_NaNChecker!(simulation)
 
 # ## Provenance
