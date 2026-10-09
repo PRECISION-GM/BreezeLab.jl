@@ -118,27 +118,28 @@ const DPS_NS_FIXTURE = joinpath(FIXTURES, "dp_scream_ns_excerpt.nc")
         @test all(diff(z_faces[1:41]) .≈ 50) && diff(z_faces)[end] < 500
         @test isapprox(neutral_drag_coefficient(25.0, 0.1), (0.4 / log(250))^2)
         mktempdir() do output
-            case = tracer_dp_scream(; iop_path=IOP_FIXTURE, start=DateTime(2022, 8, 5), stop=DateTime(2022, 8, 5, 3),
-                                    arch=CPU(), FT=Float32, Nx=8, Ny=8, Δx=500.0,
-                                    z_faces=collect(range(0, 22000, length=25)), microphysics=:p3_n75,
-                                    stop_time=4.0, Δt=1.0, max_Δt=1.0, output_dir=output, surface_albedo=0.15,
-                                    timeseries_interval=1.0, profile_interval=4.0, slice_interval=4.0,
-                                    checkpoint_interval=2.0, progress_interval=100)
-            @test case.preset === :tracer_dp_scream
+            build(stop_time) = with_float_type(Float32) do
+                tracer_dp_scream(; iop_path=IOP_FIXTURE, start=DateTime(2022, 8, 5), stop=DateTime(2022, 8, 5, 3),
+                                   arch=CPU(), Nx=8, Ny=8, Δx=500.0, z_faces=collect(range(0, 22000, length=25)),
+                                   stop_time, Δt=1.0, max_Δt=1.0, output_dir=output, surface_albedo=0.15,
+                                   timeseries_interval=1.0, profile_interval=4.0, slice_interval=4.0,
+                                   checkpoint_interval=2.0, progress_interval=100)
+            end
+            case = build(4.0)
+            @test case.config.protocol == "tracer_dp_scream" && case.config.FT == "Float32"
+            @test case.config.cloud_droplet_number == 200e6                     # continental default
             @test case.model.clock.time == 0 && case.model.clock.iteration == 0
             @test case.config.day0 == 217.0 && case.config.epoch == string(DateTime(2022, 8, 5))
             @test case.config.moisture_basis == "mass_fraction"
-            @test case.config.coriolis == "nothing" && !case.config.geostrophic
-            @test case.config.vertical_advection == "nothing" && !case.config.upper_boundary_relaxation
-            @test case.config.wind_nudging_timescale == 0
-            @test case.config.surface == "prescribed_heat_fluxes_bulk_drag"
+            @test case.config.coriolis == "nothing" && case.config.wind_nudging_timescale == 0
+            @test occursin("bulk drag", case.config.surface)
             @test isapprox(case.config.drag_coefficient, neutral_drag_coefficient(22000 / 24 / 2, 0.1))
-            @test case.config.radiation == "rrtmgp" && case.config.radiation_interval == 300.0
-            @test case.config.surface_albedo == 0.15 && case.protocol_overrides.surface_albedo_source == "override"
+            @test case.config.radiation == "RRTMGP all-sky LW+SW" && case.config.radiation_interval == 300.0
+            @test case.config.surface_albedo == 0.15 && case.config.surface_albedo_source == "caller"
             @test isapprox(case.config.latitude, 29.75) && isapprox(case.config.longitude, -95.45)
             @test case.config.checkpoint_interval == 2.0
             @test occursin("no Coriolis", case.config.label) && occursin("not a DP-SCREAM reproduction", case.config.label)
-            @test case.protocol_overrides.dp_scream_git_version == "1d551ea2b0"
+            @test case.config.dp_scream_git_version == "1d551ea2b0"
             # large-scale transport enters exactly once: thermodynamic tendencies on the energy and
             # vapor keys, no LargeScaleVerticalAdvection, no geostrophic/Coriolis/nudging momentum forcing
             forcing = case.model.forcing
@@ -160,7 +161,7 @@ const DPS_NS_FIXTURE = joinpath(FIXTURES, "dp_scream_ns_excerpt.nc")
             write_provenance(joinpath(output, "provenance.toml"), case)
             record = TOML.parsefile(joinpath(output, "provenance.toml"))
             @test record["protocol"] == "tracer_dp_scream" && haskey(record["inputs"], "iop_sha256")
-            @test record["protocol_overrides"]["large_scale_transport"] == "iop_3d"
+            @test record["config"]["large_scale_transport"] == "iop_3d"
             run!(case.simulation)
             @test case.model.clock.time ≈ 4.0 && case.model.clock.iteration == 4
             @test all(f -> all(isfinite, Array(interior(f))), values(Oceananigans.prognostic_fields(case.model)))
@@ -181,12 +182,7 @@ const DPS_NS_FIXTURE = joinpath(FIXTURES, "dp_scream_ns_excerpt.nc")
             checkpoints = filter(f -> startswith(f, "tracer_checkpoint") && endswith(f, ".jld2"), readdir(output))
             @test length(checkpoints) == 1                                                  # cleanup keeps the latest
             # pickup: a fresh case continues from the checkpoint to a later stop time
-            resumed = tracer_dp_scream(; iop_path=IOP_FIXTURE, start=DateTime(2022, 8, 5), stop=DateTime(2022, 8, 5, 3),
-                                       arch=CPU(), FT=Float32, Nx=8, Ny=8, Δx=500.0,
-                                       z_faces=collect(range(0, 22000, length=25)), microphysics=:p3_n75,
-                                       stop_time=6.0, Δt=1.0, max_Δt=1.0, output_dir=output, surface_albedo=0.15,
-                                       timeseries_interval=1.0, profile_interval=4.0, slice_interval=4.0,
-                                       checkpoint_interval=2.0, progress_interval=100)
+            resumed = build(6.0)
             run!(resumed.simulation; pickup=true)
             @test resumed.model.clock.time ≈ 6.0 && resumed.model.clock.iteration == 6
             @test all(f -> all(isfinite, Array(interior(f))), values(Oceananigans.prognostic_fields(resumed.model)))

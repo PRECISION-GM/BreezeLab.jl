@@ -356,3 +356,36 @@ day_to_seconds(day, day0) = (day - day0) * 86400
 Hex SHA-256 digest of a file, for the provenance manifest.
 """
 file_sha256(path) = bytes2hex(open(sha256, path))
+
+"""
+    read_sam_grd(path)
+
+Read a SAM `grd` file (one scalar-level height per line, optionally more lines than the
+model uses) and return the cell-center heights.
+"""
+function read_sam_grd(path)
+    values = Float64[]
+    for line in eachline(path)
+        t = split(line)
+        isempty(t) && continue
+        v = tryparse(Float64, replace(t[1], r"[dD]" => "e"))
+        isnothing(v) || push!(values, v)
+    end
+    isempty(values) && error("no heights found in $path")
+    return values
+end
+
+parse_caseid(caseid) = parse.(Int, split(lowercase(String(caseid)), "x"))
+
+"""
+    epoch_from_day_of_year(day0; year=2017)
+
+UTC `DateTime` of the fractional day-of-year `day0` (SAM `day0`; 1.0 = 1 January 00 UTC):
+199.25 → 2017-07-18T06:00:00.
+"""
+function epoch_from_day_of_year(day0; year=2017)
+    whole = floor(Int, day0)
+    seconds = round(Int, (day0 - whole) * 86400)
+    return DateTime(year, 1, 1) + Dates.Day(whole - 1) + Dates.Second(seconds)
+end
+

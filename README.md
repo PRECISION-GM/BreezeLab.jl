@@ -11,11 +11,11 @@ The first implementation ports the ENA machinery from
 
 | Protocol | Inputs and forcing | Current status |
 | --- | --- | --- |
-| `covert_public_bin` | Public Covert et al. (2022) bin-repository inputs; prescribed surface fluxes, simple longwave radiation, no wind nudging | Runnable development benchmark. Its domain/duration differ from the published experiment, and its missing vertical grid is reconstructed. |
-| `lasso_ena_official` | Selected ARM `samin` bundle and grid; SST-based bulk fluxes, RRTMGP longwave/shortwave, mean-wind nudging | Breeze implementation of the LASSO forcing pathway with a validating bundle parser (`inspect_lasso_bundle`), the `ena_lasso` constructor and `cases/ena_lasso.jl`; the adopted member `20170718era5d25x100_sbmwrm-aer2-flxsst` is listed by ARM but not yet staged online, so no official run exists. See [the LASSO audit](docs/cases/ena_lasso.md). |
+| `ena_covert` | Public Covert et al. (2022) bin-repository inputs; prescribed surface fluxes, simple longwave radiation, no wind nudging | Runnable development benchmark. Its domain/duration differ from the published experiment, and its missing vertical grid is reconstructed. |
+| `ena_lasso` | Selected ARM `samin` bundle and grid; SST-based bulk fluxes, RRTMGP longwave/shortwave, mean-wind nudging | Breeze implementation of the LASSO forcing pathway with a validating bundle parser (`inspect_lasso_bundle`), the `ena_lasso` constructor and `cases/ena_lasso.jl`; the adopted member `20170718era5d25x100_sbmwrm-aer2-flxsst` is listed by ARM but not yet staged online, so no official run exists. See [the LASSO audit](docs/cases/ena_lasso.md). |
 
-Protocol selection is explicit. A missing LASSO bundle never falls back to the Covert
-case. Grid, physics, and duration overrides are recorded in each run's provenance.
+Each protocol has its own constructor. A missing LASSO bundle never falls back to the Covert
+case. Every configuration value, including the microphysics, is recorded in each run's provenance.
 **Neither pathway is presently a validated reproduction of the original SAM simulations.**
 See [ENA protocols and the reproduction checklist](docs/cases/ena.md) for the scientific
 differences and the work needed to establish reproduction.
@@ -40,19 +40,19 @@ compilation can take several minutes. See [test/](test/) for optional GPU checks
 Run the public Covert configuration on an NVIDIA GPU:
 
 ```sh
-julia --project cases/eastern_north_atlantic.jl
+julia --project cases/ena_covert.jl
 ```
 
 The default case is 256×256×192 for six simulated hours and is a substantial run.
 The example builds the case, runs it, and plots saved cloud-water and rain diagnostics.
-Edit the settings in [the readable case file](cases/eastern_north_atlantic.jl), or use
+Edit the settings in [the readable case file](cases/ena_covert.jl), or use
 [the CLI](cases/cli/run_case.jl) for parameter sweeps and protocol/input selection.
 For Slurm, adapt the partition/resources in `execution/submit_gpu.sbatch`, create
 `output/` before submitting, and pass the case script:
 
 ```sh
 mkdir -p output
-sbatch --partition=gpu-prod execution/submit_gpu.sbatch cases/eastern_north_atlantic.jl
+sbatch --partition=gpu-prod execution/submit_gpu.sbatch cases/ena_covert.jl
 ```
 
 For an official LASSO experiment, obtain the selected bundle from the
@@ -64,31 +64,38 @@ staging instructions; the Covert inputs are never substituted.
 
 ## Package layout
 
-- `src/eastern_north_atlantic.jl`: exported constructor used by examples and tests.
-- `src/ena_protocols.jl`: experiment definitions and input validation;
-  `src/lasso_bundle.jl` and `src/ena_lasso.jl`: the LASSO-ENA bundle parser/validator and
-  member constructor; `src/arm_observations.jl`: ARM station-series readers.
-- `src/ena_protocols.jl`: experiment definitions and input validation.
-- `src/iop_forcing.jl`, `src/dp_scream_output.jl`, `src/tracer_dp_scream.jl`: the E3SM/ARM IOP forcing
-  reader, the Zenodo DP-SCREAM output reader, and the `tracer_dp_scream` periodic constructor.
-- `src/case_setup.jl`: shared Breeze model assembly, output, and provenance.
-- Other `src/` files: reusable SAM readers, forcing operators, grids, surface fluxes,
-  initial conditions, and diagnostics.
-- `cases/`: readable experiment entry points and MIP specifications; the general CLI
-  lives under `cases/cli/`. See [case status](cases/README.md).
+Each case has one constructor that reads its inputs and builds the grid, model and
+`Simulation` in its own body, top to bottom:
+
+| Constructor | Case | Source |
+| --- | --- | --- |
+| `ena_covert` | Public Covert ENA development benchmark | `src/ena/covert.jl` |
+| `ena_lasso` | Official LASSO-ENA member from its staged bundle | `src/ena/lasso.jl` (bundle validator in `src/ena/lasso_bundle.jl`) |
+| `tracer_dp_scream` | Periodic TRACER case with the DP-SCREAM IOP forcing | `src/tracer_dp_scream/` |
+| `sea_starr` | SEA STARR CTRL / N100 / N030 | `src/sea_starr/` |
+| `tracer_mip_outer_simulation`, `tracer_mip_inner_simulation` | Regional TRACER-MIP control | `ext/tracer_mip_regional/` |
+
+Microphysics is passed as a Breeze object, for example
+`P3Microphysics(; cloud = CloudDroplets(; number_concentration = 75e6))`, and precision follows
+`Oceananigans.defaults.FloatType`, so a script sets `Oceananigans.defaults.FloatType = Float32`
+once at the top. The aerosol helpers `lasso_aerosol`, `covert_aerosol` and
+`kappa_aerosol_activation` return Breeze aerosol objects.
+
+- `src/components/`: the shared physics components: SAM input readers, vertical grids,
+  large-scale forcing operators, surface fluxes, simple longwave radiation, sounding
+  initial state, microphysics helpers, diagnostics, output writers and provenance.
+- `src/observations/`: ARM station-series and DP-SCREAM output readers.
+- `cases/`: readable experiment entry points and MIP specifications; the command-line
+  runner `cases/cli/run_case.jl` covers both ENA protocols. See [case status](cases/README.md).
 - `data_wrangling/`: input acquisition and manifests; see the
   [NumericalEarth observation-extension design](data_wrangling/README.md).
 - `execution/`: Slurm launchers and batch submission helpers.
 - `analysis/`: Julia plotting and animation tools inherited from BreezyLASSO.
 - `test/`: `Pkg.test()` regressions, including case execution and downloads;
-  historical investigation scripts live under `test/diagnostics/`.
+  mass-budget and limiter probes live under `test/diagnostics/`.
 - `docs/`: a manually generated Documenter/Literate manual that executes the case
   examples, plus formulations, reproduction requirements, and historical port notes.
   See [documentation build instructions](docs/README.md).
-
-The Julia entry point is `ena_simulation(data_dir; protocol, kwargs...)`.
-`ena_protocol_settings(data_dir; protocol)` inspects defaults without allocating a
-model. The legacy `lasso_ena_simulation(...; preset=...)` remains for imported scripts, with an explicit `preset` required.
 
 ## Next milestones
 

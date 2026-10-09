@@ -34,6 +34,7 @@ import Dates
 # RRTMGP radiation and the output writers, and returns the case without advancing it.
 
 member = Symbol(get(ENV, "SEA_STARR_MEMBER", "CTRL"))
+Oceananigans.defaults.FloatType = Float32
 arch = GPU()
 Nx = Ny = parse(Int, get(ENV, "SEA_STARR_NX", "192"))
 stop_time = parse(Float64, get(ENV, "SEA_STARR_HOURS", "66")) * hours

@@ -106,7 +106,7 @@ aerosol_profile_table(p::TracerMIPAerosolProfile, heights) =
     [(z = z, modes = 1e-6 .* mode_number_mixing_ratios(p, z), total = 1e-6 * total_number_mixing_ratio(p, z)) for z in heights]
 
 """
-    tracer_mip_p3_aerosol_modes(profile; FT = Float32, kappa = 0.26, aerosol_density = 1770, molecular_weight_aerosol = 0.132)
+    tracer_mip_p3_aerosol_modes(profile; kappa = 0.26, aerosol_density = 1770, molecular_weight_aerosol = 0.132)
 
 Breeze P3 `AerosolMode`s for the two TRACER-MIP modes at their *surface* number mixing ratios,
 geometric mean radius = median diameter / 2 and the protocol σ. The protocol prescribes a bulk
@@ -114,16 +114,17 @@ hygroscopicity κ = 0.26 instead of a composition; P3's lognormal activation use
 parameter β = ν φ εₘ M_w ρₐ / (Mₐ ρ_w), which equals κ for a κ-Köhler particle (Petters and
 Kreidenweis 2007: κ = ν Φ ρₛ M_w / (ρ_w Mₛ)), so the van 't Hoff factor is chosen to make
 β = κ given the (otherwise inconsequential) density and molecular weight: ν = κ Mₐ ρ_w / (M_w ρₐ).
+Precision follows `Oceananigans.defaults.FloatType`.
 """
-function tracer_mip_p3_aerosol_modes(p::TracerMIPAerosolProfile; FT = Float32, kappa = 0.26,
+function tracer_mip_p3_aerosol_modes(p::TracerMIPAerosolProfile; kappa = 0.26,
                                      aerosol_density = 1770, molecular_weight_aerosol = 0.132,
-                                     thermodynamic_constants = ThermodynamicConstants(FT))
+                                     thermodynamic_constants = ThermodynamicConstants())
     ρ_w = thermodynamic_constants.liquid.density
     M_w = thermodynamic_constants.vapor.molar_mass
     vant_hoff_factor = kappa * molecular_weight_aerosol * ρ_w / (M_w * aerosol_density)
     n₀ = surface_number_mixing_ratios(p)
     modes = map(p.modes, n₀) do m, n
-        AerosolMode(FT; number_mixing_ratio = n, mean_radius = m.median_diameter / 2, geometric_std = m.sigma,
+        AerosolMode(; number_mixing_ratio = n, mean_radius = m.median_diameter / 2, geometric_std = m.sigma,
                     vant_hoff_factor, osmotic_potential = 1, mass_fraction_soluble = 1,
                     aerosol_density, molecular_weight_aerosol, thermodynamic_constants)
     end

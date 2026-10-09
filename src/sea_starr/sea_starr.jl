@@ -40,10 +40,11 @@ function sea_starr_driver_path(member; data_dir)
 end
 
 """
-    sea_starr(; member=:CTRL, arch=GPU(), FT=Float32, data_dir, kwargs...)
+    sea_starr(; member=:CTRL, arch=GPU(), data_dir, microphysics=nothing, kwargs...)
 
 Build the SEA STARR experiment `member` from its DEPHY driver and return
-`(; simulation, model, grid, driver, config, inputs, ...)` without advancing it.
+`(; simulation, model, grid, config, inputs, driver, ...)` without advancing it. Precision
+follows `Oceananigans.defaults.FloatType`.
 
 Keyword arguments (protocol defaults):
 
@@ -55,22 +56,24 @@ Keyword arguments (protocol defaults):
 - `initialization = :equilibrium`: partition (θₗ, qₜ) into (T, qᵛ, qᶜˡ) with Breeze's warm-phase
   saturation adjustment and activate the fraction `initial_activated_fraction` (default 1) of the
   aerosol in cloudy cells; `:condensate_free` starts from the supersaturated vapor and lets P3 condense
+- `microphysics = nothing` builds the protocol P3: one κ-Köhler mode
+  ([`kappa_aerosol_activation`](@ref): d = 185 nm, σ = 1.5, κ = 0.2, 1 s activation) seeded
+  with the driver's peak aerosol number, with a prognostic reservoir. Any Breeze P3 object
+  with a prognostic aerosol reservoir can be passed instead.
 - `aerosol_surface_flux = 7e5` m⁻² s⁻¹ (70 cm⁻² s⁻¹); `regeneration = true`
-- `mean_diameter = 185e-9`, `geometric_std = 1.5`, `kappa = 0.2`
-- `radiation = :rrtmgp` (all-sky LW+SW, `radiation_interval = 60` s) or `nothing`; `ozone = :driver`
+- `radiation = true` (RRTMGP all-sky LW+SW, `radiation_interval = 60` s; `false` for none); `ozone = :driver`
 - `liquid_effective_radius = 10e-6`, `surface_albedo = 0.07`, `surface_emissivity = 0.98`
 - `nudging = true`, `nudging_offset = 100`, `nudging_ramp = 200`, `inversion_search_top = 4000` m
 - `vertical_advection = :full_field` or `nothing`; `geostrophic = true`; `surface = :bulk_sst` or `nothing`
 - `sponge = SAMSponge(damping_depth_fraction=0.15)`: numerical damping of the top 15 % (not in the protocol)
-- `closure = :smagorinsky_lilly`, `advection_order = 5`, `perturbation = InitialPerturbation()`
+- `closure = SmagorinskyLilly()`, `advection_order = 5`, `perturbation = InitialPerturbation()`
 - output: `output_dir`, `output_prefix`, `statistics_interval = 15minutes`, `timeseries_interval = 60`,
   `fields_2d_interval = 15minutes`, `fields_3d_interval = 1hour`, `checkpoint_interval = 3hours` (or `nothing`),
   `write_output = true`, `progress_interval = 10minutes`
 """
 function sea_starr(; member = :CTRL,
                      arch = GPU(),
-                     FT = Float32,
-                     data_dir = joinpath(dirname(dirname(pathof(BreezeLab))), "data", "seastarr_22241697"),
+                     data_dir = package_path("data", "seastarr_22241697"),
                      driver_path = sea_starr_driver_path(member; data_dir),
                      Nx = 192, Ny = 192, Δx = 50.0, Δy = 50.0,
                      z_faces = sea_starr_vertical_faces(),
@@ -78,11 +81,10 @@ function sea_starr(; member = :CTRL,
                      Δt = 1.0, max_Δt = 1.0, cfl = 0.7,
                      initialization = :equilibrium,
                      initial_activated_fraction = 1.0,
+                     microphysics = nothing,
                      aerosol_surface_flux = 7e5,
                      regeneration = true,
-                     mean_diameter = 185e-9, geometric_std = 1.5, kappa = 0.2,
-                     activation_timescale = 1.0,
-                     radiation = :rrtmgp,
+                     radiation = true,
                      radiation_interval = 60,
                      ozone = :driver,
                      liquid_effective_radius = 10e-6,
@@ -102,7 +104,7 @@ function sea_starr(; member = :CTRL,
                      roughness_length = nothing,                 # nothing → driver z0
                      gustiness = 0.1,
                      sponge = SAMSponge(damping_depth_fraction=0.15),
-                     closure = :smagorinsky_lilly,
+                     closure = SmagorinskyLilly(),
                      advection_order = 5,
                      perturbation = InitialPerturbation(),
                      label = "SEA STARR $(member) (Breeze; exploratory CTRL: see config.departures)",
@@ -116,8 +118,6 @@ function sea_starr(; member = :CTRL,
                      write_output = true,
                      progress_interval = 10minutes)
 
-    Oceananigans.defaults.FloatType = FT
-    closure = closure === :smagorinsky_lilly ? SmagorinskyLilly(FT) : closure
     initialization ∈ (:equilibrium, :condensate_free) ||
         throw(ArgumentError("initialization must be :equilibrium or :condensate_free, got $initialization"))
 
@@ -143,9 +143,10 @@ function sea_starr(; member = :CTRL,
     Nz = length(z_faces) - 1
     Lx = Nx * Δx
     Ly = Ny * Δy
-    grid = RectilinearGrid(arch, FT; size=(Nx, Ny, Nz), x=(0, Lx), y=(0, Ly), z=z_faces,
+    grid = RectilinearGrid(arch; size=(Nx, Ny, Nz), x=(0, Lx), y=(0, Ly), z=z_faces,
                            halo=(5, 5, 5), topology=(Periodic, Periodic, Bounded))
-    constants = ThermodynamicConstants(FT)
+    FT = eltype(grid)
+    constants = ThermodynamicConstants()
     constants64 = ThermodynamicConstants(Float64)
 
     reference_state = ReferenceState(grid, constants;
@@ -153,7 +154,7 @@ function sea_starr(; member = :CTRL,
                                      potential_temperature = z -> driver_initial_profile(driver, :thetal, z),
                                      vapor_mass_fraction = z -> driver_initial_profile(driver, :qt, z))
     dynamics = AnelasticDynamics(reference_state)
-    coriolis = FPlane(FT; latitude)
+    coriolis = FPlane(; latitude)
 
     z_centers = Array(znodes(grid, Center()))
     ρᵣ = Array(interior(reference_state.density, 1, 1, :))
@@ -164,14 +165,20 @@ function sea_starr(; member = :CTRL,
     #####
 
     na₀ = driver_initial_profile(driver, :na, z_centers)        # kg⁻¹, height-varying
-    aerosol = kappa_aerosol_activation(FT; number_mixing_ratio = maximum(na₀),
-                                       mean_radius = mean_diameter / 2, geometric_std, kappa,
-                                       thermodynamic_constants = constants, activation_timescale)
-    cloud = CloudDroplets(FT; number_concentration = 100e6)      # only the construction-time DSD shape with aerosol present
-    microphysics_model = P3Microphysics(FT; cloud, aerosol)
-    moisture_name = Breeze.AtmosphereModels.moisture_specific_name(microphysics_model)   # :qᵛ
+    protocol_microphysics = isnothing(microphysics)
+    if protocol_microphysics
+        aerosol = kappa_aerosol_activation(; number_mixing_ratio = maximum(na₀), mean_radius = 185e-9 / 2,
+                                           geometric_std = 1.5, kappa = 0.2, thermodynamic_constants = constants,
+                                           activation_timescale = 1)
+        cloud = CloudDroplets(; number_concentration = 100e6)    # only the construction-time DSD shape with aerosol present
+        microphysics = P3Microphysics(; cloud, aerosol)
+    end
+    check_precision(microphysics, FT)
+    has_aerosol_reservoir(microphysics) ||
+        throw(ArgumentError("SEA STARR needs P3 with a prognostic aerosol reservoir (ρnᵃ): the surface source, nudging and regeneration act on it"))
+    moisture_name = Breeze.AtmosphereModels.moisture_specific_name(microphysics)   # :qᵛ
     momentum_advection = WENO(order=advection_order)
-    scalar_advection = scalar_advection_schemes(advection_order, microphysics_model, moisture_name; energy_name=:ρθ)
+    scalar_advection = scalar_advection_schemes(advection_order, microphysics, moisture_name; energy_name=:ρθ)
 
     #####
     ##### Large-scale forcing
@@ -211,7 +218,7 @@ function sea_starr(; member = :CTRL,
     forcing[:w] = compact(sponge)
     forcing[:θ] = compact(nudge(θ_nud, τ_thermo), vadv)
     forcing[moisture_name] = compact(nudge(q_nud, τ_thermo), vadv)
-    for ρname in Breeze.AtmosphereModels.prognostic_field_names(microphysics_model)
+    for ρname in Breeze.AtmosphereModels.prognostic_field_names(microphysics)
         name = Symbol(string(ρname)[nextind(string(ρname), 1):end])
         name === moisture_name && continue
         forcing[name] = compact(vadv)
@@ -251,7 +258,7 @@ function sea_starr(; member = :CTRL,
         throw(ArgumentError("ozone must be :driver or a number (volume mixing ratio)"))
     end
     background_atmosphere = BackgroundAtmosphere(; CO₂, CH₄, N₂O, O₃ = o3_profile)
-    radiation_model = if radiation === :rrtmgp
+    radiation_model = if radiation
         RadiativeTransferModel(grid, AllSkyOptics(), constants;
                                surface_temperature = Tₛ,
                                surface_albedo, surface_emissivity, background_atmosphere,
@@ -259,10 +266,8 @@ function sea_starr(; member = :CTRL,
                                schedule = TimeInterval(radiation_interval),
                                liquid_effective_radius = ConstantRadiusParticles(liquid_effective_radius),
                                ice_effective_radius = ConstantRadiusParticles(ice_effective_radius))
-    elseif isnothing(radiation)
-        nothing
     else
-        throw(ArgumentError("radiation must be :rrtmgp or nothing, got $radiation"))
+        nothing
     end
 
     #####
@@ -270,7 +275,7 @@ function sea_starr(; member = :CTRL,
     #####
 
     model = AtmosphereModel(grid; formulation = :LiquidIcePotentialTemperature, dynamics, coriolis, closure,
-                            microphysics = microphysics_model, radiation = radiation_model,
+                            microphysics, radiation = radiation_model,
                             momentum_advection, scalar_advection, forcing, boundary_conditions,
                             thermodynamic_constants = constants)
 
@@ -351,12 +356,13 @@ function sea_starr(; member = :CTRL,
         "surface fluxes: Breeze bulk formulae (Large & Yeager polynomials) with z₀ = $(z₀) m; protocol only states ts and z0",
     )
 
-    config = (; label, member=string(member), arch=string(typeof(arch)), FT=string(FT), Nx, Ny, Nz, Lx, Ly, Δx, Δy,
+    config = (; protocol="sea_starr", label, member=string(member), arch=string(typeof(arch)), FT=string(FT), Nx, Ny, Nz, Lx, Ly, Δx, Δy,
                 z_top=z_faces[end], epoch=string(epoch), end_time=string(driver.end_time), latitude, longitude,
-                microphysics="P3 + KappaAerosolMode (prognostic reservoir)", mean_diameter, geometric_std, kappa,
-                activation_timescale, aerosol_surface_flux, regeneration, initialization=string(initialization),
+                microphysics_record(microphysics; reference_density = ρᵣ[1])..., protocol_microphysics,
+                aerosol_mode = protocol_microphysics ? "κ-Köhler: d = 185 nm, σ = 1.5, κ = 0.2, activation timescale 1 s" : "set by the caller's microphysics",
+                aerosol_surface_flux, regeneration, initialization=string(initialization),
                 initial_activated_fraction, initial_aerosol_max=maximum(na₀), initial_aerosol_surface=na₀[1],
-                radiation=string(radiation), radiation_interval, ozone=string(ozone), liquid_effective_radius, ice_effective_radius,
+                radiation = radiation ? "RRTMGP all-sky LW+SW" : "none", radiation_interval, ozone=string(ozone), liquid_effective_radius, ice_effective_radius,
                 surface_albedo, surface_emissivity, CO₂, CH₄, N₂O,
                 surface=string(surface), roughness_length=z₀, gustiness,
                 nudging, nudging_offset, nudging_ramp, inversion_search_top,
@@ -373,9 +379,8 @@ function sea_starr(; member = :CTRL,
 
     inputs = (; driver = driver_path)
 
-    return (; simulation, model, grid, driver, config, inputs, surface_temperature=Tₛ, mask_updater,
-              evaporation_rate, protocol=:sea_starr, preset=member, protocol_dimensions=(Nx, Ny, Nz),
-              protocol_overrides=NamedTuple(), initial_columns=(; z=z_centers, θₗ=θₗ₀, qₜ=qₜ₀, T, qᵛ, qᶜˡ, nᵃ=na₀, u=u₀, v=v₀, ρ=ρᵣ, p=pᵣ))
+    return (; simulation, model, grid, config, inputs, driver, surface_temperature=Tₛ, mask_updater,
+              evaporation_rate, initial_columns=(; z=z_centers, θₗ=θₗ₀, qₜ=qₜ₀, T, qᵛ, qᶜˡ, nᵃ=na₀, u=u₀, v=v₀, ρ=ρᵣ, p=pᵣ))
 end
 
 #####

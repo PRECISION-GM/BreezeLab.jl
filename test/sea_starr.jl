@@ -268,10 +268,17 @@ end
             @test all(n100.initial.na .== 1e8) && n100.initial.thetal == d.initial.thetal
             @test_throws ArgumentError sea_starr(; member=:N100, driver_path=joinpath(SEASTARR_DIR, "SEA_STARR_CTRL_SCM_driver.nc"), arch=CPU(), write_output=false)
 
-            case = sea_starr(; member=:CTRL, data_dir=SEASTARR_DIR, arch=CPU(), FT=Float32, Nx=8, Ny=8,
-                               z_faces=collect(range(0, 3000, length=31)), stop_time=2.0, write_output=true,
-                               output_dir=mktempdir(), checkpoint_interval=nothing, progress_interval=100,
-                               statistics_interval=2.0, timeseries_interval=1.0, fields_2d_interval=2.0, fields_3d_interval=2.0)
+            case = with_float_type(Float32) do
+                sea_starr(; member=:CTRL, data_dir=SEASTARR_DIR, arch=CPU(), Nx=8, Ny=8,
+                            z_faces=collect(range(0, 3000, length=31)), stop_time=2.0, write_output=true,
+                            output_dir=mktempdir(), checkpoint_interval=nothing, progress_interval=100,
+                            statistics_interval=2.0, timeseries_interval=1.0, fields_2d_interval=2.0, fields_3d_interval=2.0)
+            end
+            @test case.config.protocol == "sea_starr" && case.config.protocol_microphysics && case.config.FT == "Float32"
+            @test case.config.n₁ ≈ maximum(case.initial_columns.nᵃ) rtol=1e-6   # κ mode seeded with the peak of the interpolated driver profile
+            @test case.config.kappa_1 ≈ 0.2
+            @test_throws ArgumentError sea_starr(; member=:CTRL, data_dir=SEASTARR_DIR, arch=CPU(), write_output=false,
+                                                   microphysics=p3_microphysics())    # no aerosol reservoir
             @test case.model.clock.time == 0 && case.model.clock.iteration == 0
             @test case.config.member == "CTRL" && case.config.aerosol_surface_flux == 7e5
             @test case.config.thermodynamic_nudging_timescale == 1800 && case.config.wind_nudging_timescale == 10800

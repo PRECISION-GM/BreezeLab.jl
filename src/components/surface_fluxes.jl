@@ -108,7 +108,7 @@ The energy (`ρE`) and vapor flux bottom boundary conditions of the `sfc` series
 flux H(t) [+ (cᵖᵛ - cᵖᵈ) SST(t) E(t)] and vapor flux E = LE/ℒ, as `FieldTimeSeries`
 interpolated linearly in time. Returns `(; bcs, energy_flux, vapor_flux, times)`; combine
 with a stress condition (`prescribed_surface_flux_boundary_conditions`) or a `BulkDrag`
-(the DP-SCREAM `iop_srf_prop` pathway in `build_case`'s `:prescribed_heat_fluxes_bulk_drag`).
+(the DP-SCREAM `iop_srf_prop` pathway of `tracer_dp_scream`).
 """
 function prescribed_heat_flux_boundary_conditions(grid, sfc::SAMSurfaceForcing, day0;
                                                   thermodynamic_constants,

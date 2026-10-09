@@ -100,7 +100,7 @@ uses the observed `Nc = 75 cm⁻³` ("based on airborne in situ measurements of 
 `snd/lsf/sfc/prm` with no aerosol specification (the HUJI-SBM spectrum is compiled into
 SAM, and no bin-microphysics ENA paper by these authors exists in Mechem's 2024
 publication list). A Covert-consistent aerosol therefore has to be *built*: the new
-`:p3_covert_n75` member (`covert_aerosol_modes`) keeps the LASSO mode shapes and SBM
+`p3_covert_n75` member (`covert_aerosol`) keeps the LASSO mode shapes and SBM
 chemistry and scales their number so that the SBM-capped activatable total is exactly
 75 cm⁻³ at the surface density (≈ 146 cm⁻³ total aerosol, scale factor ≈ 0.26), with the
 diagnostic-CCN projection; it is labelled as this package's configuration, not as a

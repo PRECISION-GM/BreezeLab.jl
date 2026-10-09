@@ -38,14 +38,15 @@ function centered_data(fts, n, (ni, nj))
 end
 
 """
-    outer_run_parent(run_dir; arch = CPU(), FT = Float32, gravitational_acceleration = 9.80665)
+    outer_run_parent(run_dir; arch = CPU(), gravitational_acceleration = 9.80665)
 
 Build a `PrescribedAtmosphere` from an outer run's `inner_region/inner_region_state.jld2`: all saved times, on a
 bounded `LatitudeLongitudeGrid` spanning the saved cells whose vertical coordinate is the outer grid's per-column
 cell-center height (static), with the terrain height as surface geopotential so `surface_elevation(parent)` works.
 Velocities are moved to cell centers; `qⁱ` (total ice) is passed as the parent's `qᶜⁱ`; no snow category.
 """
-function outer_run_parent(run_dir; arch = CPU(), FT = Float32, gravitational_acceleration = 9.80665)
+function outer_run_parent(run_dir; arch = CPU(), gravitational_acceleration = 9.80665)
+    FT = Oceananigans.defaults.FloatType
     file = joinpath(run_dir, INNER_REGION_FILE)
     isfile(file) || throw(ArgumentError("no saved inner-region state at $file"))
     T_fts = FieldTimeSeries(file, "T"; backend = OnDisk())
@@ -104,31 +105,34 @@ default), Δt = 1.5 s, inner extent and 500 m cells from the protocol. Land is i
 temperature as a fallback that is recorded in `config`.
 """
 function BreezeLab.tracer_mip_inner_simulation(arch; outer_run_dir,
-        case = :aug07, protocol = tracer_mip_protocol(), FT = Float32,
+        case = :aug07, protocol = tracer_mip_protocol(),
         Nx = protocol["grids"]["inner"]["Nx"], Ny = protocol["grids"]["inner"]["Ny"],
         z_faces = BreezeLab.acpc_vertical_faces(protocol["vertical"]["scalar_levels_m_agl"]),
         stop_time = nothing, Δt = protocol["grids"]["inner"]["timestep_s"],
-        aerosol_multiplier = 1, initial_droplet_number = 100e6,
-        radiation = :rrtmgp, radiation_interval = protocol["forcing"]["radiation_interval_s"],
+        microphysics = nothing,
+        radiation = true, radiation_interval = protocol["forcing"]["radiation_interval_s"],
         closure = nothing, terrain = ETOPO2022(), relaxation_width = 5, relaxation_rate = 1/300, advection_order = 5,
         land_albedo = 0.17, sea_albedo = 0.06, surface_emissivity = 0.98,
         land_init = :outer_skin, sea_surface_temperature = nothing, balancer = true, process_rates = true,
         label = "tracer_mip_inner")
 
     start, stop = tracer_mip_case_window(protocol, case)
-    Oceananigans.defaults.FloatType = FT
-    parent = outer_run_parent(outer_run_dir; arch, FT)
+    parent = outer_run_parent(outer_run_dir; arch)
     stop_time = something(stop_time, Float64(last(parent.temperature.times)))
-    grid = tracer_mip_grid(arch, :inner; protocol, FT, Nx, Ny, z_faces)
-    constants = ThermodynamicConstants(FT)
-    profile = tracer_mip_aerosol_profile(case; protocol, FT = Float64, multiplier = aerosol_multiplier)
-    aerosol = PrescribedAerosolProfile(profile; FT, thermodynamic_constants = constants)
-    p3 = P3Microphysics(FT; cloud = CloudDroplets(FT; number_concentration = initial_droplet_number), aerosol)
-    scalar_advection = scalar_advection_schemes(advection_order, p3, :qᵛ; energy_name = :ρθ)
+    grid = tracer_mip_grid(arch, :inner; protocol, Nx, Ny, z_faces)
+    FT = eltype(grid)
+    constants = ThermodynamicConstants()
+    protocol_microphysics = isnothing(microphysics)
+    if protocol_microphysics
+        aerosol = PrescribedAerosolProfile(tracer_mip_aerosol_profile(case; protocol); thermodynamic_constants = constants)
+        microphysics = P3Microphysics(; cloud = CloudDroplets(; number_concentration = 100e6), aerosol)
+    end
+    BreezeLab.check_precision(microphysics, FT)
+    scalar_advection = scalar_advection_schemes(advection_order, microphysics, :qᵛ; energy_name = :ρθ)
     nest = nested_atmosphere_model(parent, grid; parent_condensates = parent_condensates_of(parent),
                                    base_pressure = FT(mean(interior(parent.pressure[1], :, :, 1))),
                                    relaxation_rate, relaxation_width, terrain, terrain_blend_width = relaxation_width,
-                                   microphysics = p3, momentum_advection = WENO(order = advection_order), scalar_advection,
+                                   microphysics, momentum_advection = WENO(order = advection_order), scalar_advection,
                                    closure, thermodynamic_constants = constants)
     initialize_child_from_parent!(nest; balancer)
     child = nest.child
@@ -153,7 +157,7 @@ function BreezeLab.tracer_mip_inner_simulation(arch; outer_run_dir,
     pin_sea_surface!(pinning, 0.0)
 
     albedo = surface_albedo_field(mask; sea = sea_albedo, land = land_albedo)
-    rtm = radiation === :rrtmgp ? RadiativeTransferModel(grid, AllSkyOptics(), constants;
+    rtm = radiation ? RadiativeTransferModel(grid, AllSkyOptics(), constants;
                                        solar_position = ApparentSolarPosition(epoch = start), surface_albedo = albedo,
                                        surface_emissivity, schedule = TimeInterval(radiation_interval)) : nothing
     atmosphere = Simulation(nest; Δt)
@@ -164,11 +168,13 @@ function BreezeLab.tracer_mip_inner_simulation(arch; outer_run_dir,
     isnothing(accumulators) || add_callback!(simulation, accumulators, IterationInterval(1))
     config = (; label, case = string(case), parent = summary(parent.source), outer_run_dir = abspath(outer_run_dir),
                 start = string(start), stop = string(stop), arch = string(typeof(arch)), FT = string(FT), Nx, Ny,
-                Nz = length(z_faces) - 1, Δt, stop_time, aerosol_multiplier, initial_droplet_number,
-                radiation = string(radiation), radiation_interval, closure = isnothing(closure) ? "nothing" : summary(closure),
+                Nz = length(z_faces) - 1, Δt, stop_time, protocol_microphysics,
+                microphysics = protocol_microphysics ? "P3 two-moment, Tier-1 PrescribedAerosolProfile (fixed, height-dependent), radiatively inactive" : summary(microphysics),
+                aerosol = isnothing(microphysics.aerosol) ? "none" : summary(microphysics.aerosol),
+                radiation = radiation ? "RRTMGP all-sky" : "none", radiation_interval, closure = isnothing(closure) ? "nothing" : summary(closure),
                 relaxation_width, relaxation_rate, advection_order, terrain = isnothing(terrain) ? "none (flat)" : summary(terrain),
                 land_init = string(land_init), land_albedo, sea_albedo, surface_emissivity,
                 nesting = "one-way, offline: parent = outer state saved every 10 min on the inner region + halo")
     return (; simulation, model, nest, child, parent, land, grid, land_grid, sea_mask = mask, pinning, accumulators,
-              radiation = rtm, config, profile)
+              radiation = rtm, config)
 end

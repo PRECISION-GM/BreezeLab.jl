@@ -47,11 +47,11 @@ using Breeze.TerrainFollowingDiscretization: TerrainFollowingGrid
     end
 
     @testset "grid construction (reduced size)" begin
-        grid = tracer_mip_grid(CPU(), :outer; Nx = 8, Ny = 6, FT = Float64)
+        grid = with_float_type(() -> tracer_mip_grid(CPU(), :outer; Nx = 8, Ny = 6), Float64)
         @test size(grid) == (8, 6, 94)
         @test grid isa TerrainFollowingGrid
         @test grid.Lz ≈ 22181
-        flat = tracer_mip_grid(CPU(), :inner; Nx = 5, Ny = 5, terrain_following = false, FT = Float32)
+        flat = with_float_type(() -> tracer_mip_grid(CPU(), :inner; Nx = 5, Ny = 5, terrain_following = false), Float32)
         @test size(flat) == (5, 5, 94) && eltype(flat) == Float32
         @test Oceananigans.Grids.topology(flat) == (Bounded, Bounded, Bounded)
     end
@@ -120,7 +120,7 @@ end
     end
 
     @testset "P3 modes with κ = 0.26" begin
-        modes = tracer_mip_p3_aerosol_modes(aug; FT = Float64)
+        modes = with_float_type(() -> tracer_mip_p3_aerosol_modes(aug), Float64)
         @test length(modes) == 2 && all(m -> m isa AerosolMode{Float64}, modes)
         @test modes[1].number_mixing_ratio ≈ 1425e6 / 1.159
         @test modes[1].mean_radius ≈ 24.5e-9 && modes[2].mean_radius ≈ 87.5e-9
@@ -128,7 +128,7 @@ end
         @test all(m -> m.solute_activity ≈ 0.26, modes)                     # β_act reproduces the bulk κ
         activation = AerosolActivation(modes...; prognostic = true)
         @test length(activation.modes) == 2
-        modes32 = tracer_mip_p3_aerosol_modes(jun; FT = Float32)
+        modes32 = with_float_type(() -> tracer_mip_p3_aerosol_modes(jun), Float32)
         @test eltype(modes32) == AerosolMode{Float32} && modes32[1].solute_activity ≈ 0.26f0
     end
 end

@@ -87,19 +87,20 @@ function tracer_mip_horizontal_extent(protocol, nest; FT = Float64)
 end
 
 """
-    tracer_mip_grid(arch, nest; protocol, FT=Float32, Nx, Ny, z_faces, terrain_following=true, halo=(5,5,5))
+    tracer_mip_grid(arch, nest; protocol, Nx, Ny, z_faces, terrain_following=true, halo=(5,5,5))
 
 The bounded `LatitudeLongitudeGrid` of `nest` (`:outer` 750² at 2 km, `:inner` 500² at 500 m) over
 the protocol extent with the ACPC vertical faces. `Nx`/`Ny` may be reduced for tests (the
 spacing then coarsens; the extent is the protocol's). With `terrain_following = true` the
 vertical is wrapped in Breeze's `TerrainFollowingVerticalDiscretization` so terrain can be
-materialized later by the regional constructor.
+materialized later by the regional constructor. Precision follows `Oceananigans.defaults.FloatType`.
 """
-function tracer_mip_grid(arch, nest; protocol = tracer_mip_protocol(), FT = Float32,
+function tracer_mip_grid(arch, nest; protocol = tracer_mip_protocol(),
                          Nx = protocol["grids"][String(nest)]["Nx"],
                          Ny = protocol["grids"][String(nest)]["Ny"],
                          z_faces = acpc_vertical_faces(protocol["vertical"]["scalar_levels_m_agl"]),
                          terrain_following = true, halo = (5, 5, 5))
+    FT = Oceananigans.defaults.FloatType
     extent = tracer_mip_horizontal_extent(protocol, nest; FT)
     Nz = length(z_faces) - 1
     z = terrain_following ? TerrainFollowingVerticalDiscretization(FT.(z_faces)) : FT.(z_faces)

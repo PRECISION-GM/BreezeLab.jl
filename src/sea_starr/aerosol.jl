@@ -45,7 +45,7 @@ const PPP = PredictedParticleProperties
 #####
 
 """
-    KappaAerosolMode(FT=Float64; number_mixing_ratio, mean_radius, geometric_std, kappa)
+    KappaAerosolMode(FT=Oceananigans.defaults.FloatType; number_mixing_ratio, mean_radius, geometric_std, kappa)
 
 One lognormal aerosol mode described by its geometric mean radius, geometric standard
 deviation and hygroscopicity parameter κ (Petters & Kreidenweis 2007). `number_mixing_ratio`
@@ -60,7 +60,7 @@ struct KappaAerosolMode{FT}
     kappa :: FT
 end
 
-KappaAerosolMode(FT=Float64; number_mixing_ratio, mean_radius=92.5e-9, geometric_std=1.5, kappa=0.2) =
+KappaAerosolMode(FT=Oceananigans.defaults.FloatType; number_mixing_ratio, mean_radius=92.5e-9, geometric_std=1.5, kappa=0.2) =
     KappaAerosolMode{FT}(FT(number_mixing_ratio), FT(mean_radius), FT(geometric_std), FT(kappa))
 
 Base.summary(::KappaAerosolMode) = "KappaAerosolMode"
@@ -70,14 +70,14 @@ Base.show(io::IO, m::KappaAerosolMode) =
 const KappaAerosolActivation{FT, P} = AerosolActivation{FT, P, <:Tuple{Vararg{KappaAerosolMode{FT}}}}
 
 """
-    kappa_aerosol_activation(FT=Float64; number_mixing_ratio, mean_radius=92.5e-9, geometric_std=1.5, kappa=0.2,
+    kappa_aerosol_activation(FT=Oceananigans.defaults.FloatType; number_mixing_ratio, mean_radius=92.5e-9, geometric_std=1.5, kappa=0.2,
                              thermodynamic_constants=ThermodynamicConstants(FT), kwargs...)
 
 A prognostic-reservoir `AerosolActivation` built on one [`KappaAerosolMode`](@ref). The
 remaining keywords are those of Breeze's `AerosolActivation` (activation timescale, surface
 tension fit, activated droplet radius, supersaturation threshold and floors).
 """
-function kappa_aerosol_activation(FT=Float64; number_mixing_ratio, mean_radius=92.5e-9, geometric_std=1.5, kappa=0.2,
+function kappa_aerosol_activation(FT=Oceananigans.defaults.FloatType; number_mixing_ratio, mean_radius=92.5e-9, geometric_std=1.5, kappa=0.2,
                                   thermodynamic_constants=ThermodynamicConstants(FT),
                                   activation_timescale=1,
                                   surface_tension_reference=0.0761,

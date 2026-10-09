@@ -77,8 +77,8 @@ comparison with `samstat`/`sam2d` and the ARM observations over 03:10–24:00 UT
 ## 2. What `protocol = :lasso_ena_official` does
 
 `inspect_lasso_bundle` / `validate_lasso_bundle` (`src/lasso_bundle.jl`) read the five
-bundle files and either return the protocol defaults for `build_case` or reject the
-bundle with every offending setting named. The namelist conventions were taken from
+bundle files and either return the facts `ena_lasso` maps to model choices (domain, grid,
+times, switches, Coriolis parameter) or reject the bundle with every offending setting named. The namelist conventions were taken from
 `setparm.f90` (`&PARAMETERS`), `SGS_TKE/sgs.f90` (`&SGS_TKE`) and `params.f90`/`grid.f90`
 (defaults for absent keys).
 

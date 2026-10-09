@@ -94,18 +94,16 @@ end
 @testset "LASSO bundle inspection and validation" begin
     bundle = inspect_lasso_bundle(LASSO_FIXTURE; member=LASSO_MEMBER, dimensions=LASSO_DIMS, epoch=LASSO_EPOCH)
     @test isempty(bundle.problems)
-    s = bundle.settings
-    @test s.Nx == 16 && s.Ny == 16 && s.Lx == 1600.0 && length(s.z_faces) == 31
-    @test s.Δt == 2.0 && s.max_Δt == 2.0 && s.stop_time == 3600.0
-    @test s.radiation_interval == 60.0 && s.wind_nudging_timescale == 7200.0
-    @test s.surface == :bulk_sst && s.radiation == :rrtmgp && s.vertical_advection == :full_field
-    @test s.surface_emissivity == 0.95 && s.liquid_effective_radius == 14e-6
-    @test s.surface_flux_law == :sam_oceflx && s.aerosol_supersaturation_cap == 0.003 && isnothing(s.coriolis_parameter)
+    # the facts ena_lasso maps to model choices
+    @test bundle.domain == (; Nx = 16, Ny = 16, Nz = 30, dx = 100.0, dy = 100.0) && length(bundle.grid.faces) == 31
+    @test bundle.time.dt == 2.0 && bundle.time.stop_time == 3600.0
+    @test bundle.time.radiation_interval == 60.0 && bundle.time.tauls == 7200.0
+    @test isnothing(bundle.coriolis_parameter) && !bundle.switches.compute_reffc
     @test isempty(bundle.readme)
-    @test s.microphysics == :p3_aer2 && s.aerosol_replenishment == :diagnostic_ccn
-    @test s.perturbation.sam_perturb_type == 5 && s.translation_velocity == (0.0, 0.0)
-    @test s.upper_boundary_relaxation && s.sponge isa SAMSponge
-    @test s.latitude == 39.0916 && s.longitude == -28.0257 && s.day0 == 199.0
+    @test bundle.switches.perturb_type == 5 && bundle.switches.sam_translation == (0.0, 0.0)
+    @test bundle.switches.doupperbound && bundle.switches.dodamping
+    @test bundle.location == (; latitude = 39.0916, longitude = -28.0257) && bundle.time.day0 == 199.0
+    @test occursin("member $LASSO_MEMBER", bundle.label)
     @test bundle.grid.levels[1] == 12.5 && bundle.grid.top_level == 987.5 && bundle.grid.extrapolated == 0
     @test bundle.grid.faces[end] == 987.5 + (987.5 - 887.5) / 2
     @test bundle.grid.max_level_offset > 0                      # stretched levels are not face midpoints
@@ -117,8 +115,8 @@ end
     record = lasso_bundle_record(bundle)
     @test record.member.id == LASSO_MEMBER && record.sam_reference.commit == "12d02446a2147388dc89d828e6e0553106abea0f"
     @test length(record.checksums.prm) == 64 && record.doi == "10.5439/2572661"
-    @test validate_lasso_bundle(LASSO_FIXTURE; member=LASSO_MEMBER, dimensions=LASSO_DIMS).settings.Ny == 16
-    @test inspect_lasso_bundle(LASSO_FIXTURE; dimensions=LASSO_DIMS).settings.microphysics == :p3_aer2   # undeclared member keeps the production default
+    @test validate_lasso_bundle(LASSO_FIXTURE; member=LASSO_MEMBER, dimensions=LASSO_DIMS).domain.Ny == 16
+    @test inspect_lasso_bundle(LASSO_FIXTURE; dimensions=LASSO_DIMS).domain.Nx == 16    # an undeclared member is recorded as such
     @test_throws ArgumentError inspect_lasso_bundle(LASSO_FIXTURE; member=42)
 
     mktempdir() do dir
@@ -154,26 +152,26 @@ end
         # the official members compute per-column fluxes and carry fcor: both accepted, both recorded
         rewrite_prm(dir, "UNIFORM_SFC_FLX = .true." => "UNIFORM_SFC_FLX = .false.", "nrad = 30" => "nrad = 30, fcor = 9.19626e-05")
         bpc = inspect_lasso_bundle(dir; dimensions=LASSO_DIMS)
-        @test isempty(bpc.problems) && bpc.settings.coriolis_parameter == 9.19626e-5 && !bpc.switches.uniform_sfc_flx
+        @test isempty(bpc.problems) && bpc.coriolis_parameter == 9.19626e-5 && !bpc.switches.uniform_sfc_flx
         @test any(occursin("per column", w) for w in bpc.warnings)
         @test !any(occursin("fcor", w) for w in bpc.warnings)                # the bundle value is 2Ω sin φ (sidereal): no deviation warning
         rewrite_prm(dir, "nrad = 30" => "nrad = 30, fcor = 9.17e-05")       # SAM's own 4π/86400 sin φ: accepted silently too
         @test !any(occursin("fcor", w) for w in inspect_lasso_bundle(dir; dimensions=LASSO_DIMS).warnings)
         rewrite_prm(dir, "nrad = 30" => "nrad = 30, fcor = 1.0e-04")        # detached from the latitude: accepted, warned
         bfc = inspect_lasso_bundle(dir; dimensions=LASSO_DIMS)
-        @test isempty(bfc.problems) && bfc.settings.coriolis_parameter == 1e-4 && any(occursin("fcor = 0.0001 is used", w) for w in bfc.warnings)
+        @test isempty(bfc.problems) && bfc.coriolis_parameter == 1e-4 && any(occursin("fcor = 0.0001 is used", w) for w in bfc.warnings)
         rewrite_prm(dir, "nrad = 30" => "nrad = 30, fcor = -999.")          # SAM's sentinel: derive from latitude
-        @test isnothing(inspect_lasso_bundle(dir; dimensions=LASSO_DIMS).settings.coriolis_parameter)
+        @test isnothing(inspect_lasso_bundle(dir; dimensions=LASSO_DIMS).coriolis_parameter)
         mkpath(joinpath(dir, "extra"))
         write(joinpath(dir, "extra", "README_LASSO-ENA.txt"), "sim_name: x\nmodel_type: SAM v6.10.3 plus LASSO modifications\nmodel_source_git_hash: f83adf58\n")
         @test inspect_lasso_bundle(dir; dimensions=LASSO_DIMS).readme["model_source_git_hash"] == "f83adf58"
         rm(joinpath(dir, "extra"); recursive=true)
         rewrite_prm(dir, "perturb_type = 5," => "")          # absent → SAM case 0, supported
         b0 = inspect_lasso_bundle(dir; dimensions=LASSO_DIMS)
-        @test isempty(b0.problems) && b0.settings.perturbation.sam_perturb_type == 0
+        @test isempty(b0.problems) && b0.switches.perturb_type == 0
         rewrite_prm(dir, "compute_reffc = .false." => "compute_reffc = .true.")
         bre = inspect_lasso_bundle(dir; dimensions=LASSO_DIMS)
-        @test bre.settings.liquid_effective_radius == 10e-6 && any(occursin("SBM spectrum", w) for w in bre.warnings)
+        @test bre.switches.compute_reffc && any(occursin("SBM spectrum", w) for w in bre.warnings)
         rewrite_prm(dir, "&SGS_TKE\n dosmagor = .true." => "&SGS_TKE\n dosmagor = .false.")
         @test any(occursin("1.5-order TKE", w) for w in inspect_lasso_bundle(dir; dimensions=LASSO_DIMS).warnings)
         rewrite_prm(dir, "nrad = 30, ug = 0.0, vg = 0.0" => "nrad = 30, ug = 5.0, vg = -8.0")
@@ -212,26 +210,29 @@ end
 end
 
 @testset "LASSO adapter: units, winds, forcing assembly" begin
-    common = (; protocol=:lasso_ena_official, member=LASSO_MEMBER, epoch=LASSO_EPOCH, dimensions=LASSO_DIMS,
-                FT=Float64, Nx=8, Ny=8, Lx=800, Ly=800, microphysics=:one_moment, radiation=nothing,
-                aerosol_replenishment=nothing, write_output=false, progress_interval=100)
-    @test_throws ArgumentError ena_simulation(LASSO_FIXTURE; common..., epoch=nothing)
-    @test_throws ArgumentError ena_simulation(LASSO_FIXTURE; common..., member=nothing)
-    @test_throws ArgumentError ena_simulation(LASSO_FIXTURE; common..., epoch=DateTime(2017, 7, 18, 6))
-    @test_throws ArgumentError ena_simulation(LASSO_FIXTURE; common..., day0=199.5)
-    @test_throws ArgumentError ena_simulation(LASSO_FIXTURE; common..., dimensions=nothing)
+  with_float_type(Float64) do
+    common = (; member=LASSO_MEMBER, epoch=LASSO_EPOCH, bundle_dir=LASSO_FIXTURE, dimensions=LASSO_DIMS, arch=CPU(),
+                Nx=8, Ny=8, Lx=800, Ly=800, microphysics=one_moment_microphysics(), radiation=false,
+                write_output=false, progress_interval=100)
+    @test_throws ArgumentError ena_lasso(; common..., epoch=nothing)
+    @test_throws ArgumentError ena_lasso(; common..., epoch=DateTime(2017, 7, 18, 6))
+    @test_throws ArgumentError ena_lasso(; common..., dimensions=nothing)
+    @test_throws ArgumentError ena_lasso(; common..., diagnostic_ccn=true)    # the one-moment scheme has no aerosol reservoir
+    @test_throws ArgumentError ena_lasso(; common..., member=nothing)
 
-    case = ena_simulation(LASSO_FIXTURE; common..., stop_time=4.0)
+    case = ena_lasso(; common..., stop_time=4.0)
     grid = case.grid
     zc = Array(znodes(grid, Center()))
-    @test case.config.Δt_initial == 2.0 && case.config.max_Δt == 2.0 && case.simulation.stop_time == 4.0
-    @test case.config.surface == "bulk_sst" && case.config.wind_nudging_timescale == 7200
-    @test startswith(case.config.surface_flux_law, "sam_oceflx") && case.config.coriolis_parameter_source == "4π/86400 sin(latitude)"
+    @test case.config.Δt == 2.0 && case.config.max_Δt == 2.0 && case.simulation.stop_time == 4.0
+    @test case.config.protocol == "lasso_ena_official" && case.config.wind_nudging_timescale == 7200
+    @test !case.config.diagnostic_ccn && !case.config.protocol_microphysics
+    @test Set(case.config.overrides) == Set(["Nx", "Ny", "Lx", "Ly", "stop_time", "microphysics", "radiation"])
+    @test startswith(case.config.surface_flux_law, "sam_oceflx") && case.config.coriolis_parameter_source == "2Ω sin(latitude)"
     @test case.config.coriolis_parameter ≈ FPlane(Float64; latitude=39.0916).f rtol=1e-6    # 2Ω sin φ, sidereal Ω
     @test case.config.minimum_wind_speed == 1.0 && case.config.gustiness == 0.0 && case.config.fit_error < 0.01
     @test case.config.surface_emissivity == 0.95 && case.config.liquid_effective_radius == 14e-6
-    @test case.protocol_member == LASSO_MEMBER && occursin("member $LASSO_MEMBER", case.config.label)
-    @test case.bundle.member.aerosol == "aer2"
+    @test case.config.member == LASSO_MEMBER && occursin("member $LASSO_MEMBER", case.config.label)
+    @test case.config.bundle.member.aerosol == "aer2"
     @test case.config.epoch == string(LASSO_EPOCH) && case.config.day0 == 199.0
     # the vertical grid is the grd file's: 30 levels, uniform 25 m below 600 m
     @test grid.Nz == 30 && zc[1] == 12.5 && zc[24] == 587.5
@@ -248,7 +249,6 @@ end
     @test record_heights(snd)[1] ≈ z₁ && z₁ < 0
     @test record_heights(snd)[2] ≈ z₁ + 287 / (2 * 9.81) * (T₁ + T₂) * log(snd.p[1] / snd.p[2])
     # winds are ground-relative: the sounding wind is the initial wind, the nudging target is uls itself
-    @test !case.config.translation_frame_applied && case.config.translation_velocity_u == 0
     @test Array(interior(case.model.velocities.u, 1, 1, :)) ≈ case.columns.u
     # forcing profiles at several heights and times reproduce the analytic fixture (linear in z, scale 1 → 2 over the day)
     fp = case.forcing_profiles
@@ -287,53 +287,63 @@ end
     @test all(x -> all(isfinite, interior(x)), values(Oceananigans.prognostic_fields(case.model)))
     mktempdir() do dir
         record = TOML.parsefile(write_provenance(joinpath(dir, "provenance.toml"), case))
-        @test record["protocol"] == "lasso_ena_official" && record["protocol_member"] == LASSO_MEMBER
-        @test record["bundle"]["member"]["samin"] == lasso_samin_filename(parse_lasso_member(LASSO_MEMBER))
-        @test record["bundle"]["sam_reference"]["commit"] == "12d02446a2147388dc89d828e6e0553106abea0f"
-        @test haskey(record["bundle"]["checksums"], "grd") && record["inputs"]["grd_sha256"] == record["bundle"]["checksums"]["grd"]
-        @test record["bundle"]["time"]["day_end"] ≈ 199.0 + 3600 / 86400
-        @test record["protocol_overrides"]["stop_time"] == 4.0
-        @test any(occursin("diagCCN", w) for w in record["bundle"]["warnings"])
+        bundle = record["config"]["bundle"]
+        @test record["protocol"] == "lasso_ena_official" && record["config"]["member"] == LASSO_MEMBER
+        @test bundle["member"]["samin"] == lasso_samin_filename(parse_lasso_member(LASSO_MEMBER))
+        @test bundle["sam_reference"]["commit"] == "12d02446a2147388dc89d828e6e0553106abea0f"
+        @test haskey(bundle["checksums"], "grd") && record["inputs"]["grd_sha256"] == bundle["checksums"]["grd"]
+        @test bundle["time"]["day_end"] ≈ 199.0 + 3600 / 86400
+        @test record["config"]["stop_time"] == 4.0
+        @test any(occursin("diagCCN", w) for w in bundle["warnings"])
     end
 
     # a namelist fcor becomes the f-plane parameter
     mktempdir() do dir
         lasso_copy(dir)
         rewrite_prm(dir, "nrad = 30" => "nrad = 30, fcor = 9.19626e-05")
-        withf = ena_simulation(dir; common..., stop_time=2.0)
+        withf = ena_lasso(; common..., bundle_dir=dir, stop_time=2.0)
         @test withf.model.coriolis.f ≈ 9.19626e-5 && withf.config.coriolis_parameter_source == "namelist fcor"
     end
     # a namelist translation frame is recorded but not applied with bulk fluxes (ground-relative winds)
     mktempdir() do dir
         lasso_copy(dir)
         rewrite_prm(dir, "nrad = 30, ug = 0.0, vg = 0.0" => "nrad = 30, ug = 5.0, vg = -8.0")
-        moving = ena_simulation(dir; common..., stop_time=2.0)
-        @test moving.config.sam_translation_u == 5.0 && moving.config.sam_translation_v == -8.0
-        @test !moving.config.translation_frame_applied
+        moving = ena_lasso(; common..., bundle_dir=dir, stop_time=2.0, wind_nudging=false)
+        @test !any(f -> f isa MeanProfileNudging, moving.forcing.u) && "wind_nudging" in moving.config.overrides
+        @test moving.config.bundle.switches.sam_translation == (5.0, -8.0)    # recorded, not applied
         @test Array(interior(moving.model.velocities.u, 1, 1, :)) ≈ moving.columns.u
         @test moving.forcing_profiles.uls[1, 1, 1, Time(0.0)] ≈ 5 + 0.002 * zc[1]
-        @test_throws ArgumentError ena_simulation(dir; common..., translation_velocity=(5.0, -8.0))
         # perturbation case 0 of a namelist without perturb_type reaches the initial state
         rewrite_prm(dir, "perturb_type = 5," => "")
-        case0 = ena_simulation(dir; common..., stop_time=2.0)
+        case0 = ena_lasso(; common..., bundle_dir=dir, stop_time=2.0)
         @test case0.config.perturbation == string(InitialPerturbation(sam_perturb_type=0))
         T = Array(interior(case0.model.temperature))
         @test maximum(abs, T[:, :, 1] .- case0.columns.T[1]) ≤ 0.1 + 1e-3 && maximum(abs, T[:, :, 1] .- case0.columns.T[1]) > 1e-3
         @test all(isapprox.(T[:, :, 7], case0.columns.T[7]; rtol=1e-6))      # no perturbation above level 5
     end
+  end
 end
 
-@testset "LASSO protocol defaults build with RRTMGP on the CPU" begin
-    # The production radiation path (RRTMGP LW+SW, SST surface temperature, SAM emissivity,
-    # 14 μm effective radius, nrad*dt schedule) is constructed and updated once on a tiny grid;
-    # the Covert CPU tests use :simple radiation and never reached this branch.
-    case = ena_simulation(LASSO_FIXTURE; protocol=:lasso_ena_official, member=LASSO_MEMBER, epoch=LASSO_EPOCH,
-                          dimensions=LASSO_DIMS, FT=Float32, Nx=8, Ny=8, Lx=800, Ly=800, microphysics=:one_moment,
-                          aerosol_replenishment=nothing, write_output=false, progress_interval=100)
-    @test case.config.radiation == "rrtmgp" && case.config.radiation_interval == 60.0
+@testset "LASSO protocol defaults build on the CPU" begin
+    # The production path: RRTMGP LW+SW (SST surface temperature, SAM emissivity, 14 μm effective
+    # radius, nrad*dt schedule) and the member's P3 aerosol with the diagCCN reservoir rule.
+    case = with_float_type(Float32) do
+        ena_lasso(; member=LASSO_MEMBER, epoch=LASSO_EPOCH, bundle_dir=LASSO_FIXTURE, dimensions=LASSO_DIMS, arch=CPU(),
+                    Nx=8, Ny=8, Lx=800, Ly=800, write_output=false, progress_interval=100)
+    end
+    @test case.config.radiation == "RRTMGP all-sky LW+SW" && case.config.radiation_interval == 60.0
     @test case.config.surface_emissivity == 0.95 && case.config.liquid_effective_radius == 14e-6
     @test !isnothing(case.model.radiation)
     @test case.model.radiation.solar_position.epoch == LASSO_EPOCH
+    # protocol microphysics: P3 with the member's aer2 modes, capped at ss_max = 0.3 %, on the first-level density
+    @test case.config.protocol_microphysics && case.config.diagnostic_ccn && case.config.aerosol_supersaturation_cap == 0.003
+    ρ₁ = Array(interior(case.model.dynamics.reference_state.density, 1, 1, :))[1]
+    expected = with_float_type(Float32) do
+        lasso_aerosol(; reference_density=ρ₁, maximum_supersaturation=0.003).modes
+    end
+    @test [m.number_mixing_ratio for m in case.model.microphysics.aerosol.modes] == [m.number_mixing_ratio for m in expected]
+    @test ρ₁ == with_float_type(() -> first_level_reference_density(LASSO_FIXTURE, case.bundle.grid.faces), Float32)
+    @test haskey(case.model.microphysical_fields, :ρnᵃ)
     Oceananigans.TimeSteppers.update_state!(case.model)
     @test all(isfinite, interior(case.model.radiation.flux_divergence))
 end
@@ -363,7 +373,7 @@ end
 end
 
 @testset "ena_lasso constructor wrapper" begin
-    err = caught(() -> ena_lasso(joinpath(LASSO_FIXTURE, "absent"); member=LASSO_MEMBER, epoch=LASSO_EPOCH))
+    err = caught(() -> ena_lasso(; bundle_dir=joinpath(LASSO_FIXTURE, "absent"), member=LASSO_MEMBER, epoch=LASSO_EPOCH))
     @test err isa ArgumentError
     message = sprint(showerror, err)
     @test occursin("enalasso_samin_20170718era5d25x100_sbmwrm-aer2-flxsstC1.m0.20170718.000000.tar", message)
@@ -376,19 +386,21 @@ end
         @test lasso_bundle_directory(LASSO_MEMBER) == LASSO_FIXTURE
     end
     # the documented d25x100 domain disagrees with the 16×16×30 fixture (grd has 30 levels)
-    @test_throws ArgumentError ena_lasso(LASSO_FIXTURE; member=LASSO_MEMBER, epoch=LASSO_EPOCH, arch=CPU())
+    @test_throws ArgumentError ena_lasso(; bundle_dir=LASSO_FIXTURE, member=LASSO_MEMBER, epoch=LASSO_EPOCH, arch=CPU())
     mktempdir() do staged
         lasso_copy(staged)
         write(joinpath(staged, "bundle.toml"), "member = \"$LASSO_MEMBER\"\narchive_sha256 = \"test\"\n")
         output = joinpath(staged, "output")
-        case = ena_lasso(staged; member=LASSO_MEMBER, epoch=LASSO_EPOCH, dimensions=LASSO_DIMS, arch=CPU(), FT=Float64,
-                         Nx=8, Ny=8, Lx=800, Ly=800, microphysics=:one_moment, radiation=nothing, aerosol_replenishment=nothing,
-                         stop_time=2.0, timeseries_interval=1.0, profile_interval=2.0, slice_interval=2.0,
-                         output_dir=output, progress_interval=100)
-        @test case.staging["archive_sha256"] == "test" && case.dimension_request == "(16, 16, 30)"
+        case = with_float_type(Float64) do
+            ena_lasso(; bundle_dir=staged, member=LASSO_MEMBER, epoch=LASSO_EPOCH, dimensions=LASSO_DIMS, arch=CPU(),
+                        Nx=8, Ny=8, Lx=800, Ly=800, microphysics=one_moment_microphysics(), radiation=false,
+                        stop_time=2.0, timeseries_interval=1.0, profile_interval=2.0, slice_interval=2.0,
+                        output_dir=output, progress_interval=100)
+        end
+        @test case.config.staging["archive_sha256"] == "test" && case.config.dimension_request == "(16, 16, 30)"
         @test case.model.clock.iteration == 0
         record = TOML.parsefile(write_provenance(joinpath(output, "provenance.toml"), case))
-        @test record["staging"]["member"] == LASSO_MEMBER
+        @test record["config"]["staging"]["member"] == LASSO_MEMBER
         run!(case.simulation)
         series = breezelab_timeseries(output)
         @test series.protocol == "lasso_ena_official" && series.epoch == LASSO_EPOCH

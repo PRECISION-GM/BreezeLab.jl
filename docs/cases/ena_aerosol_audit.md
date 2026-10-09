@@ -92,18 +92,19 @@ fallback, which the prognostic path does not use (`process_rates.jl` L1055–105
 
 ## Fix on this branch
 
-- `lasso_aerosol_modes(; mass_fraction_soluble = 1, maximum_supersaturation = nothing)`:
+- `lasso_aerosol(; reference_density, mass_fraction_soluble = 1, maximum_supersaturation = nothing)`
+  (at the time of the audit `lasso_aerosol_modes`):
   explicit full solubility (fixes #1) and an optional SBM-cap emulation that scales each
   mode's number to the fraction activatable below `maximum_supersaturation`
   (`activated_fraction`, evaluated with Breeze's own `activated_number`): for aer2 at
   0.3 % that is ≈ 8 % of mode 1 and ≈ 89 % of mode 2, i.e. ≈ 270 cm⁻³ activatable in total
   (fixes #2 as an explicit, recorded approximation: the lognormal shape is kept, so activation
-  at low supersaturation is slightly underestimated). Exposed as
-  `aerosol_supersaturation_cap` in `build_case`/`ena_simulation`, `--aerosol_ss_cap` in the
-  CLI, recorded in provenance with the activatable fractions.
+  at low supersaturation is slightly underestimated). The cap is a keyword of the aerosol
+  helper, `--aerosol_ss_cap` in the CLI, and the resulting mode numbers are recorded in
+  provenance. `ena_lasso` applies it by default.
 - #3 is left as the protocol default (the SBM also starts condensate-free), but with the
   cap the initial burst cannot exceed the SBM's activatable total; the alternative
-  `p3_initialization = :equilibrium, initial_droplet_number = 75e6` remains available.
+  `initialization = :equilibrium, initial_droplet_number = 75e6` remains available.
 - #4 is a labelling matter: the Covert benchmark's case-consistent P3 member is `p3_n75`;
   `p3_aer2` is documented here as a LASSO-aerosol sensitivity.
 - A proper fix of #2 belongs in Breeze (`AerosolActivation(; maximum_supersaturation)`

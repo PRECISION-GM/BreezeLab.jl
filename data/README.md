@@ -19,7 +19,7 @@ member (candidate: `20170718era5s1n0d25x100_sbmwrm-aer2-flxsst`), obtained with 
 account from the LASSO-ENA Bundle Browser
 (<https://lasso-ena.svcs.arm.gov/latest/bundle_browser.html>). **Do not commit it.**
 Extract it as `data/lasso/<run-id>/` so that `snd`, `lsf`, `sfc`, `prm` (and `grd`) sit in
-that directory, then select `ena_simulation(...; protocol=:lasso_ena_official, epoch=...)`.
+that directory, then build the member with `ena_lasso(; member, epoch, bundle_dir)`.
 See [the protocol instructions](../docs/cases/ena.md#lasso-ena). Record the run id, DOI
 (10.5439/2572661), download date and `sha256sum` of the archive in your own provenance
 file. `cases/cli/run_case.jl` records extracted input-file checksums automatically;
