@@ -176,50 +176,25 @@ save(joinpath(output_dir, "cloud_fraction_time_height.png"), fig2)
 
 # ## Water and energy budget checks
 #
-# Column water: d(PW + LWP + RWP + IWP)/dt = E − P + S_q, with E the prescribed surface vapor
-# flux, P the surface rain + ice flux and S_q = ∫ρ qls dz the imposed large-scale vapor
-# source (from the model's own forcing profiles). Column static energy:
-# dS/dt ≈ F_E + ∫(−∂F_rad/∂z) dz + ∫ρ cᵖ tls dz, with F_E the prescribed energy flux;
-# the enthalpy carried out by precipitation is not included, so this check is approximate.
-# Residuals are reported relative to the integrated source magnitudes.
+# Column water: d(PW + LWP + RWP + IWP)/dt = E − P + ∫ρ qls dz. Energy: the moist enthalpy
+# H = ∫ρ (h + gz) dz with h = cᵖᵐ(T − Tᵣ) + ℒˡᵣ qᵛ + (ℒˡᵣ − ℒⁱᵣ) qⁱ, which phase changes conserve,
+# is reconstructed exactly from the saved column static energy and water paths; its sources are
+# the surface heat flux plus the enthalpy of the evaporated water, radiation, the large-scale
+# forcing including the enthalpy of its vapor source, and the exchange of precipitation with dry
+# air at the surface (`tracer_dp_scream_budget`, totals and per day). A column static-energy
+# budget would not close here: removing precipitating condensate removes its −ℒ q contribution.
 
-_, S = read_series("column_static_energy")
-_, R = read_series("column_radiative_heating")
-ρᵣ = Array(interior(case.model.dynamics.reference_state.density, 1, 1, :))
-Δz = diff(Array(znodes(case.grid, Face())))
-# the forcing profiles are held piecewise constant, so the record at or before `tt` is exact
-function column_source(fts, tt)
-    times = Array(fts.times)        # the FieldTimeSeries clock lives on the GPU; no scalar indexing
-    n = max(1, searchsortedlast(times, tt))
-    column = Array(interior(fts[n], 1, 1, :))
-    return sum(ρᵣ[k] * column[k] * Δz[k] for k in eachindex(Δz))
-end
-constants = case.model.thermodynamic_constants
-ℒ = constants.liquid.reference_latent_heat
-sfc = case.sfc
-surface_value(values, tt) = interpolate_profile(day_to_seconds.(sfc.day, case.config.day0), values, tt)
-cᵖᵈ = constants.dry_air.heat_capacity; cᵖᵛ = constants.vapor.heat_capacity
-trapz(f) = sum((f[n] + f[n+1]) / 2 * (t[n+1] - t[n]) for n in 1:length(t)-1)
-E = [surface_value(sfc.latent_heat_flux, tt) / ℒ for tt in t]
-Sq = [column_source(case.forcing_profiles.qls, tt) for tt in t]
-P = rain .+ ice
-W = pw .+ lwp .+ rwp .+ iwp
-water_residual = (W[end] - W[1]) - trapz(E .- P .+ Sq)
-FE = [surface_value(sfc.sensible_heat_flux, tt) + (cᵖᵛ - cᵖᵈ) * surface_value(sfc.sst, tt) * E[n] for (n, tt) in enumerate(t)]
-St = [cᵖᵈ * column_source(case.forcing_profiles.tls, tt) for tt in t]
-energy_residual = (S[end] - S[1]) - trapz(FE .+ R .+ St)
-budget = Dict("water" => Dict("delta_total_water_kg_m2" => W[end] - W[1], "integrated_evaporation" => trapz(E),
-                              "integrated_precipitation" => trapz(P), "integrated_large_scale_source" => trapz(Sq),
-                              "residual_kg_m2" => water_residual,
-                              "residual_relative_to_sources" => abs(water_residual) / max(trapz(abs.(E) .+ abs.(P) .+ abs.(Sq)), 1e-12)),
-              "energy" => Dict("delta_column_static_energy_J_m2" => S[end] - S[1], "integrated_surface_energy_flux" => trapz(FE),
-                               "integrated_radiative_heating" => trapz(R), "integrated_large_scale_heating" => trapz(St),
-                               "residual_J_m2" => energy_residual,
-                               "residual_relative_to_sources" => abs(energy_residual) / max(trapz(abs.(FE) .+ abs.(R) .+ abs.(St)), 1e-12),
-                               "note" => "precipitation enthalpy export not included"),
-              "final_time_seconds" => t[end], "all_finite" => all(isfinite, W) && all(isfinite, S))
+budget = tracer_dp_scream_budget(case, joinpath(output_dir, "tracer_timeseries.jld2"), joinpath(output_dir, "tracer_profiles.jld2"))
+budget_toml(x::NamedTuple) = Dict(string(k) => budget_toml(v) for (k, v) in pairs(x))
+budget_toml(x::AbstractVector) = [budget_toml(v) for v in x]
+budget_toml(x::Real) = Float64(x)
+budget_toml(x) = x
 open(joinpath(output_dir, "budget.toml"), "w") do io
-    TOML.print(io, budget)
+    TOML.print(io, Dict("total" => budget_toml(budget.total), "daily" => budget_toml(budget.periods),
+                        "applied_vapor_cross_term" => budget.applied_vapor_cross_term,
+                        "method" => "moist enthalpy and column water from the 60-s series; see src/tracer_dp_scream/budget.jl"))
 end
-@info "Water budget residual $(water_residual) kg m⁻² (relative $(budget["water"]["residual_relative_to_sources"])); energy residual $(energy_residual) J m⁻² (relative $(budget["energy"]["residual_relative_to_sources"]))"
+@info @sprintf("water residual %.3f kg m⁻² (%.2f %% of sources); enthalpy residual %.2f MJ m⁻² (%.2f %% of sources)",
+               budget.total.water.residual, 100 * budget.total.water.relative,
+               budget.total.energy.residual / 1e6, 100 * budget.total.energy.relative)
 fig #src
