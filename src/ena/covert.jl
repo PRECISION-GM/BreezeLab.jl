@@ -112,6 +112,10 @@ caller replaces is listed in `config.overrides` and appended to the label):
 - `stop_time` (`nstop × dt`), `Δt` (`dt`), `max_Δt = Δt` (fixed step), `cfl = 0.7`
 - `translation_velocity` (namelist `ug`, `vg`): SAM's translating frame
 - `sponge = SAMSponge()`, `closure = SmagorinskyLilly()`, `advection_order = 5`
+- `radiation = :simple_longwave` (the protocol's SAM `rad_simple`, every step) or `:rrtmgp_longwave`
+  (a sensitivity, recorded as an override: RRTMGP all-sky optics with the solar constant set to 0 so
+  only longwave acts, every 60 s, over the sfc SST with emissivity 0.95, 10 μm / 30 μm liquid/ice
+  effective radii and 405 ppm CO₂; the column ends at the LES top)
 - `perturbation = InitialPerturbation()` (`setperturb.f90` case 5)
 - `initialization = :condensate_free` or `:equilibrium` (P3 only), `initial_droplet_number`
 - output: `write_output`, `output_dir`, `output_prefix`, `profile_interval = 1hour`,
@@ -134,6 +138,7 @@ function ena_covert(; arch = GPU(),
                       translation_velocity = nothing,
                       sponge = SAMSponge(),
                       closure = SmagorinskyLilly(),
+                      radiation = :simple_longwave,
                       advection_order = 5,
                       perturbation = InitialPerturbation(),
                       initialization = :condensate_free,
@@ -167,6 +172,7 @@ function ena_covert(; arch = GPU(),
 
     overrides = [name for (name, value) in pairs((; Nx, Ny, Lx, Ly, z_faces, stop_time, Δt, translation_velocity))
                  if !isnothing(value)]
+    radiation === :simple_longwave || push!(overrides, :radiation)
     nx, ny, nz = parse_caseid(namelist["caseid"])
     z_faces = isnothing(z_faces) ? covert_public_bin_vertical_faces(; Nz = nz) : z_faces
     Nx = something(Nx, nx)
@@ -251,16 +257,40 @@ function ena_covert(; arch = GPU(),
     ##### Surface: prescribed H, LE and wind-aligned stress τ (SFC_FLX_FXD, SFC_TAU_FXD)
     #####
 
+    # the (cᵖᵛ - cᵖᵈ) T E term belongs to the static-energy formulation only (false here); the output
+    # writer's sensible-heat diagnostic follows the same setting
+    temperature_neutral_evaporation = default_temperature_neutral_evaporation(:LiquidIcePotentialTemperature)
     boundary_conditions, stress = prescribed_surface_flux_boundary_conditions(grid, sfc, day0;
                                                                              thermodynamic_constants = constants,
                                                                              surface_density = ρᵣ[1], moisture_name,
+                                                                             formulation = :LiquidIcePotentialTemperature,
+                                                                             temperature_neutral_evaporation,
                                                                              frame_velocity = (uᶠ, vᶠ))
 
     #####
     ##### Radiation: SAM rad_simple longwave, every step
     #####
 
-    radiation = SimpleLongwaveRadiation(grid; schedule = IterationInterval(1))
+    radiation in (:simple_longwave, :rrtmgp_longwave) ||
+        throw(ArgumentError("radiation must be :simple_longwave (the protocol) or :rrtmgp_longwave, got $radiation"))
+    radiation_scheme = radiation
+    sst_updater = nothing
+    radiation = if radiation_scheme === :simple_longwave
+        SimpleLongwaveRadiation(grid; schedule = IterationInterval(1))
+    else
+        surface_series = surface_time_series(grid, sfc, day0)
+        Tₛ = Field{Center, Center, Nothing}(grid)
+        set!(Tₛ, FT(sfc.sst[1]))
+        sst_updater = SeaSurfaceTemperatureUpdater(Tₛ, surface_series.times, FT.(sfc.sst))
+        RadiativeTransferModel(grid, AllSkyOptics(), constants;
+                               surface_temperature = Tₛ, surface_emissivity = 0.95, surface_albedo = 0.07,
+                               solar_constant = 0,
+                               background_atmosphere = BackgroundAtmosphere(CO₂ = 405e-6, CH₄ = 1.85e-6, N₂O = 330e-9),
+                               solar_position = ApparentSolarPosition(; coordinate = (longitude, latitude), epoch),
+                               schedule = TimeInterval(60),
+                               liquid_effective_radius = ConstantRadiusParticles(10e-6),
+                               ice_effective_radius = ConstantRadiusParticles(30e-6))
+    end
 
     #####
     ##### Model and initial state
@@ -284,6 +314,7 @@ function ena_covert(; arch = GPU(),
     stress_updater = prescribed_stress_updater(stress, model.velocities)
     stress_updater(simulation)                            # the stress of the initial wind
     add_callback!(simulation, stress_updater, IterationInterval(1))
+    isnothing(sst_updater) || add_callback!(simulation, sst_updater, IterationInterval(1))
     if diagnostic_ccn
         n_initial = sum(mode.number_mixing_ratio for mode in microphysics.aerosol.modes)
         add_callback!(simulation, DiagnosticCCNProjection(model, n_initial), IterationInterval(1))
@@ -293,7 +324,8 @@ function ena_covert(; arch = GPU(),
     if write_output
         mkpath(output_dir)
         add_output_writers!(simulation; output_dir, output_prefix, profile_interval,
-                            timeseries_interval, slice_interval, slice_height)
+                            timeseries_interval, slice_interval, slice_height,
+                            energy_budget_series = true, temperature_neutral_evaporation)
         if !isnothing(checkpoint_interval)
             simulation.output_writers[:checkpointer] =
                 Checkpointer(model; schedule = TimeInterval(checkpoint_interval), dir = output_dir,
@@ -309,8 +341,9 @@ function ena_covert(; arch = GPU(),
                 microphysics_record(microphysics; reference_density = ρᵣ[1])...,
                 diagnostic_ccn, initialization = string(initialization),
                 initial_droplet_number = something(initial_droplet_number, 0),
-                radiation = "SAM rad_simple longwave (every step)",
-                surface = "prescribed H, LE and wind-aligned τ (SFC_FLX_FXD, SFC_TAU_FXD)",
+                radiation = radiation_scheme === :simple_longwave ? "SAM rad_simple longwave (every step)" :
+                            "RRTMGP all-sky longwave only (solar constant 0), every 60 s, SST surface, emissivity 0.95, r_eff 10/30 μm",
+                surface = "prescribed H, LE and wind-aligned τ (SFC_FLX_FXD, SFC_TAU_FXD)", temperature_neutral_evaporation,
                 wind_nudging = "none (donudging_uv = .false.)",
                 sponge = isnothing(sponge) ? "nothing" : summary(sponge),
                 closure = isnothing(closure) ? "nothing" : summary(closure), advection_order,

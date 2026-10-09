@@ -3,7 +3,10 @@
 #####
 
 function add_output_writers!(simulation; output_dir, output_prefix, profile_interval,
-                             timeseries_interval, slice_interval, slice_height)
+                             timeseries_interval, slice_interval, slice_height,
+                             energy_budget_series = false,
+                             temperature_neutral_evaporation = false,
+                             in_cloud_threshold = 1e-5)
     model = simulation.model
     grid = model.grid
     u, v, w = model.velocities
@@ -30,6 +33,9 @@ function add_output_writers!(simulation; output_dir, output_prefix, profile_inte
     profiles = NamedTuple(name => (horizontally_reduced(f) ? f : Average(f, dims=(1, 2)))
                           for (name, f) in pairs(profile_fields))
 
+    in_cloud = energy_budget_series ? in_cloud_droplet_number(model; threshold = in_cloud_threshold) : nothing
+    isnothing(in_cloud) || (profiles = merge(profiles, (; cloudy_droplet_number = in_cloud.profile)))
+
     simulation.output_writers[:profiles] =
         JLD2Writer(model, profiles; filename = joinpath(output_dir, output_prefix * "_profiles.jld2"),
                    schedule = AveragedTimeInterval(profile_interval), overwrite_files = true)
@@ -51,6 +57,17 @@ function add_output_writers!(simulation; output_dir, output_prefix, profile_inte
     end
     if !isnothing(model.radiation)
         timeseries = merge(timeseries, (; column_radiative_heating = Average(Field(Integral(model.radiation.flux_divergence, dims=3)), dims=(1, 2))))
+    end
+
+    if energy_budget_series
+        # SAM's SHF/LHF, LWNS/SWNS, LWNT/SWNT (here at the LES top) and the in-cloud droplet number
+        fluxes = surface_heat_fluxes(model; temperature_neutral_evaporation)
+        timeseries = merge(timeseries, (; surface_sensible_heat_flux = Average(fluxes.sensible, dims=(1, 2)),
+                                          surface_latent_heat_flux = Average(fluxes.latent, dims=(1, 2))))
+        radiative = radiative_boundary_fluxes(model.radiation, grid)
+        timeseries = merge(timeseries, NamedTuple(name => Average(f, dims=(1, 2)) for (name, f) in pairs(radiative)))
+        isnothing(in_cloud) || (timeseries = merge(timeseries, (; in_cloud_droplet_number = in_cloud.mean,
+                                                                  cloudy_volume_fraction = in_cloud.cloudy_fraction)))
     end
 
     simulation.output_writers[:timeseries] =
