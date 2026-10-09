@@ -327,7 +327,8 @@ function ena_lasso(; member = DEFAULT_LASSO_MEMBER,
     if write_output
         mkpath(output_dir)
         add_output_writers!(simulation; output_dir, output_prefix, profile_interval,
-                            timeseries_interval, slice_interval, slice_height)
+                            timeseries_interval, slice_interval, slice_height,
+                            energy_budget_series = true)
         if !isnothing(checkpoint_interval)
             simulation.output_writers[:checkpointer] =
                 Checkpointer(model; schedule = TimeInterval(checkpoint_interval), dir = output_dir,

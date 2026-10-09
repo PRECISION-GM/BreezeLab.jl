@@ -752,6 +752,7 @@ end # BreezeLab
 
 include("ena_protocols.jl")
 include("ena_lasso.jl")
+include("energy_budget_series.jl")
 include("arm_observations.jl")
 include("arm_download.jl")
 include("manifest_download.jl")
