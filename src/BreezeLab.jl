@@ -57,6 +57,7 @@ export
     KappaAerosolMode, kappa_aerosol_activation, kappa_critical_supersaturation,
     SurfaceAerosolSource, EvaporationRegeneration, EvaporationRateUpdater, cloud_evaporation_rate_field, aerosol_number_columns,
     InversionFollowingNudging, InversionMaskUpdater, inversion_height_field, nudging_mask_weights,
+    extended_column_radiation, upper_atmosphere_layers, TrajectorySolarPosition, trajectory_cos_zenith, composite_trajectory_path,
     sea_starr, sea_starr_driver_path,
     # TRACER-MIP (regional nested coastal control; the regional constructor lives in the NumericalEarth extension)
     tracer_mip_protocol, tracer_mip_case_window, acpc_vertical_faces, tracer_mip_horizontal_extent, tracer_mip_grid,
@@ -92,6 +93,7 @@ include("tracer_dp_scream.jl")
 include("dephy_driver.jl")
 include("sea_starr_aerosol.jl")
 include("sea_starr_forcings.jl")
+include("sea_starr_radiation.jl")
 include("sea_starr.jl")
 include("tracer_mip/protocol.jl")
 include("tracer_mip/aerosol_profiles.jl")
