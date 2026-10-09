@@ -54,7 +54,7 @@ window(d) = (d["time"] .>= t0) .& (d["time"] .<= t0 + Hour(24))
 sondes = Dict{String, Dict{String, Vector{Float64}}}()
 for f in sort(filter(x -> startswith(x, "housondewnpnM1.b1.20220807"), readdir(arm_dir)))
     ds = NCDataset(joinpath(arm_dir, f)); alt = Float64.(ds["alt"][:]); keep = findall(a -> a < 20000, alt)
-    sondes[f[22:27]] = Dict("z" => alt[keep] .- alt[1], "T" => Float64.(ds["tdry"][keep]) .+ 273.15, "rh" => Float64.(ds["rh"][keep]), "wspd" => Float64.(ds["wspd"][keep]), "p" => 100 .* Float64.(ds["pres"][keep]))
+    sondes[f[28:33]] = Dict("z" => alt[keep] .- alt[1], "T" => Float64.(ds["tdry"][keep]) .+ 273.15, "rh" => Float64.(ds["rh"][keep]), "wspd" => Float64.(ds["wspd"][keep]), "p" => 100 .* Float64.(ds["pres"][keep]))
     close(ds)
 end
 
