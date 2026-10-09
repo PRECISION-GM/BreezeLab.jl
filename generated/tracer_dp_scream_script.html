@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Case script · BreezeLab</title><meta name="title" content="Case script · BreezeLab"/><meta property="og:title" content="Case script · BreezeLab"/><meta property="twitter:title" content="Case script · BreezeLab"/><meta name="description" content="Documentation for BreezeLab."/><meta property="og:description" content="Documentation for BreezeLab."/><meta property="twitter:description" content="Documentation for BreezeLab."/><script data-outdated-warner src="../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.63.2/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL=".."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../assets/documenter.js"></script><script src="../search_index.js"></script><script src="../siteinfo.js"></script><script src="../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../index.html">BreezeLab</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../index.html">Home</a></li><li><a class="tocitem" href="campaign_results.html">Campaign results</a></li><li><span class="tocitem">Eastern North Atlantic</span><ul><li><a class="tocitem" href="eastern_north_atlantic.html">ENA example (executed)</a></li><li><a class="tocitem" href="ena_protocols.html">ENA protocols</a></li><li><a class="tocitem" href="ena_covert_analysis.html">ENA-covert analysis</a></li><li><a class="tocitem" href="ena_aerosol_audit.html">ENA aerosol audit</a></li><li><a class="tocitem" href="ena_lasso.html">ENA-LASSO member</a></li><li><a class="tocitem" href="ena_lasso_script.html">ENA-LASSO case script</a></li></ul></li><li><span class="tocitem">SEA STARR</span><ul><li><a class="tocitem" href="sea_starr.html">Driver inventory and mapping</a></li><li><a class="tocitem" href="sea_starr_script.html">Case script</a></li></ul></li><li><span class="tocitem">TRACER–DP-SCREAM</span><ul><li><a class="tocitem" href="tracer_dp_scream.html">Case description</a></li><li class="is-active"><a class="tocitem" href="tracer_dp_scream_script.html">Case script</a><ul class="internal"><li><a class="tocitem" href="#Settings"><span>Settings</span></a></li><li><a class="tocitem" href="#Build-the-simulation"><span>Build the simulation</span></a></li><li><a class="tocitem" href="#Run"><span>Run</span></a></li><li><a class="tocitem" href="#Analysis:-time-series-against-the-archived-DP-SCREAM-runs"><span>Analysis: time series against the archived DP-SCREAM runs</span></a></li><li><a class="tocitem" href="#Time–height-cloud-fraction"><span>Time–height cloud fraction</span></a></li><li><a class="tocitem" href="#Water-and-energy-budget-checks"><span>Water and energy budget checks</span></a></li></ul></li></ul></li><li><span class="tocitem">TRACER-MIP</span><ul><li><a class="tocitem" href="tracer_mip.html">Case description</a></li><li><a class="tocitem" href="tracer_mip_script.html">Case script</a></li></ul></li><li><a class="tocitem" href="../api.html">Case API</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">TRACER–DP-SCREAM</a></li><li class="is-active"><a href="tracer_dp_scream_script.html">Case script</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href="tracer_dp_scream_script.html">Case script</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/PRECISION-GM/BreezeLab.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/PRECISION-GM/BreezeLab.jl/blob/main/cases/tracer_dp_scream.jl" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="TRACER-–-DP-SCREAM-matched-periodic-case"><a class="docs-heading-anchor" href="#TRACER-–-DP-SCREAM-matched-periodic-case">TRACER – DP-SCREAM-matched periodic case</a><a id="TRACER-–-DP-SCREAM-matched-periodic-case-1"></a><a class="docs-heading-anchor-permalink" href="#TRACER-–-DP-SCREAM-matched-periodic-case" title="Permalink"></a></h1><p>This example builds, runs and analyzes a doubly periodic Breeze LES driven by the forcing of the published DP-SCREAM TRACER experiment (Oware et al. 2025, doi 10.1029/2025JD044113): the ARM VARANAL IOP file <code>TRACER_iopfile_4scam.nc</code> used by the E3SM scmlib script <code>run_dpxx_scream_TRACER.csh</code>. The archived DP-SCREAM August run started at 2022-08-01 00 UTC; the paper&#39;s 5–15 August window is its days 5–15, so the baseline reproduces that initialization and continuous forcing history. The LES (Smagorinsky–Lilly at 200 m on 51.2 km, 160 levels to 22 km, P3 with prescribed droplet number, prescribed IOP heat fluxes with bulk drag, RRTMGP, no Coriolis, no wind nudging — see <code>tracer_dp_scream</code> for the evidence) is an intentional physics/resolution departure from SHOC at 3.33 km on 200 km, not a DP-SCREAM reproduction.</p><p>Fetch the pinned inputs and reference outputs with <code>julia data_wrangling/fetch_manifest.jl cases/tracer_dp_scream/inputs.toml data/tracer_dp_scream</code>, then run <code>julia --project cases/tracer_dp_scream.jl</code> on an NVIDIA GPU. The Slurm wrapper <code>execution/tracer_dp_scream.sbatch</code> sets the environment variables read below.</p><pre><code class="language-julia hljs">using BreezeLab
+using Oceananigans, Oceananigans.Units
+using Dates: Dates, DateTime, Second, Hour
+using CairoMakie
+using Statistics: mean
+using TOML: TOML</code></pre><h2 id="Settings"><a class="docs-heading-anchor" href="#Settings">Settings</a><a id="Settings-1"></a><a class="docs-heading-anchor-permalink" href="#Settings" title="Permalink"></a></h2><p>The default run covers the full window (14 days). A short integration sets <code>TRACER_DP_SCREAM_STOP_TIME</code> (seconds); <code>TRACER_DP_SCREAM_PICKUP_FROM</code> names a previous output directory whose latest checkpoint is continued (new output files, same forcing).</p><pre><code class="language-julia hljs">data_dir = joinpath(pkgdir(BreezeLab), &quot;data&quot;, &quot;tracer_dp_scream&quot;)
+start = DateTime(2022, 8, 1)
+stop = DateTime(2022, 8, 15)
+full_duration = Dates.value(stop - start) / 1000
+stop_time = parse(Float64, get(ENV, &quot;TRACER_DP_SCREAM_STOP_TIME&quot;, string(full_duration)))
+checkpoint_interval = parse(Float64, get(ENV, &quot;TRACER_DP_SCREAM_CHECKPOINT&quot;, &quot;21600&quot;))
+output_dir = get(ENV, &quot;TRACER_DP_SCREAM_OUTPUT&quot;, joinpath(pkgdir(BreezeLab), &quot;output&quot;, &quot;tracer_dp_scream&quot;))
+pickup_from = get(ENV, &quot;TRACER_DP_SCREAM_PICKUP_FROM&quot;, &quot;&quot;)
+arch = GPU()</code></pre><p>Horizontal grid: the baseline uses 256² cells of 200 m (51.2 km). <code>TRACER_DP_SCREAM_NX</code> and <code>TRACER_DP_SCREAM_DX</code> override both so that a 512² × 100 m run covers the same domain.</p><pre><code class="language-julia hljs">Nx = Ny = parse(Int, get(ENV, &quot;TRACER_DP_SCREAM_NX&quot;, &quot;256&quot;))
+Δx = parse(Float64, get(ENV, &quot;TRACER_DP_SCREAM_DX&quot;, &quot;200&quot;))</code></pre><h2 id="Build-the-simulation"><a class="docs-heading-anchor" href="#Build-the-simulation">Build the simulation</a><a id="Build-the-simulation-1"></a><a class="docs-heading-anchor-permalink" href="#Build-the-simulation" title="Permalink"></a></h2><pre><code class="language-julia hljs">case = tracer_dp_scream(; iop_path = joinpath(data_dir, &quot;TRACER_iopfile_4scam.nc&quot;),
+                        start, stop, stop_time, arch, Nx, Ny, Δx,
+                        microphysics = :p3_n75, droplet_number = 200e6,
+                        output_dir, output_prefix = &quot;tracer&quot;,
+                        checkpoint_interval = checkpoint_interval &gt; 0 ? checkpoint_interval : nothing)
+simulation = case.simulation;
+nothing #hide</code></pre><h2 id="Run"><a class="docs-heading-anchor" href="#Run">Run</a><a id="Run-1"></a><a class="docs-heading-anchor-permalink" href="#Run" title="Permalink"></a></h2><p>Provenance (inputs with checksums, pinned sources, configuration, overrides) is written next to the output before the run starts. A pickup copies the latest checkpoint of the previous segment into this output directory; Oceananigans restores the prognostic state and clock, the time-step wizard re-adapts Δt within a few steps, and the surface temperature callback refreshes Tg after the first step.</p><pre><code class="language-julia hljs">mkpath(output_dir)
+write_provenance(joinpath(output_dir, &quot;provenance.toml&quot;), case;
+                 extra = (; stop_time, checkpoint_interval, pickup_from,
+                            dp_scream_reference = &quot;Zenodo 10.5281/zenodo.15271730 (3 km August run, case scream_dp_TRACER_AUGUST_decr; 0.5 km 5–15 August run)&quot;,
+                            scmlib_script = &quot;DPxx_SCREAM_SCRIPTS/run_dpxx_scream_TRACER.csh @ 2dc3f1073a5d03b5f32617e79d68fb20a63cfb43&quot;))
+pickup = false
+if !isempty(pickup_from)
+    checkpoints = filter(f -&gt; startswith(f, &quot;tracer_checkpoint&quot;) &amp;&amp; endswith(f, &quot;.jld2&quot;), readdir(pickup_from))
+    isempty(checkpoints) &amp;&amp; error(&quot;no tracer_checkpoint*.jld2 in $pickup_from&quot;)
+    latest = checkpoints[argmax([parse(Int, match(r&quot;iteration(\d+)&quot;, f).captures[1]) for f in checkpoints])]
+    cp(joinpath(pickup_from, latest), joinpath(output_dir, latest); force=true)
+    @info &quot;Picking up from $latest&quot;
+    pickup = true
+end
+run!(simulation; pickup)</code></pre><h2 id="Analysis:-time-series-against-the-archived-DP-SCREAM-runs"><a class="docs-heading-anchor" href="#Analysis:-time-series-against-the-archived-DP-SCREAM-runs">Analysis: time series against the archived DP-SCREAM runs</a><a id="Analysis:-time-series-against-the-archived-DP-SCREAM-runs-1"></a><a class="docs-heading-anchor-permalink" href="#Analysis:-time-series-against-the-archived-DP-SCREAM-runs" title="Permalink"></a></h2><p>The archived 3 km August run (which contains the paper&#39;s 5–15 August period) and the cold-started 0.5 km run are read with their local-time labels converted to UTC. The LES liquid/ice water paths are kg m⁻² like <code>TGCLDLWP</code>/<code>TGCLDIWP</code>; the LES surface rain and ice fluxes (kg m⁻² s⁻¹) are converted to mm day⁻¹ like the archive&#39;s <code>PRECL</code> (whose unit is inferred, see <code>read_dp_scream_output</code>). Horizontal means of a 51.2 km LES are compared with 200 km domain means: no spatial filtering is needed for domain means, but their sampling of mesoscale organization differs.</p><pre><code class="language-julia hljs">ts_file = joinpath(output_dir, &quot;tracer_timeseries.jld2&quot;)
+read_series(name) = (fts = FieldTimeSeries(ts_file, name); (fts.times, [fts[n][1, 1, 1] for n in eachindex(fts.times)]))
+t, lwp = read_series(&quot;lwp&quot;)
+_, iwp = read_series(&quot;iwp&quot;)
+_, rwp = read_series(&quot;rwp&quot;)
+_, pw = read_series(&quot;precipitable_water&quot;)
+_, rain = read_series(&quot;rain_flux&quot;)
+_, ice = read_series(&quot;ice_flux&quot;)
+utc = start .+ Second.(round.(Int, t))
+hours = t ./ hour
+
+references = Dict{String, Any}()
+for (key, file) in ((&quot;DP-SCREAM 3 km (August run)&quot;, &quot;DP-SCREAM 3km_August.nc&quot;),
+                    (&quot;DP-SCREAM 0.5 km (5–15 Aug cold start)&quot;, &quot;DP-SCREAM 0.5km_August_5_to_August_15_run.nc&quot;))
+    path = joinpath(data_dir, file)
+    isfile(path) &amp;&amp; (references[key] = read_dp_scream_output(path))
+end
+
+fig = Figure(size = (1000, 900))
+ax1 = Axis(fig[1, 1], ylabel = &quot;Liquid water path (g m⁻²)&quot;)
+ax2 = Axis(fig[2, 1], ylabel = &quot;Ice water path (g m⁻²)&quot;)
+ax3 = Axis(fig[3, 1], ylabel = &quot;Surface precipitation (mm day⁻¹)&quot;, xlabel = &quot;Hours since $(start) UTC&quot;)
+lines!(ax1, hours, 1e3 .* lwp, label = &quot;Breeze LES 200 m&quot;)
+lines!(ax2, hours, 1e3 .* iwp, label = &quot;Breeze LES 200 m&quot;)
+lines!(ax3, hours, 86400 .* (rain .+ ice), label = &quot;Breeze LES 200 m (rain + ice)&quot;)
+for (key, ref) in references
+    sel = dp_scream_window(ref, utc[1], utc[end])
+    isempty(sel) &amp;&amp; continue
+    th = [Dates.value(ref.time[n] - start) / 3.6e6 for n in sel]
+    lines!(ax1, th, 1e3 .* ref.TGCLDLWP[sel], label = key)
+    lines!(ax2, th, 1e3 .* ref.TGCLDIWP[sel], label = key)
+    lines!(ax3, th, ref.PRECL[sel], label = key)
+end
+axislegend(ax1, position = :lt)
+save(joinpath(output_dir, &quot;water_paths_and_precipitation.png&quot;), fig)</code></pre><h2 id="Time–height-cloud-fraction"><a class="docs-heading-anchor" href="#Time–height-cloud-fraction">Time–height cloud fraction</a><a id="Time–height-cloud-fraction-1"></a><a class="docs-heading-anchor-permalink" href="#Time–height-cloud-fraction" title="Permalink"></a></h2><p>The LES profile writer stores 30-minute means of the total (liquid + ice) cloudy-cell fraction; the archive stores <code>TOT_CLOUD_FRAC</code> on hybrid levels with their heights <code>Z3</code>.</p><pre><code class="language-julia hljs">pf = joinpath(output_dir, &quot;tracer_profiles.jld2&quot;)
+cf = FieldTimeSeries(pf, &quot;total_cloud_fraction&quot;)
+z = Array(znodes(cf.grid, Center()))
+cf_matrix = [cf[n][1, 1, k] for k in eachindex(z), n in eachindex(cf.times)]
+fig2 = Figure(size = (1100, 800))
+ax = Axis(fig2[1, 1], ylabel = &quot;Height (km)&quot;, title = &quot;Breeze LES total cloud fraction&quot;)
+hm = heatmap!(ax, cf.times ./ hour, z ./ 1e3, permutedims(cf_matrix), colormap = :Blues, colorrange = (0, 1))
+Colorbar(fig2[1, 2], hm)
+if haskey(references, &quot;DP-SCREAM 3 km (August run)&quot;)
+    ref = references[&quot;DP-SCREAM 3 km (August run)&quot;]
+    sel = dp_scream_window(ref, utc[1], utc[end])
+    th = [Dates.value(ref.time[n] - start) / 3.6e6 for n in sel]
+    zref = vec(mean(ref.Z3[:, sel], dims=2)) ./ 1e3
+    ascending = sortperm(zref)
+    ax2 = Axis(fig2[2, 1], ylabel = &quot;Height (km)&quot;, xlabel = &quot;Hours since $(start) UTC&quot;, title = &quot;DP-SCREAM 3 km TOT_CLOUD_FRAC&quot;)
+    hm2 = heatmap!(ax2, th, zref[ascending], permutedims(ref.TOT_CLOUD_FRAC[ascending, sel]), colormap = :Blues, colorrange = (0, 1))
+    ylims!(ax2, 0, 20)
+    Colorbar(fig2[2, 2], hm2)
+end
+ylims!(ax, 0, 20)
+save(joinpath(output_dir, &quot;cloud_fraction_time_height.png&quot;), fig2)</code></pre><h2 id="Water-and-energy-budget-checks"><a class="docs-heading-anchor" href="#Water-and-energy-budget-checks">Water and energy budget checks</a><a id="Water-and-energy-budget-checks-1"></a><a class="docs-heading-anchor-permalink" href="#Water-and-energy-budget-checks" title="Permalink"></a></h2><p>Column water: d(PW + LWP + RWP + IWP)/dt = E − P + S<em>q, with E the prescribed surface vapor flux, P the surface rain + ice flux and S</em>q = ∫ρ qls dz the imposed large-scale vapor source (from the model&#39;s own forcing profiles). Column static energy: dS/dt ≈ F<em>E + ∫(−∂F</em>rad/∂z) dz + ∫ρ cᵖ tls dz, with F_E the prescribed energy flux; the enthalpy carried out by precipitation is not included, so this check is approximate. Residuals are reported relative to the integrated source magnitudes.</p><pre><code class="language-julia hljs">_, S = read_series(&quot;column_static_energy&quot;)
+_, R = read_series(&quot;column_radiative_heating&quot;)
+ρᵣ = Array(interior(case.model.dynamics.reference_state.density, 1, 1, :))
+Δz = diff(Array(znodes(case.grid, Face())))</code></pre><p>the forcing profiles are held piecewise constant, so the record at or before <code>tt</code> is exact</p><pre><code class="language-julia hljs">function column_source(fts, tt)
+    times = Array(fts.times)        # the FieldTimeSeries clock lives on the GPU; no scalar indexing
+    n = max(1, searchsortedlast(times, tt))
+    column = Array(interior(fts[n], 1, 1, :))
+    return sum(ρᵣ[k] * column[k] * Δz[k] for k in eachindex(Δz))
+end
+constants = case.model.thermodynamic_constants
+ℒ = constants.liquid.reference_latent_heat
+sfc = case.sfc
+surface_value(values, tt) = interpolate_profile(day_to_seconds.(sfc.day, case.config.day0), values, tt)
+cᵖᵈ = constants.dry_air.heat_capacity; cᵖᵛ = constants.vapor.heat_capacity
+trapz(f) = sum((f[n] + f[n+1]) / 2 * (t[n+1] - t[n]) for n in 1:length(t)-1)
+E = [surface_value(sfc.latent_heat_flux, tt) / ℒ for tt in t]
+Sq = [column_source(case.forcing_profiles.qls, tt) for tt in t]
+P = rain .+ ice
+W = pw .+ lwp .+ rwp .+ iwp
+water_residual = (W[end] - W[1]) - trapz(E .- P .+ Sq)
+FE = [surface_value(sfc.sensible_heat_flux, tt) + (cᵖᵛ - cᵖᵈ) * surface_value(sfc.sst, tt) * E[n] for (n, tt) in enumerate(t)]
+St = [cᵖᵈ * column_source(case.forcing_profiles.tls, tt) for tt in t]
+energy_residual = (S[end] - S[1]) - trapz(FE .+ R .+ St)
+budget = Dict(&quot;water&quot; =&gt; Dict(&quot;delta_total_water_kg_m2&quot; =&gt; W[end] - W[1], &quot;integrated_evaporation&quot; =&gt; trapz(E),
+                              &quot;integrated_precipitation&quot; =&gt; trapz(P), &quot;integrated_large_scale_source&quot; =&gt; trapz(Sq),
+                              &quot;residual_kg_m2&quot; =&gt; water_residual,
+                              &quot;residual_relative_to_sources&quot; =&gt; abs(water_residual) / max(trapz(abs.(E) .+ abs.(P) .+ abs.(Sq)), 1e-12)),
+              &quot;energy&quot; =&gt; Dict(&quot;delta_column_static_energy_J_m2&quot; =&gt; S[end] - S[1], &quot;integrated_surface_energy_flux&quot; =&gt; trapz(FE),
+                               &quot;integrated_radiative_heating&quot; =&gt; trapz(R), &quot;integrated_large_scale_heating&quot; =&gt; trapz(St),
+                               &quot;residual_J_m2&quot; =&gt; energy_residual,
+                               &quot;residual_relative_to_sources&quot; =&gt; abs(energy_residual) / max(trapz(abs.(FE) .+ abs.(R) .+ abs.(St)), 1e-12),
+                               &quot;note&quot; =&gt; &quot;precipitation enthalpy export not included&quot;),
+              &quot;final_time_seconds&quot; =&gt; t[end], &quot;all_finite&quot; =&gt; all(isfinite, W) &amp;&amp; all(isfinite, S))
+open(joinpath(output_dir, &quot;budget.toml&quot;), &quot;w&quot;) do io
+    TOML.print(io, budget)
+end
+@info &quot;Water budget residual $(water_residual) kg m⁻² (relative $(budget[&quot;water&quot;][&quot;residual_relative_to_sources&quot;])); energy residual $(energy_residual) J m⁻² (relative $(budget[&quot;energy&quot;][&quot;residual_relative_to_sources&quot;]))&quot;</code></pre><div class="admonition is-info" id="Rendered,-not-executed-620da14ce1e414c3"><header class="admonition-header">Rendered, not executed<a class="admonition-anchor" href="#Rendered,-not-executed-620da14ce1e414c3" title="Permalink"></a></header><div class="admonition-body"><p>This page shows the case script as committed. It is executed on the cluster with the corresponding <code>execution/*.sbatch</code> launcher; results are summarized on the <a href="campaign_results.html">campaign results</a> page.</p></div></div><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="tracer_dp_scream.html">« Case description</a><a class="docs-footer-nextpage" href="tracer_mip.html">Case description »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.19.0 on <span class="colophon-date" title="Friday 9 October 2026 02:37">Friday 9 October 2026</span>. Using Julia version 1.12.7.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>

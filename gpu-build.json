@@ -1,10 +1,10 @@
 {
-  "source_commit": "3330f3cf98a62766bf139ce04276745d00cadd48",
-  "job_id": "165",
+  "source_commit": "158d658ed621d52fcb20d4599890a7b74f7d71d1",
+  "job_id": "356",
   "gpu": "NVIDIA H100 80GB HBM3",
   "partition": "gpu-prod",
-  "completed_utc": "2026-10-07T23:03:50.086277+00:00",
-  "mode": "full GPU example",
+  "completed_utc": "2026-10-09T02:37:39.416100+00:00",
+  "mode": "full GPU example + all case pages",
   "stop_time_seconds": 21600,
   "grid": [
     256,
