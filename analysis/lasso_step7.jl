@@ -26,26 +26,37 @@ series = breezelab_timeseries(run_dir)
 # Cloud boundaries of the *stratocumulus* layer: the highest contiguous cloudy layer (cloudy-cell
 # fraction > threshold) of each profile, so that the surface fog / drizzle-moistened layer below
 # a clear gap does not set the base (SAM's GCSS ZCB/ZCT are column-wise means with their own rules).
+# contiguous runs of `true` in a mask
+function contiguous_runs(mask)
+    ks = findall(mask); runs = Vector{UnitRange{Int}}()
+    isempty(ks) && return runs
+    start = ks[1]; prev = ks[1]
+    for k in ks[2:end]
+        k == prev + 1 || (push!(runs, start:prev); start = k)
+        prev = k
+    end
+    push!(runs, start:prev)
+    return runs
+end
+# the dominant layer = the contiguous cloudy layer with the largest integrated cloud water
+function dominant_layer(mask, weight)
+    runs = contiguous_runs(mask)
+    isempty(runs) && return nothing, runs
+    return runs[argmax([sum(weight[r]) for r in runs])], runs
+end
 function layer_boundaries(run_dir; threshold = 0.05)
     file = only(filter(f -> endswith(f, "_profiles.jld2"), readdir(run_dir; join = true)))
-    cf = FieldTimeSeries(file, "cloud_fraction"); z = collect(znodes(cf.grid, Center()))
+    cf = FieldTimeSeries(file, "cloud_fraction"); qc = FieldTimeSeries(file, "qᶜˡ"); z = collect(znodes(cf.grid, Center()))
     base = Float64[]; top = Float64[]; fog_top = Float64[]
     for n in eachindex(cf.times)
         c = vec(Array(interior(cf[n]))) .> threshold
-        ks = findall(c)
-        if isempty(ks)
+        main, runs = dominant_layer(c, vec(Array(interior(qc[n]))))
+        if isnothing(main)
             push!(base, NaN); push!(top, NaN); push!(fog_top, NaN); continue
         end
-        # split into contiguous runs; take the highest run as the stratocumulus layer
-        runs = Vector{UnitRange{Int}}(); start = ks[1]; prev = ks[1]
-        for k in ks[2:end]
-            k == prev + 1 || (push!(runs, start:prev); start = k)
-            prev = k
-        end
-        push!(runs, start:prev)
-        main = last(runs)
         push!(base, z[first(main)]); push!(top, z[last(main)])
-        push!(fog_top, length(runs) > 1 ? z[last(runs[1])] : NaN)
+        lower = [r for r in runs if last(r) < first(main)]
+        push!(fog_top, isempty(lower) ? NaN : z[last(last(lower))])
     end
     return (; seconds = collect(Float64, cf.times), base, top, fog_top, threshold)
 end
@@ -91,19 +102,14 @@ function sam_layer_boundaries(sam, zs; threshold = 0.01)
     qcl = sam["QCL"][:, :]
     base = Float64[]; top = Float64[]; fog_top = Float64[]
     for j in axes(qcl, 2)
-        c = [!ismissing(v) && v ≥ threshold for v in qcl[:, j]]
-        ks = findall(c)
-        if isempty(ks)
+        q = Float64[ismissing(v) ? 0.0 : Float64(v) for v in qcl[:, j]]
+        main, runs = dominant_layer(q .≥ threshold, q)
+        if isnothing(main)
             push!(base, NaN); push!(top, NaN); push!(fog_top, NaN); continue
         end
-        runs = Vector{UnitRange{Int}}(); start = ks[1]; prev = ks[1]
-        for k in ks[2:end]
-            k == prev + 1 || (push!(runs, start:prev); start = k)
-            prev = k
-        end
-        push!(runs, start:prev)
-        push!(base, zs[first(last(runs))]); push!(top, zs[last(last(runs))])
-        push!(fog_top, length(runs) > 1 ? zs[last(runs[1])] : NaN)
+        push!(base, zs[first(main)]); push!(top, zs[last(main)])
+        lower = [r for r in runs if last(r) < first(main)]
+        push!(fog_top, isempty(lower) ? NaN : zs[last(last(lower))])
     end
     return (; base, top, fog_top)
 end
@@ -130,7 +136,7 @@ for (wname, w) in windows
                       "sam_gcss_zcb_raw_km" => todict(sam_window("ZCB", w)),
                       "breeze_lowest_cloudy_level" => todict(breeze_window(hb, bounds_all.base, w)),
                       "breeze_fog_layer_top" => todict(breeze_window(hb, bounds.fog_top, w)), "sam_fog_layer_top" => todict(breeze_window(sam_hours, sam_layers.fog_top, w)),
-                      "definition" => "highest contiguous layer with qc ≥ 0.01 g kg⁻¹ (SAM: QCL profile; Breeze: cloudy-cell fraction > 0.05)")
+                      "definition" => "dominant layer = contiguous cloudy layer with the largest integrated qc (SAM: QCL ≥ 0.01 g kg⁻¹; Breeze: cloudy-cell fraction > 0.05); fog_top = top of the layer below it")
     d["ZCT_m"] = Dict("sam" => todict(breeze_window(sam_hours, sam_layers.top, w)), "breeze" => todict(breeze_window(hb, bounds.top, w)),
                       "sam_gcss_zct_raw_km" => todict(sam_window("ZCT", w)), "sam_zinv_m" => todict(sam_window("ZINV", w, 1e3)), "sam_zctmax_m" => todict(sam_window("ZCTMAX", w, 1e3)))
     for n in ("SHF", "LHF", "LWNS", "SWNS", "LWNT", "SWNT")
@@ -247,8 +253,8 @@ end
 axislegend(ax3, position = :lt, labelsize = 9)
 ax4 = Axis(fig[2, 2], title = "cloud fraction"); shade!(ax4)
 lines!(ax4, sam_hours, sam_series["CLDSHD"]; color = :gray30, label = "SAM CLDSHD"); lines!(ax4, hours_b, series.cloud_fraction; color = :dodgerblue, label = "Breeze (LWP > 5 g m⁻²)"); axislegend(ax4, position = :lb, labelsize = 9)
-ax5 = Axis(fig[3, 1], title = "stratocumulus base / top (m): highest contiguous cloudy layer", xlabel = "hours since $(epoch) UTC", limits = (nothing, (0, 2500))); shade!(ax5)
-keep = isfinite.(sam_layers.base); lines!(ax5, sam_hours[keep], sam_layers.base[keep]; color = :gray30, label = "SAM base (QCL ≥ 0.01 g/kg)"); keep = isfinite.(sam_layers.top); lines!(ax5, sam_hours[keep], sam_layers.top[keep]; color = :gray30, linestyle = :dash, label = "SAM top")
+ax5 = Axis(fig[3, 1], title = "stratocumulus base / top (m): dominant cloudy layer", xlabel = "hours since $(epoch) UTC", limits = (nothing, (0, 2500))); shade!(ax5)
+keep = isfinite.(sam_layers.base); lines!(ax5, sam_hours[keep], sam_layers.base[keep]; color = :gray30, label = "SAM base (dominant layer, QCL ≥ 0.01 g/kg)"); keep = isfinite.(sam_layers.top); lines!(ax5, sam_hours[keep], sam_layers.top[keep]; color = :gray30, linestyle = :dash, label = "SAM top")
 lines!(ax5, sam_hours, 1e3 .* sam_series["ZINV"]; color = :gray60, linestyle = :dot, label = "SAM ZINV")
 keep = isfinite.(bounds.base); lines!(ax5, hb[keep], bounds.base[keep]; color = :dodgerblue, label = "Breeze base"); keep = isfinite.(bounds.top); lines!(ax5, hb[keep], bounds.top[keep]; color = :dodgerblue, linestyle = :dash, label = "Breeze top")
 if !isnothing(cb_obs)
