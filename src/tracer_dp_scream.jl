@@ -70,7 +70,7 @@ Defaults (all overridable, overrides are recorded in the provenance):
 - `surface = :prescribed_heat_fluxes_bulk_drag`: IOP sensible/latent heat fluxes, neutral
   log-law drag for `roughness_length = 0.1` m referenced to the first cell center, `gustiness = 1` m/s
 - `sponge = SAMSponge(damping_depth_fraction = 0.25)`, `Δt = 2`, `max_Δt = 5`, `cfl = 0.7`
-- outputs: profiles every 30 min, time series every 60 s, slices every 30 min at 1500 m,
+- outputs: profiles every 30 min, time series every 60 s, slices (animation fields) every 5 min at 3000 m,
   `checkpoint_interval = nothing` (set e.g. `6hours` for resumable runs)
 """
 function tracer_dp_scream(;
@@ -101,8 +101,8 @@ function tracer_dp_scream(;
     output_prefix = "tracer",
     profile_interval = 30minutes,
     timeseries_interval = 60.0,
-    slice_interval = 30minutes,
-    slice_height = 1500.0,
+    slice_interval = 5minutes,
+    slice_height = 3000.0,
     checkpoint_interval = nothing,
     kwargs...)
 
