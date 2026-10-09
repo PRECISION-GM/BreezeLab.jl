@@ -58,7 +58,7 @@ export
     SurfaceAerosolSource, EvaporationRegeneration, EvaporationRateUpdater, cloud_evaporation_rate_field, aerosol_number_columns,
     InversionFollowingNudging, InversionMaskUpdater, inversion_height_field, nudging_mask_weights,
     extended_column_radiation, upper_atmosphere_layers, TrajectorySolarPosition, trajectory_cos_zenith, composite_trajectory_path,
-    sea_starr, sea_starr_driver_path,
+    sea_starr, sea_starr_driver_path, sea_starr_storage_estimate_GB,
     # TRACER-MIP (regional nested coastal control; the regional constructor lives in the NumericalEarth extension)
     tracer_mip_protocol, tracer_mip_case_window, acpc_vertical_faces, tracer_mip_horizontal_extent, tracer_mip_grid,
     TracerMIPAerosolProfile, tracer_mip_aerosol_profile, aerosol_shape, surface_number_mixing_ratios,

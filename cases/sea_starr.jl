@@ -9,7 +9,7 @@
 # `julia data_wrangling/fetch_manifest.jl cases/seastarr/inputs.toml data/seastarr_22241697`,
 # then run `julia --project cases/sea_starr.jl` on an NVIDIA GPU. Settings can be
 # overridden from the environment (`SEA_STARR_HOURS`, `SEA_STARR_NX`, `SEA_STARR_OUTPUT`,
-# `SEA_STARR_DATA`, `SEA_STARR_MEMBER`, `SEA_STARR_CHECKPOINT_HOURS`, `SEA_STARR_PICKUP`) so
+# `SEA_STARR_DATA`, `SEA_STARR_MEMBER`, `SEA_STARR_CHECKPOINT_HOURS`, `SEA_STARR_TWOD_MINUTES`, `SEA_STARR_PICKUP`) so
 # the same script serves the short pilot, the full integration and a restart from the latest
 # checkpoint in the output directory.
 #
@@ -40,17 +40,18 @@ stop_time = parse(Float64, get(ENV, "SEA_STARR_HOURS", "66")) * hours
 data_dir = get(ENV, "SEA_STARR_DATA", joinpath(pkgdir(BreezeLab), "data", "seastarr_22241697"))
 output_dir = get(ENV, "SEA_STARR_OUTPUT", joinpath(pkgdir(BreezeLab), "output", "sea_starr_$(lowercase(string(member)))"))
 checkpoint_interval = parse(Float64, get(ENV, "SEA_STARR_CHECKPOINT_HOURS", "3")) * hours
+fields_2d_interval = parse(Float64, get(ENV, "SEA_STARR_TWOD_MINUTES", "3")) * minutes   # animation cadence (plan views, lowest level, x–z slices)
 
-case = sea_starr(; member, arch, Nx, Ny, stop_time, data_dir, output_dir, checkpoint_interval,
+case = sea_starr(; member, arch, Nx, Ny, stop_time, data_dir, output_dir, checkpoint_interval, fields_2d_interval,
                    output_prefix = "sea_starr_$(lowercase(string(member)))")
 simulation = case.simulation;
 
 # ## Run
 #
 # Provenance (driver path and checksum, configuration, departures, software revisions) is
-# written next to the output before the run starts. The storage budget of the default
-# writers at 192² × 288 is about 0.45 GB per simulated hour (hourly 3D fields of ten
-# variables dominate; checkpoints are overwritten).
+# written next to the output before the run starts; `case.config.output_storage_estimate_GB`
+# records the storage budget of the writers (at 192² × 288 and the 3-min animation cadence:
+# ≈ 14 GB hourly 3D, ≈ 3.4 GB 2-D/slices, 2.9 GB for the retained checkpoint).
 
 pickup = get(ENV, "SEA_STARR_PICKUP", "false") == "true"
 mkpath(output_dir)
