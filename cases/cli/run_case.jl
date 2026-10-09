@@ -29,7 +29,7 @@ end
 opts = parse_args(ARGS)
 getopt(k, default) = get(opts, k, default)
 allowed = Set(["data", "protocol", "arch", "float", "seed", "epoch", "member", "dimensions", "microphysics", "aerosol_ss_cap",
-               "Nx", "Ny", "Lx", "Ly", "hours", "cfl", "dt", "max_dt", "lasso_grid", "initialization", "closure",
+               "Nx", "Ny", "Lx", "Ly", "hours", "cfl", "dt", "max_dt", "lasso_grid", "grid", "initialization", "closure",
                "profile_interval", "slice_interval", "radiation", "nudging", "surface_flux_law", "output"])
 unknown = setdiff(Set(keys(opts)), allowed)
 isempty(unknown) || error("unknown options: $(join(sort!(collect(unknown)), ", "))")
@@ -42,7 +42,10 @@ getopt("arch", "cpu") in ("cpu", "gpu") || error("--arch must be cpu or gpu")
 getopt("float", "Float32") in ("Float32", "Float64") || error("--float must be Float32 or Float64")
 Oceananigans.defaults.FloatType = getopt("float", "Float32") == "Float64" ? Float64 : Float32
 arch = getopt("arch", "cpu") == "gpu" ? GPU() : CPU()
-z_faces = getopt("lasso_grid", "false") == "true" ? lasso_ena_vertical_faces() : nothing
+# --grid covert|covert_inversion_5m|lasso: a named vertical grid (recorded in provenance as `vertical_grid`);
+# --lasso_grid true is the older spelling of --grid lasso. Without either the protocol's own grid is used.
+vertical_grid = get(opts, "grid", getopt("lasso_grid", "false") == "true" ? "lasso" : "protocol")
+z_faces = vertical_grid == "protocol" ? nothing : ena_vertical_faces(vertical_grid)
 
 # --microphysics: the members of the ENA campaigns as Breeze objects. The aerosol members convert
 # LASSO's per-cm³ numbers with the case's first-level reference density.
@@ -127,7 +130,7 @@ end
 
 mkpath(output_dir)
 provenance = write_provenance(joinpath(output_dir, "provenance.toml"), case;
-                              extra = (; command = join(ARGS, " "), hostname = gethostname(),
+                              extra = (; command = join(ARGS, " "), hostname = gethostname(), vertical_grid,
                                          microphysics_member = member_name, aerosol_supersaturation_cap = something(cap, 0.0),
                                          gpu = CUDA.functional() ? CUDA.name(CUDA.device()) : "none"))
 @info "Provenance written to $provenance"

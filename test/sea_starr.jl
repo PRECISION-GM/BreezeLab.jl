@@ -284,6 +284,7 @@ end
             @test case.config.thermodynamic_nudging_timescale == 1800 && case.config.wind_nudging_timescale == 10800
             @test case.config.roughness_length == 1e-4
             @test length(case.config.departures) ≥ 5
+            @test !any(occursin("zero downwelling LW", dep) for dep in case.config.departures)
             μ = case.model.microphysical_fields
             @test haskey(μ, :ρnᵃ) && haskey(μ, :ρnᶜˡ)
             nᵃ = Array(interior(μ.nᵃ, 1, 1, :)); nᶜˡ = Array(interior(μ.nᶜˡ, 1, 1, :)); qᶜˡ = Array(interior(μ.qᶜˡ, 1, 1, :))
@@ -294,6 +295,34 @@ end
             @test maximum(nᵃ) > 9e8                                         # the smoke layer above the inversion
             @test case.mask_updater.inversion_height_max[] ≈ 1150 atol=100   # ≈ driver inversion (1160 m)
             @test Set(keys(case.simulation.output_writers)) == Set((:statistics, :timeseries, :fields_2d, :fields_3d))
+            # radiation: the driver's upper atmosphere above the LES top and the trajectory solar position
+            @test case.config.radiation == "rrtmgp_extended" && case.config.radiation_layers_above > 10 && case.config.radiation_column_top > 70000
+            up = upper_atmosphere_layers(d, 3000.0)
+            @test up.faces[1] == 3000.0 && issorted(up.z) && all(diff(up.p_faces) .< 0) && all(up.T .> 150) && all(up.q .≥ 0)
+            r = case.model.radiation
+            @test r.solar_position isa Breeze.AtmosphereModels.FixedCosineZenith
+            cb = [c.func for c in values(case.simulation.callbacks) if c.func isa TrajectorySolarPosition]
+            @test length(cb) == 1
+            cosz, lon, lat = trajectory_cos_zenith(cb[1], 15 * 3600.0)        # 2017-08-16 12 UTC, lon ≈ −4.4°E → ≈ 11:40 LST
+            @test 0.8 < cosz < 0.95 && -5.5 < lon < -3.5 && -15 < lat < -13
+            @test trajectory_cos_zenith(cb[1], 0.0)[1] == 0                   # 21 UTC: night
+            Nz = case.model.grid.Nz
+            case.model.clock.time = 15 * 3600.0; cb[1](case.model)
+            Breeze.AtmosphereModels.update_radiation!(r, case.model)
+            lwd_top = -mean(interior(r.downwelling_longwave_flux, :, :, Nz + 1))
+            swd_top = -mean(interior(r.downwelling_shortwave_flux, :, :, Nz + 1))
+            @test 50 < lwd_top < 250                                           # downwelling LW from the atmosphere above the LES top
+            @test 0.85 * 1361 * cosz < swd_top < 1361 * cosz                   # SW attenuated above the LES top (O₃, Rayleigh)
+            @test all(isfinite, interior(r.flux_divergence))
+            plain = with_float_type(Float32) do
+                sea_starr(; member=:CTRL, data_dir=SEASTARR_DIR, arch=CPU(), Nx=8, Ny=8,
+                            z_faces=collect(range(0, 3000, length=31)), stop_time=2.0, write_output=false,
+                            extended_radiation_column=false, solar=:fixed, checkpoint_interval=nothing, progress_interval=100)
+            end
+            @test plain.config.radiation_layers_above == 0
+            Breeze.AtmosphereModels.update_radiation!(plain.model.radiation, plain.model)
+            @test -mean(interior(plain.model.radiation.downwelling_longwave_flux, :, :, Nz + 1)) == 0
+            case.model.clock.time = 0.0; cb[1](case.model)
             run!(case.simulation)
             @test case.model.clock.time ≈ 2.0
             @test all(f -> all(isfinite, Array(interior(f))), values(Oceananigans.prognostic_fields(case.model)))

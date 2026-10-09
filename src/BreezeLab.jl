@@ -20,7 +20,8 @@ export
     # case constructors
     ena_covert, ena_lasso, tracer_dp_scream, sea_starr, tracer_mip_outer_simulation, tracer_mip_inner_simulation,
     # constructor inputs: vertical grids, perturbation, sponge, aerosol
-    covert_public_bin_vertical_faces, lasso_ena_vertical_faces, uniform_then_stretched_faces,
+    covert_public_bin_vertical_faces, covert_inversion_refined_vertical_faces, ena_vertical_faces,
+    lasso_ena_vertical_faces, uniform_then_stretched_faces,
     tracer_dp_scream_vertical_faces, sea_starr_vertical_faces, acpc_vertical_faces,
     InitialPerturbation, SAMSponge, neutral_drag_coefficient,
     lasso_aerosol, covert_aerosol, first_level_reference_density, activated_fraction,
@@ -94,6 +95,7 @@ include("tracer_dp_scream/tracer_dp_scream.jl")
 include("sea_starr/dephy_driver.jl")
 include("sea_starr/aerosol.jl")
 include("sea_starr/forcings.jl")
+include("sea_starr/radiation.jl")
 include("sea_starr/sea_starr.jl")
 include("tracer_mip/protocol.jl")
 include("tracer_mip/aerosol_profiles.jl")

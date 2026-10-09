@@ -27,6 +27,7 @@ using BreezeLab: LargeScaleForcingProfiles, LargeScaleVerticalAdvection, LargeSc
                  driver_profile_time_series, inversion_height, kappa_critical_supersaturation, nudging_mask_weights,
                  fractional_day_of_year, iop_column_integral, iop_datetimes, iop_index, iop_potential_temperature,
                  iop_sam_inputs, iop_surface_albedo, parse_cf_time_units,
+                 upper_atmosphere_layers, TrajectorySolarPosition, trajectory_cos_zenith,
                  accumulate_process_rates!, reset_process_accumulators!, surface_number_mixing_ratios, total_number_mixing_ratio
 
 const FIXTURES = joinpath(@__DIR__, "fixtures")
@@ -201,6 +202,16 @@ end
     fc = covert_public_bin_vertical_faces()
     @test length(fc) == 193 && fc[1] == 0 && fc[end] == 20000 && issorted(fc)
     @test all(diff(fc[1:151]) .≈ 10)
+    # inversion-refined variant: 10 m to 800 m, 5 m over 800–1400 m, 10 m to 1500 m, the same 42 stretched cells
+    fr = covert_inversion_refined_vertical_faces()
+    @test length(fr) == 253 && fr[1] == 0 && fr[end] == 20000 && issorted(fr) && all(>(0), diff(fr))
+    @test all(diff(fr[1:81]) .≈ 10) && fr[81] == 800 && all(diff(fr[81:201]) .≈ 5) && fr[201] == 1400
+    @test all(diff(fr[201:211]) .≈ 10) && fr[211] == 1500
+    @test fr[212:end] ≈ fc[152:end]                      # identical stretched part above 1500 m
+    @test ena_vertical_faces(:covert) == fc && ena_vertical_faces("covert_inversion_5m") == fr
+    @test ena_vertical_faces(:lasso) == lasso_ena_vertical_faces()
+    @test_throws ArgumentError ena_vertical_faces(:other)
+    @test_throws ArgumentError covert_inversion_refined_vertical_faces(fine_bottom=1600)
     rates = sam_sponge_rates(c, c)
     @test rates[end] ≈ 1 / 60
     @test count(>(0), rates) ≥ 1
