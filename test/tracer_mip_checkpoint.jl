@@ -10,12 +10,15 @@ using Oceananigans.Fields: interior
 era5_dir = get(ENV, "TRACER_MIP_ERA5_DIR", "/shared/home/greg/breezelab-work/tracer-mip/data/era5")
 function build()
     case = tracer_mip_outer_simulation(CPU(); parent = :era5, era5_dir, Nx = 16, Ny = 16, stop_time = 72.0,
-                                       radiation = nothing, process_rates = true)
+                                       radiation = false, process_rates = true)
     case.simulation.callbacks[:progress] = Callback(sim -> nothing, IterationInterval(6))   # a plain-function callback, as in the case script
     return case
 end
 dir = mktempdir()
 
+previous_FT = Oceananigans.defaults.FloatType
+Oceananigans.defaults.FloatType = Float32   # the GPU control's precision; restored in the `finally` below
+try
 @testset "TRACER-MIP outer checkpoint/pickup" begin
     A = build()
     A.simulation.output_writers[:ck] = Checkpointer(A.simulation.model; schedule = IterationInterval(12), dir, prefix = "ck")
@@ -44,4 +47,7 @@ dir = mktempdir()
     a = Array(interior(A.accumulators.fields.liquid_condensation)); b = Array(interior(B.accumulators.fields.liquid_condensation))
     @info "restart difference accumulated condensation: $(maximum(abs.(a .- b))) (max $(maximum(abs.(a))))"
     @test maximum(abs.(a .- b)) ≤ 1e-2 * max(maximum(abs.(a)), eps())
+end
+finally
+    Oceananigans.defaults.FloatType = previous_FT
 end
