@@ -94,3 +94,8 @@ function pin_sea_surface!(p::SeaSurfacePinning, t)
     Oceananigans.TimeSteppers.update_state!(land)
     return nothing
 end
+
+# The pinning is re-applied every step from the prescribed SST: nothing to checkpoint.
+Oceananigans.prognostic_state(::SeaSurfacePinning) = nothing
+Oceananigans.restore_prognostic_state!(::SeaSurfacePinning, ::Nothing) = nothing
+Oceananigans.restore_prognostic_state!(p::SeaSurfacePinning, from) = p

@@ -5,8 +5,12 @@ using BreezeLab: tracer_mip_outer_simulation, sync_nested_parent_clock!
 using Oceananigans.Fields: interior
 
 era5_dir = get(ENV, "TRACER_MIP_ERA5_DIR", "/shared/home/greg/breezelab-work/tracer-mip/data/era5")
-build() = tracer_mip_outer_simulation(CPU(); parent = :era5, era5_dir, Nx = 16, Ny = 16, stop_time = 72.0,
-                                      radiation = nothing, process_rates = false)
+function build()
+    case = tracer_mip_outer_simulation(CPU(); parent = :era5, era5_dir, Nx = 16, Ny = 16, stop_time = 72.0,
+                                       radiation = nothing, process_rates = true)
+    case.simulation.callbacks[:progress] = Callback(sim -> nothing, IterationInterval(6))   # a plain-function callback, as in the case script
+    return case
+end
 dir = mktempdir()
 
 @testset "TRACER-MIP outer checkpoint/pickup" begin
@@ -33,4 +37,8 @@ dir = mktempdir()
         @info "restart difference $name: max |A − B| = $diff (max |A| = $scale)"
         @test diff ≤ 1e-4 * max(scale, 1)
     end
+    # accumulators resume their sums across the restart
+    a = Array(interior(A.accumulators.fields.liquid_condensation)); b = Array(interior(B.accumulators.fields.liquid_condensation))
+    @info "restart difference accumulated condensation: $(maximum(abs.(a .- b))) (max $(maximum(abs.(a))))"
+    @test maximum(abs.(a .- b)) ≤ 1e-4 * max(maximum(abs.(a)), eps())
 end

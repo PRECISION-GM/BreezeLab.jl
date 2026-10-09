@@ -180,3 +180,19 @@ callbacks before output writers within a step, so the accumulators are zeroed on
 the next accumulation, after the writer on the same schedule has saved the completed interval.
 """
 process_rate_output_callback(acc::ProcessRateAccumulators, schedule) = Callback(sim -> (acc.pending_reset[] = true), schedule)
+
+#####
+##### Checkpointing: the accumulators are part of the simulation state (a restart mid-interval must resume the sums).
+#####
+
+Oceananigans.prognostic_state(acc::ProcessRateAccumulators) =
+    (fields = Oceananigans.prognostic_state(acc.fields), pending_reset = acc.pending_reset[], last_iteration = acc.last_iteration[])
+
+function Oceananigans.restore_prognostic_state!(acc::ProcessRateAccumulators, from)
+    Oceananigans.restore_prognostic_state!(acc.fields, from.fields)
+    acc.pending_reset[] = from.pending_reset
+    acc.last_iteration[] = from.last_iteration
+    return acc
+end
+
+Oceananigans.restore_prognostic_state!(::ProcessRateAccumulators, ::Nothing) = nothing
