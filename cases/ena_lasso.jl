@@ -2,7 +2,7 @@
 #
 # This example builds, runs, and analyzes one official LASSO-ENA ensemble member from
 # its ARM `samin` input bundle (DOI 10.5439/2572661). It is a different experiment
-# from the Covert development benchmark in `eastern_north_atlantic.jl`: the grid,
+# from the Covert development benchmark in `ena_covert.jl`: the grid,
 # duration, surface fluxes (bulk from SST), radiation (RRTMGP longwave and shortwave),
 # wind nudging and aerosol setting follow the member's namelist and files. The member
 # identity is explicit; a missing bundle stops the script with staging instructions and
@@ -14,6 +14,7 @@
 # the bundle directory and the UTC start.
 
 using BreezeLab
+using BreezeLab: lasso_bundle_available, lasso_bundle_missing_message, lasso_documented_dimensions, epoch_from_day_of_year
 using Oceananigans, Oceananigans.Units
 using CairoMakie
 using Dates
@@ -45,14 +46,15 @@ println("member $member starts $epoch UTC for $(inspection.time.stop_time / 3600
 
 # ## Build the simulation
 #
-# Everything below the member line is the protocol default read from the bundle; only
-# the architecture, precision and output cadence are chosen here (and recorded).
+# Everything below the member line is the protocol default read from the bundle,
+# including the member's P3 aerosol; only the architecture, precision and output
+# cadence are chosen here (and recorded).
 
+Oceananigans.defaults.FloatType = Float32
 arch = GPU()
-FT = Float32
 output_dir = joinpath(pkgdir(BreezeLab), "output", "ena_lasso", member)
-case = ena_lasso(bundle_dir; member, epoch, arch, FT, output_dir, output_prefix = "ena_lasso",
-                 timeseries_interval = 60seconds, profile_interval = 10minutes, slice_interval = 30minutes)
+case = ena_lasso(; member, epoch, bundle_dir, arch, output_dir, output_prefix = "ena_lasso",
+                   timeseries_interval = 60seconds, profile_interval = 10minutes, slice_interval = 30minutes)
 simulation = case.simulation;
 
 # ## Run

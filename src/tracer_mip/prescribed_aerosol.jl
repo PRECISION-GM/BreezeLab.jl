@@ -34,15 +34,17 @@ struct PrescribedAerosolProfile{FT, A, P}
 end
 
 """
-    PrescribedAerosolProfile(profile::TracerMIPAerosolProfile; FT = Float32, kappa = 0.26, activation_kw...)
+    PrescribedAerosolProfile(profile::TracerMIPAerosolProfile; kappa = 0.26, activation_kw...)
 
-Tier-1 aerosol for `P3Microphysics(FT; cloud, aerosol = PrescribedAerosolProfile(...))`: the two
+Tier-1 aerosol for `P3Microphysics(; cloud, aerosol = PrescribedAerosolProfile(...))`: the two
 protocol modes at their surface numbers (`tracer_mip_p3_aerosol_modes`) wrapped with the height
-profile. `activation_kw` go to `AerosolActivation` (e.g. `activation_timescale`).
+profile. `activation_kw` go to `AerosolActivation` (e.g. `activation_timescale`). Precision
+follows `Oceananigans.defaults.FloatType`.
 """
-function PrescribedAerosolProfile(profile::TracerMIPAerosolProfile; FT = Float32, kappa = 0.26,
-                                  thermodynamic_constants = ThermodynamicConstants(FT), activation_kw...)
-    modes = tracer_mip_p3_aerosol_modes(profile; FT, kappa, thermodynamic_constants)
+function PrescribedAerosolProfile(profile::TracerMIPAerosolProfile; kappa = 0.26,
+                                  thermodynamic_constants = ThermodynamicConstants(), activation_kw...)
+    FT = Oceananigans.defaults.FloatType
+    modes = tracer_mip_p3_aerosol_modes(profile; kappa, thermodynamic_constants)
     activation = AerosolActivation(modes...; prognostic = false, thermodynamic_constants, activation_kw...)
     surface_number = FT(sum(surface_number_mixing_ratios(profile)))
     profile_FT = convert_profile(FT, profile)

@@ -84,3 +84,17 @@ end
 Uniformly spaced cell interfaces from 0 to `top`, for quick low-resolution tests.
 """
 uniform_vertical_faces(Nz, top) = collect(range(0, top, length=Nz + 1))
+
+"""
+    faces_from_centers(centers)
+
+Cell interfaces halfway between consecutive centers (bottom face at 0), for a SAM `grd`.
+"""
+function faces_from_centers(centers)
+    faces = zeros(length(centers) + 1)
+    for k in 1:length(centers)-1
+        faces[k+1] = (centers[k] + centers[k+1]) / 2
+    end
+    faces[end] = centers[end] + (centers[end] - faces[end-1])
+    return faces
+end

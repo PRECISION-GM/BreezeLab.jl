@@ -74,11 +74,119 @@ The full 24-h run (Slurm job 249, `runs/lasso_aer2_24h_job249/`, `--time=22:00:0
 comparison with `samstat`/`sam2d` and the ARM observations over 03:10–24:00 UTC
 (`analysis/compare_sam_reference.jl`, `analysis/compare_ena_observations.jl`) is plan step 7.
 
+## 1d. Full 24-h run and plan step 7: Breeze vs the SAM member and ARM observations
+
+Run: Slurm job 249, A100 `GPU-c764cc9c`, source `fa26811` (adapter as in § 1b/1c with the
+per-column `sam_oceflx` law, namelist `fcor`, SS-cap emulation, prescribed 10 μm r_eff),
+`cases/cli/run_case.jl` with the documented command: 86 400 steps of 1 s in 17.2 h
+(0.72 s per step), finite throughout, `runs/lasso_aer2_24h_job249/`. Reference: the member's
+`samstat` (2-min domain statistics) and `sam2d` (5-min 2-D fields), SAM `f83adf58`.
+Observations: MWRRET `phys_lwp` (from 03:10 UTC), VDIS rain, ARSCL/ceilometer boundaries.
+Analysis `analysis/lasso_step7.jl` (CPU node); figures and `step7.toml` in
+`runs/lasso_aer2_24h_job249/checks/step7/`, copies in `breezelab-work/campaign-figures/lasso24_*`.
+Cloud boundaries use one definition for both models: the *dominant* contiguous cloudy
+layer (largest integrated qᶜˡ; SAM `QCL ≥ 0.01 g kg⁻¹`, Breeze cloudy-cell fraction > 0.05).
+The GCSS `ZCB/ZCT` series stored in `samstat` average 0.03/0.10 km, inconsistent with its
+own `ZINV` (1.5 km), `ZCTMAX` (1.7 km) and `QCL` profiles, so they are not used.
+
+### Window statistics
+
+| 00–24 UTC | SAM | Breeze | ARM |
+| --- | --- | --- | --- |
+| cloud water path (g m⁻²) | 84.9 | 129.7 | MWRRET 97.6 (03:10–24 UTC, 1-σ ≈ 13) |
+| rain water path (g m⁻²) | 4.77 | 0.78 | — |
+| surface precipitation (mm d⁻¹) | 0.263 | 0.031 | VDIS 0.012 |
+| cloud fraction | 1.00 (CLDSHD) | 0.93 (LWP > 5 g m⁻²) | ARSCL cloudy time fraction 0.84 |
+| dominant-layer base / top (m) | 678 / 1227 | 693 / 1216 | ceilometer 699 / ARSCL top 1021 |
+| SAM `ZINV` (m) | 1533 | — | — |
+| SHF / LHF (W m⁻²) | 1.3 / 31.7 | not saved | — |
+| net LW / SW at surface (W m⁻²) | 16.8 / 214.9 | not saved | — |
+
+| 06–12 UTC | SAM | Breeze | ARM |
+| --- | --- | --- | --- |
+| CWP (g m⁻²) | 64.9 | 149.7 | 168.3 |
+| RWP (g m⁻²) | 1.90 | 0.56 | — |
+| precipitation (mm d⁻¹) | 0.187 | 0.028 | 0.037 |
+| cloud fraction | 1.00 | 0.98 | 1.00 |
+| base / top (m) | 526 / 1006 | 308 / 919 | 667 / 1087 |
+| SHF / LHF, LWNS / SWNS (W m⁻²) | 3.0 / 45.3, 18.7 / 248.4 | not saved | — |
+
+| 09–12 UTC | SAM | Breeze | ARM |
+| --- | --- | --- | --- |
+| CWP (g m⁻²) | 30.1 | 81.4 | 205.8 |
+| RWP (g m⁻²) | 0.34 | 0.30 | — |
+| precipitation (mm d⁻¹) | 0.024 | 0.015 | 0.066 |
+| cloud fraction | 0.99 | 0.96 | 1.00 |
+| base / top (m) | 736 / 1069 | 397 / 969 | 670 / 1161 |
+| SHF / LHF, LWNS / SWNS (W m⁻²) | 3.8 / 52.5, 25.6 / 439.6 | not saved | — |
+
+### Time evolution (`lasso24_timeseries.png`)
+
+Both models carry the same diurnal cycle: a thick nocturnal deck (SAM CWP peak 151 g m⁻² at
+03 UTC, Breeze 244 g m⁻² at 06 UTC), midday thinning under the ≈ 750 W m⁻² net surface
+shortwave (SAM 15 g m⁻² at 12–13 UTC with CLDSHD 0.93, Breeze 14 g m⁻² at 14 UTC with cloud
+fraction 0.50), and recovery after sunset (SAM 110–135 g m⁻², Breeze 276 g m⁻² at 23 UTC).
+Breeze is thicker at night by 60–100 %, within the MWRRET envelope at 06–08 UTC and above
+it after 21 UTC (observed 0–130 g m⁻² at 19–24 UTC); its midday cloud-fraction dip is deeper
+and 2 h later than SAM's. Drizzle differs in timing and amount: SAM has two drizzle episodes,
+06–10 UTC (hourly PREC up to 0.61 mm d⁻¹, RWP 5.7 g m⁻²) and 19–24 UTC (0.8–1.6 mm d⁻¹, RWP
+19–27 g m⁻²); Breeze's are 0.04 mm d⁻¹ (RWP ≈ 1 g m⁻²) and 0.05–0.20 mm d⁻¹ (RWP up to 8
+g m⁻², 0.247 mm d⁻¹ at the end). Over 24 h SAM precipitates 8× more (0.26 vs 0.03 mm d⁻¹);
+the disdrometer saw 0.012 mm d⁻¹ (three brief showers). In both models the evening deck
+rises to ≈ 1.7–1.9 km (SAM `ZINV` 1.5 km, `ZCTMAX` 1.7 km; Breeze top 1.6–1.9 km) while
+ARSCL tops stay near 1.0–1.3 km — a shared forcing/entrainment issue, not an adapter one.
+
+### Profiles (`lasso24_profiles.png`, 03/06/09/12/18/23 UTC)
+
+θ and qᵛ agree throughout: rms differences below 2 km of 0.4–1.0 K and 0.24–0.45 g kg⁻¹,
+the inversion at the same height within one level at every hour, the same two-layer cloud
+structure (a shallow fog/stratus layer at 300–900 m until 09 UTC below the deck at
+1.3–1.7 km, then a single deck at 0.9–1.1 km at midday and 1.3–1.9 km in the evening).
+Winds: u within 1 m s⁻¹ in the boundary layer; v differs by 2–3 m s⁻¹ between 1 and 3 km
+after 06 UTC (SAM's free-tropospheric v is more negative), the one systematic dynamical
+difference. Cloud water: Breeze's deck is 1.5–2× denser in the evening (max qᶜˡ 0.81 vs
+0.43 g kg⁻¹ at 23 UTC, 0.49 vs 0.29 at 06 UTC) and its shallow layer wetter (0.4 vs 0.2
+g kg⁻¹ at 03–06 UTC). Rain water: SAM's qʳ peaks 4–20× higher in the evening deck
+(2.4×10⁻² vs 6.4×10⁻³ g kg⁻¹ at 23 UTC) while Breeze's early-morning fog layer rains more
+(1.5×10⁻³ vs 1.9×10⁻⁴ g kg⁻¹ at 06 UTC). Radiative heating: the cloud-top cooling spikes sit
+at the same heights; Breeze's are deeper (−122 vs −79 K d⁻¹ at 06 UTC, −90 vs −65 at 23 UTC,
+but −21 vs −26 at 12 UTC) with SAM's clear-air LW cooling and daytime SW warming of the
+column reproduced. In-cloud droplet number (Breeze): 215–245 cm⁻³, i.e. at the SBM-cap
+ceiling; `samstat` carries no droplet number (it is in `sam3dmicro`, not downloaded).
+
+### Plan views (`lasso24_planviews.png`, 06 and 18 UTC)
+
+06 UTC: SAM CLWP 129 ± 36 g m⁻² (every column > 20), Breeze 243 ± 91 g m⁻² — a smooth closed
+deck in SAM against a strongly cellular deck in Breeze with 12 % of columns raining above
+0.1 mm d⁻¹ (SAM 0 %). 18 UTC: SAM 90 ± 61 g m⁻² with open-cell patches of 200–300 g m⁻²,
+Breeze 63 ± 43 g m⁻² with sparser, smaller cells; rain in both confined to a few cells.
+So the horizontal organisation differs most at night (Breeze cellular where SAM is
+homogeneous), the mean LWP ratio flips sign between 06 and 18 UTC.
+
+### Attribution and verdict
+
+| disagreement | size | attributed to (recorded departure) | status |
+| --- | --- | --- | --- |
+| nocturnal LWP 60–100 % higher, denser deck, deeper cloud-top cooling, cellular structure | CWP 150 vs 65 g m⁻² (06–12) | prescribed 10 μm r_eff with RRTMGP vs SAM's SBM-diagnosed r_eff (≈ 12–15 μm at 220 cm⁻³; smaller drops → optically thicker cloud → stronger LW cooling → more condensation); the one-layer RRTMGP column; Smagorinsky–Lilly/WENO vs SAM TKE/MPDATA entrainment | accepted physics difference, first candidate for a sensitivity (r_eff 14 μm or diagnosed from P3's droplet number) |
+| drizzle 8× lower over 24 h; evening RWP 20× lower | 0.03 vs 0.26 mm d⁻¹ | P3 warm-rain (autoconversion/accretion at Nc ≈ 220 cm⁻³) vs the SBM's explicit collision–coalescence; the SS-cap emulation keeps Breeze's Nc at the ceiling (SAM's actual Nc unknown without sam3dmicro); Breeze's early-morning drizzle comes from the fog layer instead | accepted microphysics difference (P3 vs bin); not an adapter flaw |
+| midday cloud-fraction minimum 0.50 vs 0.93, 2 h later | CF 0.96 vs 0.99 (09–12) | thinner deck in SAM breaks up less because its LWP is lower and more uniform; shortwave absorption with the fixed r_eff | consequence of the first row |
+| free-tropospheric v 2–3 m s⁻¹ different after 06 UTC | 1–3 km | forcing above the LES: the lsf wind nudging/geostrophic columns are identical, so the difference arises from the sponge/upper boundary (SAM's `upperbound` on the top two levels vs Breeze's) and the RRTMGP column top | to check against the forcing input before a fix is attempted |
+| surface fluxes and net radiation not comparable | — | run saved no flux/radiation series | writer gap: add SHF/LHF (bulk BC diagnostics) and surface/top net LW/SW to the time-series writer before the next run |
+
+Verdict: the adapter reproduces the member's thermodynamic structure, diurnal cycle and
+cloud geometry within the stated departures; nothing indicates an input, unit, forcing or
+coding flaw that would warrant a relaunch. The LWP/drizzle differences are the P3-vs-bin and
+effective-radius differences the audit predicted, now quantified (CWP +130 %, precipitation
+−88 % over 24 h). Recommended next steps, in order: (1) add the flux/radiation writers;
+(2) rerun with `liquid_effective_radius = 14e-6` (SAM's ocean default when `compute_reffc`
+is off) and, if Breeze exposes it, a droplet-number-diagnosed r_eff, to isolate the radiation
+contribution; (3) download one `sam3dmicro` time for the SBM droplet number.
+
 ## 2. What `protocol = :lasso_ena_official` does
 
 `inspect_lasso_bundle` / `validate_lasso_bundle` (`src/lasso_bundle.jl`) read the five
-bundle files and either return the protocol defaults for `build_case` or reject the
-bundle with every offending setting named. The namelist conventions were taken from
+bundle files and either return the facts `ena_lasso` maps to model choices (domain, grid,
+times, switches, Coriolis parameter) or reject the bundle with every offending setting named. The namelist conventions were taken from
 `setparm.f90` (`&PARAMETERS`), `SGS_TKE/sgs.f90` (`&SGS_TKE`) and `params.f90`/`grid.f90`
 (defaults for absent keys).
 
@@ -162,6 +270,7 @@ the retrieval uncertainty; matching snapshots is not the criterion.
 - Separate run script (`cases/ena_lasso.jl`), constructor (`ena_lasso`), staging/freeze
   tooling (`data_wrangling/stage_lasso_bundle.jl`), launcher (`execution/submit_ena_lasso.sbatch`),
   comparison tooling and this audit: done; CPU tests in `Pkg.test()`.
-- Real-bundle validation and the 1-h GPU integration: done (sections 1b, 1c). The 24-h
-  baseline and its SAM/ARM comparison: queued/pending; see the status file. The Covert
-  benchmark runs are not relabelled as LASSO.
+- Real-bundle validation, the 1-h GPU integration and the full 24-h baseline with its
+  SAM/ARM comparison: done (sections 1b–1d). Remaining: flux/radiation writers, the
+  r_eff sensitivity, the SBM droplet number from `sam3dmicro`. The Covert benchmark runs are
+  not relabelled as LASSO.

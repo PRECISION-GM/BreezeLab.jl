@@ -203,8 +203,10 @@ setting the adapter cannot represent. Nothing is substituted or inferred:
   `day0` never identifies the year.
 
 The returned named tuple has `problems` (fatal, each an actionable sentence), `warnings`
-(deliberate, recorded differences), `settings` (keyword defaults for `build_case`),
-`namelist`, `groups`, `grid`, `time`, `switches`, `checksums` and `member`. Use
+(deliberate, recorded differences), `domain` (`Nx`, `Ny`, `Nz`, `dx`, `dy`), `location`
+(`latitude`, `longitude`), `coriolis_parameter` (`nothing` when the namelist leaves it to
+the latitude), `label`, `namelist`, `groups`, `grid` (SAM levels and Breeze faces), `time`,
+`switches`, `checksums` and `member`. [`ena_lasso`](@ref) maps these facts to model choices. Use
 [`validate_lasso_bundle`](@ref) to turn `problems` into an error.
 """
 function inspect_lasso_bundle(directory; member=nothing, dimensions=nothing, epoch=nothing)
@@ -461,31 +463,10 @@ function inspect_lasso_bundle(directory; member=nothing, dimensions=nothing, epo
         push!(warnings, "namelist translation frame (ug, vg) = ($ug, $vg) m/s: SAM integrates winds relative to it and adds it back for the surface fluxes; the adapter integrates ground-relative winds (bulk fluxes need the absolute wind) and leaves the nudging/geostrophic targets unshifted, which is the same physical state")
     push!(warnings, "HUJI-SBM diagCCN is a compile-time parameter (.true. in micro_prm.f90): the adapter's DiagnosticCCNProjection reproduces the reservoir rule once per step")
 
-    # --- settings for build_case -----------------------------------------------------------
-    aerosol = isnothing(member) ? nothing : member.aerosol
-    microphysics = isnothing(aerosol) ? :p3_aer2 : Symbol("p3_", aerosol)
-    settings = isnothing(grid) || !isempty(problems) ? nothing :
-        (; label = lasso_label(member, dimension_source, ug, vg),
-           Nx = nx, Ny = ny, Lx = nx * dx, Ly = ny * dy,
-           z_faces = grid.faces,
-           day0, latitude, longitude,
-           stop_time = Float64(stop_time), Δt = dt, max_Δt = dt,
-           translation_velocity = (0.0, 0.0),
-           microphysics,
-           radiation = :rrtmgp,
-           radiation_interval = Float64(nrad * dt),
-           surface = :bulk_sst,
-           surface_emissivity = 0.95,                       # RAD_RRTM/rad.f90: surfaceEmissivity = 0.95
-           liquid_effective_radius = compute_reffc ? 10e-6 : 14e-6,   # cam_rad_parameterizations: rliqocean = 14 μm
-           wind_nudging_timescale = tauls,
-           surface_flux_law = :sam_oceflx,
-           coriolis_parameter,
-           aerosol_supersaturation_cap = 0.003,              # HUJI-SBM ss_max (microphysics.f90)
-           vertical_advection = :full_field,
-           upper_boundary_relaxation = Bool(getnml("doupperbound", false)),
-           sponge = Bool(getnml("dodamping", false)) ? SAMSponge() : nothing,
-           aerosol_replenishment = :diagnostic_ccn,
-           perturbation = InitialPerturbation(; sam_perturb_type = perturb_type))
+    # --- facts the constructor uses ----------------------------------------------------
+    domain = isnothing(nx) ? nothing : (; Nx = nx, Ny = ny, Nz = nz, dx, dy)
+    location = (; latitude, longitude)
+    label = lasso_label(member, dimension_source, ug, vg)
 
     readme = read_bundle_readme(directory)
     switches = (; dosmagor, compute_reffc, compute_reffi, doseasons, perturb_type, timelargescale, nxco2, uniform_sfc_flx,
@@ -496,7 +477,7 @@ function inspect_lasso_bundle(directory; member=nothing, dimensions=nothing, epo
               snd_days, lsf_days, sfc_days, snd_records = length(soundings), lsf_records = length(lsf), sfc_samples = length(sfc.day))
 
     return (; directory = abspath(directory), member, files, checksums, namelist = nml, groups, grid, time, switches,
-              readme, dimension_source, problems, warnings, settings)
+              domain, location, coriolis_parameter, label, readme, dimension_source, problems, warnings)
 end
 
 """

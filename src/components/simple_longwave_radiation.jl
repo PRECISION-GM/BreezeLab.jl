@@ -6,7 +6,7 @@
 ##### `rad_simple.f90` (Stevens et al. 2005, DYCOMS-II RF01). It is retained as the
 ##### low-cost *legacy control* for the same-day Covert benchmark. The LASSO-ENA production
 ##### protocol uses RRTMG LW+SW, which Breeze provides through `RadiativeTransferModel`
-##### (RRTMGP all-sky); see `ena_simulation(data_dir; protocol=:lasso_ena_official, epoch=...)`.
+##### (RRTMGP all-sky); see `ena_lasso`.
 #####
 ##### Net upward longwave flux in each column:
 #####

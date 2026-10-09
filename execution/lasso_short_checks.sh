@@ -21,4 +21,5 @@ for name in ("radiative_flux_divergence", "T", "u", "v", "qᵛ", "nᵃ", "nᶜˡ
 end
 p = TOML.parsefile(joinpath(R, "provenance.toml"))
 println("config: ", (; p["config"]["surface_flux_law"], p["config"]["coriolis_parameter"], p["config"]["aerosol_supersaturation_cap"], p["config"]["radiation_interval"], p["config"]["liquid_effective_radius"], p["config"]["surface_emissivity"], p["config"]["n₁"], p["config"]["n₂"]))
-println("bundle readme hash: ", get(get(p["bundle"], "readme", Dict()), "model_source_git_hash", "?"))' "$R"
+bundle = get(p["config"], "bundle", get(p, "bundle", Dict()))   # older runs: top-level bundle
+println("bundle readme hash: ", get(get(bundle, "readme", Dict()), "model_source_git_hash", "?"))' "$R"

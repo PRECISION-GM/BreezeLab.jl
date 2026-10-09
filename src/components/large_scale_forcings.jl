@@ -229,7 +229,14 @@ order in the heat-capacity coupling,
 
 The second term is what keeps the temperature unchanged while vapor with heat capacity
 `cᵖᵛ ≠ cᵖᵈ` replaces dry air; multiplying `tls` by `cᵖᵈ` alone (SAM's constant `cp`) would
-change `T` whenever `qls ≠ 0`. The invariants are `dT/dt = tls` and `drᵛ/dt = qls` with
+change `T` whenever `qls ≠ 0`. **The cross term belongs to the static-energy formulation only.**
+In the liquid-ice potential-temperature formulation Breeze converts an energy source `F` into
+`dθ/dt = F / (cᵖᵐ Π)`, i.e. `cᵖᵐ dT/dt = F`, and a vapor source at fixed θ leaves `T` unchanged
+(up to the composition dependence of the Exner function, which vanishes at the standard
+pressure), so the same invariant needs `F = cᵖᵐ tls` alone; the forcing detects the prognostic
+at materialization ([`static_energy_prognostic`](@ref)) and drops the cross term there. (Before
+this was formulation-aware the θ-formulation cases — ENA Covert, ENA LASSO, TRACER–DP-SCREAM —
+received the cross term as a spurious heating `(cᵖᵛ - cᵖᵈ) T dqᵛ/dt`.) The invariants are `dT/dt = tls` and `drᵛ/dt = qls` with
 `dqᵛ/dt` following the mapping above; `test/runtests.jl` checks them in a forcing-only step
 (clear air) and against Breeze's thermodynamic state in cloudy cells.
 """
@@ -260,13 +267,19 @@ struct LargeScaleEnergyForcing{T, Q, M, C, D, N, B}
     density :: D
     moisture_name :: N
     moisture_basis :: B
+    static_energy :: Bool      # vapor heat-capacity cross term; set at materialization
 end
+
+LargeScaleEnergyForcing(tls, qls, microphysics, constants, density, moisture_name, moisture_basis) =
+    LargeScaleEnergyForcing(tls, qls, microphysics, constants, density, moisture_name, moisture_basis, false)
 
 Adapt.adapt_structure(to, f::LargeScaleEnergyForcing) =
     LargeScaleEnergyForcing(adapt(to, f.tls), adapt(to, f.qls), adapt(to, f.microphysics),
-                            adapt(to, f.thermodynamic_constants), adapt(to, f.density), f.moisture_name, f.moisture_basis)
+                            adapt(to, f.thermodynamic_constants), adapt(to, f.density), f.moisture_name, f.moisture_basis,
+                            f.static_energy)
 
-Base.summary(::LargeScaleEnergyForcing) = "LargeScaleEnergyForcing(cᵖᵐ tls + (cᵖᵛ - cᵖᵈ) T qls)"
+Base.summary(f::LargeScaleEnergyForcing) =
+    f.static_energy ? "LargeScaleEnergyForcing(cᵖᵐ tls + (cᵖᵛ - cᵖᵈ) T qls)" : "LargeScaleEnergyForcing(cᵖᵐ tls)"
 Base.show(io::IO, f::LargeScaleEnergyForcing) = print(io, summary(f))
 
 @inline function (f::LargeScaleEnergyForcing)(i, j, k, grid, clock, fields)
@@ -282,8 +295,20 @@ Base.show(io::IO, f::LargeScaleEnergyForcing) = print(io, summary(f))
     cᵖᵈ = constants.dry_air.heat_capacity
     cᵖᵛ = constants.vapor.heat_capacity
     rates = moisture_rates(f.moisture_basis, q, qls)
-    return cᵖᵐ * tls + (cᵖᵛ - cᵖᵈ) * T * rates.vapor
+    cross = ifelse(f.static_energy, (cᵖᵛ - cᵖᵈ) * T * rates.vapor, zero(T))
+    return cᵖᵐ * tls + cross
 end
+
+"""
+    static_energy_prognostic(context)
+
+Whether the model being materialized carries static energy `s` (Breeze `:StaticEnergy`
+formulation) rather than the liquid-ice potential temperature `θ`, from the forcing context's
+specific fields. The vapor heat-capacity cross terms of the energy forcings apply only to `s`:
+there a vapor source at fixed `s` cools by `(cᵖᵛ - cᵖᵈ) T dqᵛ / cᵖᵐ`, whereas at fixed `θ` the
+temperature is unchanged and `cᵖᵐ dT = F`.
+"""
+static_energy_prognostic(context) = haskey(context.specific_fields, :s)
 
 function AtmosphereModels.materialize_atmosphere_model_forcing(f::LargeScaleEnergyForcing,
                                                                field, name, model_field_names, context::NamedTuple)
@@ -291,7 +316,8 @@ function AtmosphereModels.materialize_atmosphere_model_forcing(f::LargeScaleEner
     # The scheme's lookup tables must live on the device, as Breeze does for model.microphysics
     microphysics = on_architecture(architecture(field.grid), f.microphysics)
     return LargeScaleEnergyForcing(f.tls, f.qls, microphysics, f.thermodynamic_constants,
-                                   context.total_density, f.moisture_name, f.moisture_basis)
+                                   context.total_density, f.moisture_name, f.moisture_basis,
+                                   static_energy_prognostic(context))
 end
 
 struct LargeScaleMoistureForcing{Q, M, D, N, B}
@@ -436,8 +462,10 @@ response requires the heat-capacity cross term of the simultaneous moisture rela
 
     ds/dt = -cᵖᵐ (T - Tg0)/τ - (cᵖᵛ - cᵖᵈ) T (qᵛ - qg0)/τ
 
-(the same physical-temperature invariant as `large_scale_thermodynamic_forcings`).
-Returns `(; s, <moisture_name>)`. This is distinct from the momentum sponge.
+(the same physical-temperature invariant as `large_scale_thermodynamic_forcings`). In the
+liquid-ice potential-temperature formulation the cross term is omitted (see
+[`static_energy_prognostic`](@ref)): there `cᵖᵐ dT = F` and the vapor relaxation at fixed θ
+leaves `T` unchanged. Returns `(; s, <moisture_name>)`. This is distinct from the momentum sponge.
 """
 function upper_boundary_relaxation_forcings(T_target, q_target; microphysics, thermodynamic_constants,
                                             moisture_name, timescale=3600, levels=2)
@@ -456,11 +484,16 @@ struct UpperBoundaryEnergyRelaxation{T, Q, M, C, D, N, R}
     moisture_name :: N
     rate :: R
     levels :: Int
+    static_energy :: Bool      # vapor heat-capacity cross term; set at materialization
 end
+
+UpperBoundaryEnergyRelaxation(T, q, microphysics, constants, density, moisture_name, rate, levels) =
+    UpperBoundaryEnergyRelaxation(T, q, microphysics, constants, density, moisture_name, rate, levels, false)
 
 Adapt.adapt_structure(to, f::UpperBoundaryEnergyRelaxation) =
     UpperBoundaryEnergyRelaxation(adapt(to, f.target), adapt(to, f.moisture_target), adapt(to, f.microphysics),
-                                  adapt(to, f.thermodynamic_constants), adapt(to, f.density), f.moisture_name, f.rate, f.levels)
+                                  adapt(to, f.thermodynamic_constants), adapt(to, f.density), f.moisture_name, f.rate, f.levels,
+                                  f.static_energy)
 
 Base.summary(f::UpperBoundaryEnergyRelaxation) = string("UpperBoundaryEnergyRelaxation(top ", f.levels, " levels, τ=", 1 / f.rate, " s)")
 Base.show(io::IO, f::UpperBoundaryEnergyRelaxation) = print(io, summary(f))
@@ -480,7 +513,8 @@ Base.show(io::IO, f::UpperBoundaryEnergyRelaxation) = print(io, summary(f))
     cᵖᵛ = constants.vapor.heat_capacity
     dTdt = - f.rate * (T - Tᵗ)
     dqdt = - f.rate * (qᵛᵉ - qᵗ)
-    return ifelse(active, cᵖᵐ * dTdt + (cᵖᵛ - cᵖᵈ) * T * dqdt, zero(T))
+    cross = ifelse(f.static_energy, (cᵖᵛ - cᵖᵈ) * T * dqdt, zero(T))
+    return ifelse(active, cᵖᵐ * dTdt + cross, zero(T))
 end
 
 function AtmosphereModels.materialize_atmosphere_model_forcing(f::UpperBoundaryEnergyRelaxation,
@@ -489,7 +523,8 @@ function AtmosphereModels.materialize_atmosphere_model_forcing(f::UpperBoundaryE
     FT = eltype(field.grid)
     microphysics = on_architecture(architecture(field.grid), f.microphysics)
     return UpperBoundaryEnergyRelaxation(f.target, f.moisture_target, microphysics, f.thermodynamic_constants,
-                                         context.total_density, f.moisture_name, convert(FT, f.rate), f.levels)
+                                         context.total_density, f.moisture_name, convert(FT, f.rate), f.levels,
+                                         static_energy_prognostic(context))
 end
 
 struct UpperBoundaryMoistureRelaxation{T, N, R}
@@ -603,4 +638,15 @@ function (projection::DiagnosticCCNProjection)(simulation)
     ρ = parent(projection.ρ)
     ρnᵃ .= max.(0, projection.n_initial .* ρ .- ρnᶜˡ .- ρnʳ)
     return nothing
+end
+
+"""
+    compact_forcing(forcing::AbstractDict)
+
+The `NamedTuple` of forcing tuples Breeze's `AtmosphereModel` takes, with absent (`nothing`)
+terms dropped and fields without any term left out.
+"""
+function compact_forcing(forcing::AbstractDict)
+    terms = Dict(name => Tuple(f for f in fs if !isnothing(f)) for (name, fs) in forcing)
+    return NamedTuple(name => fs for (name, fs) in terms if !isempty(fs))
 end

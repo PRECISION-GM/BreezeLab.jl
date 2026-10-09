@@ -6,9 +6,9 @@ Run from the repository root with Julia available and the environment instantiat
 ```sh
 mkdir -p output
 # H100 on wpcluster:
-sbatch --partition=gpu-prod execution/submit_gpu.sbatch cases/eastern_north_atlantic.jl
+sbatch --partition=gpu-prod execution/submit_gpu.sbatch cases/ena_covert.jl
 # Or one A100 on a shared node:
-sbatch --partition=gpu-p4de-2c execution/submit_gpu.sbatch cases/eastern_north_atlantic.jl
+sbatch --partition=gpu-p4de-2c execution/submit_gpu.sbatch cases/ena_covert.jl
 ```
 
 Override wall time, CPU and memory requests for the measured case. The wrapper runs

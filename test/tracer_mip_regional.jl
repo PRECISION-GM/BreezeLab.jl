@@ -19,7 +19,9 @@ ext = Base.get_extension(BreezeLab, :BreezeLabNumericalEarthExt)
     Nx, Ny = 10, 8
     z_faces = collect(range(0, 12_000, length = 25))          # reduced vertical for speed; protocol faces are tested elsewhere
     protocol = tracer_mip_protocol()
-    grid = tracer_mip_grid(arch, :outer; FT, Nx, Ny, z_faces)
+    Oceananigans.defaults.FloatType = FT   # restored in the `finally` below
+    try
+    grid = tracer_mip_grid(arch, :outer; Nx, Ny, z_faces)
 
     @testset "synthetic parent and sea mask helpers" begin
         parent = ext.synthetic_parent_atmosphere(grid; times = [0.0, 3600.0, 7200.0])
@@ -37,8 +39,8 @@ ext = Base.get_extension(BreezeLab, :BreezeLabNumericalEarthExt)
     end
 
     @testset "outer-domain constructor (synthetic boundaries, no radiation)" begin
-        case = tracer_mip_outer_simulation(arch; parent = :synthetic, FT, Nx, Ny, z_faces,
-                                           stop_time = 20.0, radiation = nothing, closure = nothing,
+        case = tracer_mip_outer_simulation(arch; parent = :synthetic, Nx, Ny, z_faces,
+                                           stop_time = 20.0, radiation = false, closure = nothing,
                                            terrain = ext.synthetic_coastal_elevation(grid))
         @test case.config.exploratory_synthetic_boundaries == true
         @test case.model isa NumericalEarth.EarthSystemModel
@@ -82,5 +84,8 @@ ext = Base.get_extension(BreezeLab, :BreezeLabNumericalEarthExt)
         @test all(f -> all(isfinite, interior(f)), acc.fields)
         T_land = Array(interior(case.land.temperature))
         @test all(T_land[sea] .≈ case.pinning.sea_surface_temperature)   # still pinned after stepping
+    end
+    finally
+        Oceananigans.defaults.FloatType = Float64
     end
 end

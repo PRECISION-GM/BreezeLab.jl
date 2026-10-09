@@ -5,10 +5,11 @@ using BreezeLab: tracer_mip_inner_simulation, tracer_mip_grid, tracer_mip_protoc
 using Oceananigans.Fields: interior
 using Statistics: mean
 ext = Base.get_extension(BreezeLab, :BreezeLabNumericalEarthExt)
+Oceananigans.defaults.FloatType = Float32
 outer_dir = get(ENV, "TRACER_MIP_OUTER_RUN", "/shared/home/greg/breezelab-work/tracer-mip/runs/era5_cpu_smoke_job213")
 
 @testset "offline inner nest from saved outer state" begin
-    parent = ext.outer_run_parent(outer_dir; FT = Float32)
+    parent = ext.outer_run_parent(outer_dir)
     @test parent.source isa ext.OuterRunParent
     @test NumericalEarth.surface_elevation(parent.grid) !== nothing
     T = parent.temperature[1]
@@ -16,9 +17,9 @@ outer_dir = get(ENV, "TRACER_MIP_OUTER_RUN", "/shared/home/greg/breezelab-work/t
     @test all(diff(Array(interior(parent.pressure[1], 1, 1, :))) .< 0)
     z = [Oceananigans.Grids.znode(1, 1, k, parent.grid, Center(), Center(), Center()) for k in 1:size(parent.grid, 3)]
     @test issorted(z) && z[end] > 20_000
-    case = tracer_mip_inner_simulation(CPU(); outer_run_dir = outer_dir, FT = Float32, Nx = 8, Ny = 8,
+    case = tracer_mip_inner_simulation(CPU(); outer_run_dir = outer_dir, Nx = 8, Ny = 8,
                                        z_faces = collect(range(0, 12_000, length = 25)), stop_time = 6.0,
-                                       radiation = nothing, terrain = nothing, process_rates = false)
+                                       radiation = false, terrain = nothing, process_rates = false)
     @test case.config.nesting[1:7] == "one-way"
     child = case.child
     @test all(isfinite, interior(child.temperature))

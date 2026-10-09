@@ -22,16 +22,14 @@ julia --project -e 'using Pkg; Pkg.test(; allow_reresolve=false, test_args=["gpu
 ```
 
 GitHub-hosted CPU CI does not claim GPU coverage. `ena_execution.jl` checks the
-exported case constructor (including its initially unadvanced clock), completed time/steps, finite fields, expected diagnostic fields,
+`ena_covert` constructor (including its initially unadvanced clock), completed time/steps, finite fields, expected diagnostic fields,
 consistent saved iterations, and final output time. Temporary outputs are cleaned up.
 Tests do not include executable case scripts. The full example and its analysis are
 exercised by the [manual Documenter/Literate build](../docs/README.md), with an optional
 CPU smoke mode.
 
-[diagnostics/](diagnostics/) contains historical investigation scripts: tendency
-scans, stage traces, rain-number/runaway probes, mass-budget probes, limiter fuzzing,
-and longer staged smokes. They are retained for diagnosis, not counted as passing
-regression tests merely because they print results or exit successfully. Their shell
-wrappers run from the repository root; override the partition for an available A100.
-Promote a probe into `Pkg.test()` when it has a bounded runtime and a justified
-assertion; the repeatable case execution checks have already been promoted.
+[diagnostics/](diagnostics/) contains two investigation scripts: the forcing-free rain-shaft
+mass budget (`mass_budget_probe.jl`) and the bounds-preserving WENO limiter fuzz
+(`limiter_fuzz_gpu.jl`). They are retained for diagnosis, not counted as passing regression
+tests. The earlier P3 probes drove the switch-based ENA builder that each case's own
+constructor replaced; they remain in the git history (commit cfb6c98).

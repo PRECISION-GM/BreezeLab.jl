@@ -66,10 +66,17 @@ function (updater::PrescribedStressUpdater)(simulation)
     return nothing
 end
 
+# The vapor heat-capacity term of the prescribed energy flux belongs to the static-energy formulation only.
+default_temperature_neutral_evaporation(formulation) =
+    formulation === :StaticEnergy ? true :
+    formulation === :LiquidIcePotentialTemperature ? false :
+    throw(ArgumentError("formulation must be :LiquidIcePotentialTemperature or :StaticEnergy, got $formulation"))
+
 """
     prescribed_surface_flux_boundary_conditions(grid, sfc, day0; thermodynamic_constants,
                                                 surface_density, moisture_name,
-                                                temperature_neutral_evaporation=true)
+                                                formulation=:LiquidIcePotentialTemperature,
+                                                temperature_neutral_evaporation=(formulation === :StaticEnergy))
 
 Bottom boundary conditions for `ρu`, `ρv`, the energy key `ρE` and the moisture density from the SAM
 `sfc` time series: energy flux H(t) [+ (cᵖᵛ - cᵖᵈ) SST(t) E(t)], vapor flux E = LE/ℒ, and a
@@ -81,7 +88,8 @@ function prescribed_surface_flux_boundary_conditions(grid, sfc::SAMSurfaceForcin
                                                      thermodynamic_constants,
                                                      surface_density,
                                                      moisture_name,
-                                                     temperature_neutral_evaporation = true,
+                                                     formulation = :LiquidIcePotentialTemperature,
+                                                     temperature_neutral_evaporation = default_temperature_neutral_evaporation(formulation),
                                                      frame_velocity = (0, 0))
     FT = eltype(grid)
     heat = prescribed_heat_flux_boundary_conditions(grid, sfc, day0; thermodynamic_constants, moisture_name,
@@ -102,18 +110,26 @@ end
 
 """
     prescribed_heat_flux_boundary_conditions(grid, sfc, day0; thermodynamic_constants, moisture_name,
-                                             temperature_neutral_evaporation=true)
+                                             formulation=:LiquidIcePotentialTemperature,
+                                             temperature_neutral_evaporation=(formulation === :StaticEnergy))
 
 The energy (`ρE`) and vapor flux bottom boundary conditions of the `sfc` series alone: energy
 flux H(t) [+ (cᵖᵛ - cᵖᵈ) SST(t) E(t)] and vapor flux E = LE/ℒ, as `FieldTimeSeries`
 interpolated linearly in time. Returns `(; bcs, energy_flux, vapor_flux, times)`; combine
 with a stress condition (`prescribed_surface_flux_boundary_conditions`) or a `BulkDrag`
-(the DP-SCREAM `iop_srf_prop` pathway in `build_case`'s `:prescribed_heat_fluxes_bulk_drag`).
+(the DP-SCREAM `iop_srf_prop` pathway of `tracer_dp_scream`).
+
+The `(cᵖᵛ - cᵖᵈ) SST E` term keeps evaporation temperature-neutral in the **static-energy**
+formulation, where vapor added at fixed `s` cools. In the liquid-ice potential-temperature
+formulation (the default, and every BreezeLab case) Breeze converts the `ρE` flux as
+`cᵖᵐ dT = F` and vapor added at fixed θ leaves `T` unchanged, so the term would be a spurious
+heating; `temperature_neutral_evaporation` therefore defaults to `formulation === :StaticEnergy`.
 """
 function prescribed_heat_flux_boundary_conditions(grid, sfc::SAMSurfaceForcing, day0;
                                                   thermodynamic_constants,
                                                   moisture_name,
-                                                  temperature_neutral_evaporation = true)
+                                                  formulation = :LiquidIcePotentialTemperature,
+                                                  temperature_neutral_evaporation = default_temperature_neutral_evaporation(formulation))
     FT = eltype(grid)
     constants = thermodynamic_constants
     ℒ = constants.liquid.reference_latent_heat

@@ -29,6 +29,7 @@ using NCDatasets
 using Statistics
 using Printf
 using Dates
+using JLD2: jldopen
 
 #####
 ##### Arguments
@@ -202,11 +203,16 @@ end
 #####
 
 function cross_section_animation()
-    file = joinpath(ctrl_dir, "sea_starr_ctrl_3d.jld2")
-    qc = FieldTimeSeries(file, "qᶜˡ"; backend = OnDisk())
-    qr = FieldTimeSeries(file, "qʳ"; backend = OnDisk())
-    na = FieldTimeSeries(file, "nᵃ"; backend = OnDisk())
-    nc = FieldTimeSeries(file, "nᶜˡ"; backend = OnDisk())
+    # Prefer the x–z slices saved at the animation cadence (runs after the 3-min 2-D output was
+    # introduced); fall back to the hourly 3D fields for older runs.
+    file2d = joinpath(ctrl_dir, "sea_starr_ctrl_2d.jld2")
+    has_slices = jldopen(f -> haskey(f["timeseries"], "qᶜˡ_xz"), file2d)
+    file = has_slices ? file2d : joinpath(ctrl_dir, "sea_starr_ctrl_3d.jld2")
+    suffix = has_slices ? "_xz" : ""
+    qc = FieldTimeSeries(file, "qᶜˡ" * suffix; backend = OnDisk())
+    qr = FieldTimeSeries(file, "qʳ" * suffix; backend = OnDisk())
+    na = FieldTimeSeries(file, "nᵃ" * suffix; backend = OnDisk())
+    nc = FieldTimeSeries(file, "nᶜˡ" * suffix; backend = OnDisk())
     grid = qc.grid
     j = size(grid, 2) ÷ 2
     x = xnodes(grid, Center()) ./ 1e3
@@ -214,7 +220,8 @@ function cross_section_animation()
     kmax = findlast(≤(3000), z)
     zc = z[1:kmax]
     frames = 1:min(length(qc.times), max_frames)
-    slice(fts, n) = Array(interior(fts[n], :, j, 1:kmax))
+    slice(fts, n) = has_slices ? Array(interior(fts[n], :, 1, 1:kmax)) : Array(interior(fts[n], :, j, 1:kmax))
+    cadence = length(qc.times) > 1 ? (qc.times[2] - qc.times[1]) / 60 : NaN
 
     fig = Figure(size = (width, 900), fontsize = 13)
     title = Observable(time_label(qc.times[1]))
@@ -242,7 +249,7 @@ function cross_section_animation()
     mp4 = mkpath_for(joinpath(ctrl_dir, "animations", "seastarr_ctrl_xz_cloud_rain_aerosol.mp4"))
     png = joinpath(ctrl_dir, "animations", "seastarr_ctrl_xz_cloud_rain_aerosol_montage.png")
     record_with_montage(fig, update!, frames, mp4, png; montage_frames = montage_indices(frames))
-    @info "cross-section: $(length(frames)) hourly frames to t = $(qc.times[last(frames)]/3600) h" mp4 fmt_mb(mp4) png
+    @info "cross-section: $(length(frames)) frames ($(cadence) min cadence, $(has_slices ? "saved slices" : "hourly 3D")) to t = $(qc.times[last(frames)]/3600) h" mp4 fmt_mb(mp4) png
     return (mp4, png, length(frames), qc.times[last(frames)])
 end
 

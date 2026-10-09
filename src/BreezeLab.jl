@@ -1,106 +1,108 @@
 """
     BreezeLab
 
-Observation-comparable LES experiments and workflows built on Breeze.jl.
-The initial ENA implementation ports the LASSO and Covert forcing pathways: SAM input-file readers, the large-scale forcing operators
-(time-varying geostrophic wind, domain-mean wind nudging, full-field upwind vertical
-advection, thermodynamically consistent horizontal advective tendencies, SAM sponge),
-simple/RRTMGP radiation, prescribed or bulk surface fluxes, and the 18 July 2017 case
-driver with one-moment and P3 microphysics.
+Observation-comparable LES experiments built on Breeze.jl. Each case has one constructor that
+reads its inputs and builds the grid, model and `Simulation` in its own body:
+
+- [`ena_covert`](@ref): the public Covert et al. (2022) ENA development benchmark, 18 July 2017
+- [`ena_lasso`](@ref): an official LASSO-ENA member from its staged SAM bundle
+- [`tracer_dp_scream`](@ref): the doubly periodic TRACER case driven by the DP-SCREAM IOP forcing
+- [`sea_starr`](@ref): the SEA STARR CTRL / N100 / N030 members from their DEPHY drivers
+- `tracer_mip_outer_simulation`, `tracer_mip_inner_simulation`: the regional TRACER-MIP
+  control (NumericalEarth extension)
+
+Microphysics is passed as a Breeze object, and precision follows
+`Oceananigans.defaults.FloatType`. The shared physics components live in `src/components`.
 """
 module BreezeLab
 
 export
-    # SAM input files
-    SAMSounding, SAMLargeScaleForcing, SAMSurfaceForcing,
-    read_sam_sounding, read_sam_large_scale_forcing, read_sam_surface_forcing, read_sam_namelist,
-    sam_hydrostatic_heights, record_heights, interpolate_profile, day_to_seconds, file_sha256, mass_fraction_from_mixing_ratio,
-    # grids and profiles
-    lasso_ena_cell_centers, lasso_ena_vertical_faces, uniform_vertical_faces, uniform_then_stretched_faces,
-    LargeScaleForcingProfiles, profile_time_series, surface_time_series, sam_interpolate_column,
-    # forcings
-    TimeVaryingGeostrophicForcing, time_varying_geostrophic_forcings,
-    MeanProfileNudging, LargeScaleVerticalAdvection, large_scale_thermodynamic_forcings,
-    LargeScaleEnergyForcing, LargeScaleMoistureForcing, SAMSponge, sam_sponge_rates,
-    upper_boundary_relaxation_forcings, UpperBoundaryEnergyRelaxation, UpperBoundaryMoistureRelaxation, SoundingTargetProfiles,
-    SimpleLongwaveRadiation,
-    # surface
-    prescribed_surface_flux_boundary_conditions, bulk_surface_flux_boundary_conditions, sam_oceflx_neutral_polynomials,
-    prescribed_heat_flux_boundary_conditions,
-    PrescribedStressUpdater, prescribed_stress_updater,
-    SeaSurfaceTemperatureUpdater,
-    # initial state
-    SoundingProfiles, saturation_partition, InitialPerturbation, initial_state_columns, perturbation_array,
-    # case
-    eastern_north_atlantic, ena_simulation, ena_protocol_settings, lasso_ena_simulation, build_case, lasso_aerosol_modes, covert_aerosol_modes, activated_fraction, write_provenance, read_sam_grd, faces_from_centers, epoch_from_day_of_year,
-    covert_public_bin_vertical_faces, covert_inversion_refined_vertical_faces, ena_vertical_faces, AerosolReplenishment, DiagnosticCCNProjection, initial_sounding, perturbation_amplitudes,
-    # LASSO-ENA bundle and case
-    LassoMember, parse_lasso_member, lasso_variant_tokens, lasso_samin_filename, lasso_reference_filenames,
-    read_sam_namelist_groups, lasso_scalar_levels, inspect_lasso_bundle, validate_lasso_bundle, lasso_bundle_record,
-    ena_lasso, lasso_bundle_directory, lasso_bundle_available, lasso_bundle_missing_message, lasso_documented_dimensions,
-    # ARM observations and run output readers
+    # case constructors
+    ena_covert, ena_lasso, tracer_dp_scream, sea_starr, tracer_mip_outer_simulation, tracer_mip_inner_simulation,
+    # constructor inputs: vertical grids, perturbation, sponge, aerosol
+    covert_public_bin_vertical_faces, covert_inversion_refined_vertical_faces, ena_vertical_faces,
+    lasso_ena_vertical_faces, uniform_then_stretched_faces,
+    tracer_dp_scream_vertical_faces, sea_starr_vertical_faces, acpc_vertical_faces,
+    InitialPerturbation, SAMSponge, neutral_drag_coefficient,
+    lasso_aerosol, covert_aerosol, first_level_reference_density, activated_fraction,
+    kappa_aerosol_activation, tracer_mip_aerosol_profile, PrescribedAerosolProfile,
+    # case inputs and their validation
+    read_sam_sounding, read_sam_large_scale_forcing, read_sam_surface_forcing, read_sam_namelist, read_sam_grd,
+    LassoMember, parse_lasso_member, inspect_lasso_bundle, validate_lasso_bundle, lasso_bundle_directory,
+    read_iop_forcing, tracer_dp_scream_settings, read_dephy_driver, tracer_mip_protocol, tracer_mip_case_window,
+    # observations and run output
     ARMSeries, read_arm_lwp, read_arm_rain_rate, read_arm_cloud_boundaries, window_statistics,
     cloud_fraction_from_boundaries, breezelab_timeseries, breezelab_cloud_boundaries,
-    read_case_inputs,
-    # TRACER–DP-SCREAM (IOP forcing, archived reference outputs, periodic case)
-    IOPForcing, read_iop_forcing, iop_datetimes, iop_index, iop_sam_inputs, iop_surface_albedo, iop_column_integral,
-    iop_potential_temperature, fractional_day_of_year,
-    read_dp_scream_output, dp_scream_window, parse_cf_time_units,
-    tracer_dp_scream, tracer_dp_scream_settings, tracer_dp_scream_vertical_faces, neutral_drag_coefficient,
+    read_dp_scream_output, dp_scream_window,
     # diagnostics
     cloud_liquid, rain_mass_fraction, liquid_water_path, ice_water_path, precipitable_water, total_condensate,
     cloud_fraction, cloud_fraction_profile, total_cloud_fraction_profile,
     surface_rain_flux, surface_ice_flux, cloud_boundaries, ProgressMessenger,
-    # SEA STARR
-    DEPHYDriver, read_dephy_driver, aerosol_number_per_kg, driver_profile_time_series, driver_initial_profile,
-    inversion_height, sea_starr_vertical_faces,
-    KappaAerosolMode, kappa_aerosol_activation, kappa_critical_supersaturation,
-    SurfaceAerosolSource, EvaporationRegeneration, EvaporationRateUpdater, cloud_evaporation_rate_field, aerosol_number_columns,
-    InversionFollowingNudging, InversionMaskUpdater, inversion_height_field, nudging_mask_weights,
-    extended_column_radiation, upper_atmosphere_layers, TrajectorySolarPosition, trajectory_cos_zenith, composite_trajectory_path,
-    sea_starr, sea_starr_driver_path,
-    # TRACER-MIP (regional nested coastal control; the regional constructor lives in the NumericalEarth extension)
-    tracer_mip_protocol, tracer_mip_case_window, acpc_vertical_faces, tracer_mip_horizontal_extent, tracer_mip_grid,
-    TracerMIPAerosolProfile, tracer_mip_aerosol_profile, aerosol_shape, surface_number_mixing_ratios,
-    mode_number_mixing_ratios, total_number_mixing_ratio, aerosol_profile_table, tracer_mip_p3_aerosol_modes,
-    PrescribedAerosolProfile,
-    ProcessRateAccumulators, accumulate_process_rates!, reset_process_accumulators!, process_rate_output_callback,
-    PROCESS_RATE_NAMES, PROCESS_RATE_UNITS, tracer_mip_outer_simulation, tracer_mip_inner_simulation
+    ProcessRateAccumulators, process_rate_output_callback, PROCESS_RATE_NAMES, PROCESS_RATE_UNITS,
+    # provenance
+    write_provenance
 
+using Dates: Dates, DateTime
+using TOML: TOML
+using Printf: @sprintf
 using Oceananigans
 using Oceananigans.Units
+using Oceananigans.Fields: interior
+using Oceananigans.Grids: znodes
 using CUDA # Register Oceananigans' GPU() constructor for the default case architecture.
 using Breeze
+using Breeze.Microphysics.PredictedParticleProperties: PredictedParticlePropertiesMicrophysics, CloudDroplets,
+                                                       AerosolActivation, AerosolMode, has_prognostic_aerosol,
+                                                       activated_number
+using CloudMicrophysics: CloudMicrophysics   # loads Breeze's one-moment extension
+using RRTMGP: RRTMGP                         # loads Breeze's RRTMGP extension
+using NCDatasets: NCDatasets
+using ClimaComms: ClimaComms
 
-include("sam_input_files.jl")
-include("vertical_grid.jl")
-include("forcing_profiles.jl")
-include("large_scale_forcings.jl")
-include("simple_longwave_radiation.jl")
-include("surface_fluxes.jl")
-include("initial_conditions.jl")
-include("diagnostics.jl")
-include("checkpointing.jl")
-include("case_setup.jl")
-include("ena_protocols.jl")
-include("eastern_north_atlantic.jl")
-include("lasso_bundle.jl")
-include("ena_lasso.jl")
-include("arm_observations.jl")
-include("iop_forcing.jl")
-include("dp_scream_output.jl")
-include("tracer_dp_scream.jl")
-include("dephy_driver.jl")
-include("sea_starr_aerosol.jl")
-include("sea_starr_forcings.jl")
-include("sea_starr_radiation.jl")
-include("sea_starr.jl")
+"""
+    package_path(parts...)
+
+A path inside the BreezeLab checkout (e.g. `package_path("data", "covert2022_bin")`).
+"""
+package_path(parts...) = joinpath(dirname(@__DIR__), parts...)
+
+# Shared building blocks: SAM inputs, grids, forcing operators, surface fluxes, radiation,
+# initial state, microphysics helpers, diagnostics, output and provenance.
+include("components/sam_input_files.jl")
+include("components/vertical_grid.jl")
+include("components/forcing_profiles.jl")
+include("components/large_scale_forcings.jl")
+include("components/simple_longwave_radiation.jl")
+include("components/surface_fluxes.jl")
+include("components/initial_conditions.jl")
+include("components/microphysics.jl")
+include("components/advection.jl")
+include("components/diagnostics.jl")
+include("components/output.jl")
+include("components/provenance.jl")
+include("components/checkpointing.jl")
+
+# Observations and reference model output.
+include("observations/arm_observations.jl")
+include("observations/dp_scream_output.jl")
+
+# Cases: one constructor each.
+include("ena/covert.jl")
+include("ena/lasso_bundle.jl")
+include("ena/lasso.jl")
+include("tracer_dp_scream/iop_forcing.jl")
+include("tracer_dp_scream/tracer_dp_scream.jl")
+include("sea_starr/dephy_driver.jl")
+include("sea_starr/aerosol.jl")
+include("sea_starr/forcings.jl")
+include("sea_starr/radiation.jl")
+include("sea_starr/sea_starr.jl")
 include("tracer_mip/protocol.jl")
 include("tracer_mip/aerosol_profiles.jl")
 include("tracer_mip/prescribed_aerosol.jl")
 include("tracer_mip/process_diagnostics.jl")
 
-# Regional (ERA5-nested, land/sea-coupled) constructor: implemented in the NumericalEarth extension.
+# Regional (ERA5-nested, land/sea-coupled) TRACER-MIP constructors: implemented in the NumericalEarth extension.
 function tracer_mip_outer_simulation end
 function tracer_mip_inner_simulation end
 function sync_nested_parent_clock! end

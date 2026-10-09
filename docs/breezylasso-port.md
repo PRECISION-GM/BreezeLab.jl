@@ -42,8 +42,8 @@ commit `12d02446a2147388dc89d828e6e0553106abea0f`, 2025-10-24), file by file:
 | HUJI-SBM two-mode aerosol (`aer1/2/3`) | P3 `AerosolActivation` with the LASSO radii/widths; cm⁻³ → kg⁻¹ using the surface density and a constant mixing ratio with height (`FCCN0 = FCCNR_mp ρ(z)/ρ(0)`); `DiagnosticCCNProjection` reproduces the `diagCCN` reservoir rule |
 | `setperturb.f90` case 5 (±0.1 K, ±0.025 g kg⁻¹ below 600 m, one draw per cell) | `perturbation_array`: one deterministic host array reused for T and vapor |
 
-Microphysics is staged as **1M-control → P3-N75 → P3-aer2** (`microphysics = :one_moment`,
-`:p3_n75`, `:p3_aer2`), all using the complete P3 implementation on Breeze `main`. Since Breeze
+Microphysics is staged as **1M-control → P3-N75 → P3-aer2** (CLI names `one_moment`,
+`p3_n75`, `p3_aer2`; the constructors take the corresponding Breeze objects), all using the complete P3 implementation on Breeze `main`. Since Breeze
 PR 1011 an `AerosolActivation` holds a fixed aerosol population unless built with
 `prognostic = true`; P3-aer2 asks for the depleting reservoir `ρnᵃ` (the SBM's behaviour, and
 what `DiagnosticCCNProjection` acts on), recorded as `prognostic_aerosol = true` in provenance.
@@ -197,20 +197,26 @@ The six members of the last production set (`*_posmom_s60_theta`) rerun unchange
 the pins, with a new output tag:
 
 ```sh
-MOMENTS=positive SLICE_INTERVAL=60 TAG=theta_pr959 execution/production_runs.sh
-GRID=lasso MOMENTS=positive SLICE_INTERVAL=60 TAG=theta_pr959 execution/production_runs.sh
+SLICE_INTERVAL=60 TAG=theta_pr959 execution/production_runs.sh
+GRID=lasso SLICE_INTERVAL=60 TAG=theta_pr959 execution/production_runs.sh
 ```
 
-The first job on a compute node precompiles the new Manifest into `~/.julia-compute`;
-`sbatch test/diagnostics/smoke_tests_gpu.sbatch` is the cheap GPU check to run first.
+The first job on a compute node precompiles the new Manifest into `~/.julia-compute`.
+
+The P3 probes cited above (`p3_*_probe.jl`, `p3_stage_trace_gpu.jl`, `smoke_tests.jl`) drove the
+old switch-based ENA builder and were retired when each case got its own constructor
+(October 2026); they remain in the git history at commit cfb6c98. The positivity limiter for
+the number and volume moments (`MOMENTS=positive`) and the liquid-ice potential temperature
+formulation are now the only configurations.
 
 ## Layout
 
 ```
-src/            package (readers, grids, forcings, radiation, surface, initial state, case driver, diagnostics)
+src/            package: components/ (readers, grids, forcings, radiation, surface, initial state, diagnostics)
+                and one folder per case with its constructor (ena/, sea_starr/, tracer_dp_scream/, tracer_mip/)
 cases/          readable case scripts; cli/run_case.jl for command-line runs
 data_wrangling/  input acquisition scripts
-test/diagnostics/ historical debugging probes and long staged smokes
+test/diagnostics/ mass-budget and limiter probes
 execution/      Slurm submit scripts
 test/           unit + regression tests (synthetic fixtures; Covert files used when present)
 analysis/       plot_results.jl (separate environment)
@@ -224,9 +230,7 @@ results/        figures and lightweight summaries committed from runs
 julia --project -e 'using Pkg; Pkg.instantiate()'
 julia --project data_wrangling/fetch_covert_inputs.jl                # public Covert files + checksums
 julia --project -e 'using Pkg; Pkg.test()'
-julia --project test/diagnostics/smoke_tests.jl cpu             # staged smoke tests
-sbatch test/diagnostics/smoke_tests_gpu.sbatch                  # same on one GPU
-sbatch execution/submit_gpu.sbatch cases/cli/run_case.jl --arch gpu --data data/covert2022_bin --preset covert_public_bin --microphysics p3_n75 --Nx 256 --Ny 256
+sbatch execution/submit_gpu.sbatch cases/cli/run_case.jl --arch gpu --data data/covert2022_bin --protocol covert_public_bin --microphysics p3_n75 --Nx 256 --Ny 256
 ```
 
 Every run writes `provenance.toml` (TOML; input checksums including `grd` when present, Breeze

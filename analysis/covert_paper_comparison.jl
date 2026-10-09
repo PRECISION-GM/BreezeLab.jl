@@ -10,6 +10,7 @@
 # session, the column loop (`findall(≥(t), view(...))`) stalled for >1 h (reproduced in isolation
 # on the CPU node, 8 Oct 2026); the same loop takes milliseconds when it runs first.
 using BreezeLab, CairoMakie, JLD2, Oceananigans, Statistics, TOML, Dates, Printf
+using BreezeLab: interpolate_profile
 using Oceananigans.Grids: Center, Face, znodes
 using Oceananigans.Fields: interior
 

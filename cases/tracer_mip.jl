@@ -31,6 +31,7 @@ using TOML: TOML
 # Pilots override the protocol size/duration through the environment (the Slurm launcher sets them):
 # TRACER_MIP_NX/NY (cells), TRACER_MIP_STOP_HOURS, TRACER_MIP_PARENT = era5 | synthetic (synthetic is
 # an exploratory software test of the machinery, never a MIP control), TRACER_MIP_ARCH = gpu | cpu.
+Oceananigans.defaults.FloatType = Float32
 arch = get(ENV, "TRACER_MIP_ARCH", "gpu") == "cpu" ? CPU() : GPU()
 case = :aug07
 Nx = parse(Int, get(ENV, "TRACER_MIP_NX", "750"))
@@ -38,7 +39,7 @@ Ny = parse(Int, get(ENV, "TRACER_MIP_NY", "750"))
 stop_time = parse(Float64, get(ENV, "TRACER_MIP_STOP_HOURS", "24")) * 3600
 parent = Symbol(get(ENV, "TRACER_MIP_PARENT", "era5"))
 # Pilot/diagnostic knobs (protocol values by default): radiation rrtmgp|none, terrain etopo|flat, Δt in seconds.
-radiation = get(ENV, "TRACER_MIP_RADIATION", "rrtmgp") == "none" ? nothing : :rrtmgp
+radiation = get(ENV, "TRACER_MIP_RADIATION", "rrtmgp") != "none"
 terrain_choice = get(ENV, "TRACER_MIP_TERRAIN", "etopo")
 Δt = parse(Float64, get(ENV, "TRACER_MIP_DT", "3"))
 closure_choice = get(ENV, "TRACER_MIP_CLOSURE", "tke")   # tke (default, PBL) | none | smagorinsky
@@ -65,7 +66,7 @@ mkpath(output_dir)
 
 extra = terrain_choice == "flat" ? (; terrain = nothing) : NamedTuple()
 closure_choice == "none" && (extra = merge(extra, (; closure = nothing)))
-closure_choice == "smagorinsky" && (extra = merge(extra, (; closure = SmagorinskyLilly(Float32))))
+closure_choice == "smagorinsky" && (extra = merge(extra, (; closure = SmagorinskyLilly())))
 run_case = tracer_mip_outer_simulation(arch; case, parent, era5_dir, Nx, Ny, stop_time, radiation, Δt, adaptive_cfl, relaxation_width, damping_depth, extra...)
 parent === :era5 || @warn "EXPLORATORY run with synthetic boundaries: software test of the machinery, not a TRACER-MIP control"
 simulation = run_case.simulation
@@ -100,7 +101,7 @@ simulation.output_writers[:surface] = JLD2Writer(child, merge(surface_2d, radiat
 # outer cells (relaxation zone + interpolation stencil), every `inner_interval` (≥ 10 min).
 inner_interval = fast_interval      # ≤ 2.5 min (≥ 4× the 10-min nest/animation cadence)
 inner_halo = 10
-inner_extent = tracer_mip_horizontal_extent(tracer_mip_protocol(), :inner)
+inner_extent = BreezeLab.tracer_mip_horizontal_extent(tracer_mip_protocol(), :inner)
 λc = Array(Oceananigans.Grids.λnodes(child.grid, Center()))
 φc = Array(Oceananigans.Grids.φnodes(child.grid, Center()))
 i_range = max(1, searchsortedfirst(λc, inner_extent.longitude[1]) - inner_halo):min(Nx, searchsortedlast(λc, inner_extent.longitude[2]) + inner_halo)

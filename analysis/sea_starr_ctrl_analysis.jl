@@ -8,6 +8,7 @@
 # Writes figures (PNG) and `summary.md` / `summary.toml` with the numbers under --out.
 
 using BreezeLab
+using BreezeLab: interpolate_profile
 using Breeze
 using Oceananigans
 using Oceananigans.Units
@@ -156,8 +157,9 @@ note("w_entrainment_day1_mm_s", 1e3 * mean(we[th .< 24])); note("w_entrainment_d
 #####
 
 subsidence_check = let
-    case = sea_starr(; member, arch = CPU(), FT = Float64, Nx = 8, Ny = 8, driver_path = driver.path,
-                       write_output = false, radiation = nothing, stop_time = 1.0, progress_interval = 1e9, checkpoint_interval = nothing)
+    Oceananigans.defaults.FloatType = Float64
+    case = sea_starr(; member, arch = CPU(), Nx = 8, Ny = 8, driver_path = driver.path,
+                       write_output = false, radiation = false, stop_time = 1.0, progress_interval = 1e9, checkpoint_interval = nothing)
     model = case.model
     grid = model.grid
     zc = Array(znodes(grid, Center()))

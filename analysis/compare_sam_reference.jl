@@ -19,7 +19,7 @@ stage("reading run output")
 series = breezelab_timeseries(run_dir)
 bounds = breezelab_cloud_boundaries(run_dir)
 prov = TOML.parsefile(joinpath(run_dir, "provenance.toml"))
-member = get(prov, "protocol_member", "undeclared")
+member = get(prov["config"], "member", get(prov, "protocol_member", "undeclared"))   # older runs: top-level protocol_member
 year = Dates.year(series.epoch)
 t0, t1 = first(series.time), last(series.time)
 
