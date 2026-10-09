@@ -10,6 +10,8 @@
 # physical-idleness check, per-CPU compiled depot overlay).
 # Usage: sbatch --partition=<p> --nodelist=<node> --time=<wall> execution/tracer_dp_scream.sbatch \
 #            <GPU UUID> <experiment> <stop_time seconds> [checkpoint interval s = 21600] [pickup_from dir]
+# Environment knobs are passed through to cases/tracer_dp_scream.jl (Slurm exports the submitting environment):
+#   TRACER_DP_SCREAM_NX (256), TRACER_DP_SCREAM_DX (200 m), TRACER_DP_SCREAM_SLICE_MINUTES (5), TRACER_DP_SCREAM_SLICE_HEIGHT (3000 m).
 set -euo pipefail
 W=/shared/home/greg/breezelab-work/tracer-dp-scream
 C=/shared/home/greg/breezelab-runs/20261006
