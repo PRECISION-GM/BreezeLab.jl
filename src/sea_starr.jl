@@ -57,7 +57,8 @@ Keyword arguments (protocol defaults):
   aerosol in cloudy cells; `:condensate_free` starts from the supersaturated vapor and lets P3 condense
 - `aerosol_surface_flux = 7e5` m⁻² s⁻¹ (70 cm⁻² s⁻¹); `regeneration = true`
 - `mean_diameter = 185e-9`, `geometric_std = 1.5`, `kappa = 0.2`
-- `radiation = :rrtmgp` (all-sky LW+SW, `radiation_interval = 60` s) or `nothing`; `ozone = :driver`
+- `radiation = :rrtmgp_extended` (all-sky LW+SW with the driver's upper atmosphere above the LES top; `:rrtmgp` ends the column at the LES top) or `nothing`; `radiation_interval = 60` s; `ozone = :driver`
+- `solar = :trajectory` (zenith angle along the composite trajectory, from `trajectories_path`) or `:fixed` (driver lat/lon)
 - `liquid_effective_radius = 10e-6`, `surface_albedo = 0.07`, `surface_emissivity = 0.98`
 - `nudging = true`, `nudging_offset = 100`, `nudging_ramp = 200`, `inversion_search_top = 4000` m
 - `vertical_advection = :full_field` or `nothing`; `geostrophic = true`; `surface = :bulk_sst` or `nothing`
@@ -82,8 +83,10 @@ function sea_starr(; member = :CTRL,
                      regeneration = true,
                      mean_diameter = 185e-9, geometric_std = 1.5, kappa = 0.2,
                      activation_timescale = 1.0,
-                     radiation = :rrtmgp,
+                     radiation = :rrtmgp_extended,
                      radiation_interval = 60,
+                     solar = :trajectory,
+                     trajectories_path = joinpath(dirname(driver_path), "SEA_STARR_Raw_Trajectories.nc"),
                      ozone = :driver,
                      liquid_effective_radius = 10e-6,
                      ice_effective_radius = 30e-6,
@@ -251,19 +254,32 @@ function sea_starr(; member = :CTRL,
         throw(ArgumentError("ozone must be :driver or a number (volume mixing ratio)"))
     end
     background_atmosphere = BackgroundAtmosphere(; CO₂, CH₄, N₂O, O₃ = o3_profile)
+    solar ∈ (:fixed, :trajectory) || throw(ArgumentError("solar must be :fixed (driver lat/lon) or :trajectory, got $solar"))
+    trajectory = solar === :trajectory ? composite_trajectory_path(trajectories_path) : nothing
+    solar_position = solar === :trajectory ? FixedCosineZenith(0.0) : ApparentSolarPosition(; coordinate=(longitude, latitude), epoch)
+    radiation_record = (;)
     radiation_model = if radiation === :rrtmgp
         RadiativeTransferModel(grid, AllSkyOptics(), constants;
                                surface_temperature = Tₛ,
-                               surface_albedo, surface_emissivity, background_atmosphere,
-                               solar_position = ApparentSolarPosition(; coordinate=(longitude, latitude), epoch),
+                               surface_albedo, surface_emissivity, background_atmosphere, solar_position,
                                schedule = TimeInterval(radiation_interval),
                                liquid_effective_radius = ConstantRadiusParticles(liquid_effective_radius),
                                ice_effective_radius = ConstantRadiusParticles(ice_effective_radius))
+    elseif radiation === :rrtmgp_extended
+        rtm, radiation_record = extended_column_radiation(grid, constants; driver,
+                                                          surface_temperature = Tₛ,
+                                                          surface_albedo, surface_emissivity, background_atmosphere, solar_position,
+                                                          schedule = TimeInterval(radiation_interval),
+                                                          liquid_effective_radius = ConstantRadiusParticles(liquid_effective_radius),
+                                                          ice_effective_radius = ConstantRadiusParticles(ice_effective_radius))
+        rtm
     elseif isnothing(radiation)
         nothing
     else
-        throw(ArgumentError("radiation must be :rrtmgp or nothing, got $radiation"))
+        throw(ArgumentError("radiation must be :rrtmgp, :rrtmgp_extended or nothing, got $radiation"))
     end
+    solar_updater = (solar === :trajectory && !isnothing(radiation_model)) ?
+                    TrajectorySolarPosition(radiation_model, epoch, trajectory.times, trajectory.longitude, trajectory.latitude) : nothing
 
     #####
     ##### Model
@@ -316,6 +332,10 @@ function sea_starr(; member = :CTRL,
     conjure_time_step_wizard!(simulation; cfl, max_Δt)
     Oceananigans.Diagnostics.erroring_NaNChecker!(simulation)
     add_callback!(simulation, sst_updater, IterationInterval(1))
+    if !isnothing(solar_updater)
+        solar_updater(simulation)
+        add_callback!(simulation, solar_updater, IterationInterval(1))
+    end
     mask_updater = InversionMaskUpdater(model; mask, offset=nudging_offset, ramp_depth=nudging_ramp, z_max=inversion_search_top)
     mask_updater(simulation)                      # mask for the first step
     nudging && add_callback!(simulation, mask_updater, IterationInterval(1))
@@ -340,8 +360,11 @@ function sea_starr(; member = :CTRL,
 
     departures = (
         "no aerosol optical properties in Breeze RRTMGP (protocol: single-scatter albedo 0.85 at 550 nm); aerosol absorption is absent",
-        "RRTMGP column ends at the LES top ($(z_faces[end]) m); no atmosphere above it and zero downwelling LW at the top",
-        "fixed solar coordinate (driver lat/lon) instead of the moving trajectory",
+        radiation === :rrtmgp_extended ?
+            "RRTMGP column extended above the LES top ($(z_faces[end]) m) with the driver's time-mean atmosphere ($(get(radiation_record, :layers_above, 0)) layers to $(round(get(radiation_record, :column_top, NaN))) m): BreezeLab construction of Breeze's all-sky model" :
+            "RRTMGP column ends at the LES top ($(z_faces[end]) m); no atmosphere above it and zero downwelling LW at the top",
+        solar === :trajectory ? "solar zenith angle from the composite trajectory's hourly mean (lon, lat) (BreezeLab callback)" :
+                                "fixed solar coordinate (driver lat/lon) instead of the moving trajectory",
         "nudging ramp linear over $(nudging_ramp) m (Blossey et al. 2013 form not verified); nudging acts on the horizontal mean; θ nudged to thetal_nud, qᵛ to qt_nud",
         "κ-Köhler activation of the local reservoir replaces Breeze's constant-mode activation (BreezeLab extension)",
         "aerosol regeneration: droplet number removed ∝ evaporated cloud mass and returned to nᵃ (P3 default discards it); no regeneration from rain evaporation; no interstitial scavenging",
@@ -356,7 +379,8 @@ function sea_starr(; member = :CTRL,
                 microphysics="P3 + KappaAerosolMode (prognostic reservoir)", mean_diameter, geometric_std, kappa,
                 activation_timescale, aerosol_surface_flux, regeneration, initialization=string(initialization),
                 initial_activated_fraction, initial_aerosol_max=maximum(na₀), initial_aerosol_surface=na₀[1],
-                radiation=string(radiation), radiation_interval, ozone=string(ozone), liquid_effective_radius, ice_effective_radius,
+                radiation=string(radiation), radiation_interval, solar=string(solar), radiation_layers_above=get(radiation_record, :layers_above, 0),
+                radiation_column_top=get(radiation_record, :column_top, z_faces[end]), ozone=string(ozone), liquid_effective_radius, ice_effective_radius,
                 surface_albedo, surface_emissivity, CO₂, CH₄, N₂O,
                 surface=string(surface), roughness_length=z₀, gustiness,
                 nudging, nudging_offset, nudging_ramp, inversion_search_top,
