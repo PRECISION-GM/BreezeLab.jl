@@ -90,13 +90,14 @@ summary = Dict("site" => "AMF1 La Porte 29.670N 95.059W; model cell ($I, $J) at 
 open(joinpath(out_dir, "site_comparison.toml"), "w") do io; TOML.print(io, summary); end
 
 hrs(t) = Dates.value.(t .- t0) ./ 3.6e6
+obs(d, v) = (tv = sel(d, v); (hrs(tv[1]), tv[2]))
 fig = Figure(size = (1200, 1000))
-ax = Axis(fig[1, 1]; ylabel = "T (K)", title = "La Porte: model lowest level (25 m) vs met 2 m"); lines!(ax, hrs(mtime), T1; label = "model"); lines!(ax, hrs(sel(met, "temp_mean")[1]), sel(met, "temp_mean")[2] .+ 273.15; label = "obs 2 m"); axislegend(ax; position = :rb)
-ax = Axis(fig[1, 2]; ylabel = "RH (%)"); lines!(ax, hrs(mtime), RH1); lines!(ax, hrs(sel(met, "rh_mean")...))
-ax = Axis(fig[2, 1]; ylabel = "wind speed (m/s)"); lines!(ax, hrs(mtime), U1; label = "model 25 m"); lines!(ax, hrs(sel(met, "wspd_vec_mean")...); label = "obs 10 m"); axislegend(ax)
-ax = Axis(fig[2, 2]; ylabel = "wind direction (°)"); scatter!(ax, hrs(mtime), D1; markersize = 4, label = "model"); scatter!(ax, hrs(sel(met, "wdir_vec_mean")...); markersize = 2, label = "obs"); hspan!(ax, 90, 200; color = (:green, 0.1)); axislegend(ax)
-ax = Axis(fig[3, 1]; ylabel = "cloud base (m)", xlabel = "hours after 06 UTC", limits = (nothing, (0, 6000))); scatter!(ax, hrs(sel(ceil, "first_cbh")...); markersize = 2, label = "ceilometer"); scatter!(ax, hrs(sel(arscl, "cloud_base_best_estimate")...); markersize = 2, label = "ARSCL"); scatter!(ax, hrs(mtime), CB; markersize = 6, color = :red, label = "model (qᶜˡ > 1e-5)"); axislegend(ax)
-ax = Axis(fig[3, 2]; ylabel = "rain rate (mm/h)", xlabel = "hours after 06 UTC"); lines!(ax, hrs(mtime), RR; label = "model"); lines!(ax, hrs(sel(ld, "precip_rate")...); label = "disdrometer"); lines!(ax, hrs(sel(met, "pwd_precip_rate_mean_1min")...); label = "PWD"); axislegend(ax)
+ax = Axis(fig[1, 1]; ylabel = "T (K)", title = "La Porte: model lowest level (25 m) vs met 2 m"); lines!(ax, hrs(mtime), T1; label = "model"); let (t, v) = obs(met, "temp_mean"); lines!(ax, t, v .+ 273.15; label = "obs 2 m"); end; axislegend(ax; position = :rb)
+ax = Axis(fig[1, 2]; ylabel = "RH (%)"); lines!(ax, hrs(mtime), RH1); lines!(ax, obs(met, "rh_mean")...)
+ax = Axis(fig[2, 1]; ylabel = "wind speed (m/s)"); lines!(ax, hrs(mtime), U1; label = "model 25 m"); lines!(ax, obs(met, "wspd_vec_mean")...; label = "obs 10 m"); axislegend(ax)
+ax = Axis(fig[2, 2]; ylabel = "wind direction (°)"); scatter!(ax, hrs(mtime), D1; markersize = 4, label = "model"); scatter!(ax, obs(met, "wdir_vec_mean")...; markersize = 2, label = "obs"); hspan!(ax, 90, 200; color = (:green, 0.1)); axislegend(ax)
+ax = Axis(fig[3, 1]; ylabel = "cloud base (m)", xlabel = "hours after 06 UTC", limits = (nothing, (0, 6000))); scatter!(ax, obs(ceil, "first_cbh")...; markersize = 2, label = "ceilometer"); scatter!(ax, obs(arscl, "cloud_base_best_estimate")...; markersize = 2, label = "ARSCL"); scatter!(ax, hrs(mtime), CB; markersize = 6, color = :red, label = "model (qᶜˡ > 1e-5)"); axislegend(ax)
+ax = Axis(fig[3, 2]; ylabel = "rain rate (mm/h)", xlabel = "hours after 06 UTC"); lines!(ax, hrs(mtime), RR; label = "model"); lines!(ax, obs(ld, "precip_rate")...; label = "disdrometer"); lines!(ax, obs(met, "pwd_precip_rate_mean_1min")...; label = "PWD"); axislegend(ax)
 save(joinpath(out_dir, "site_timeseries.png"), fig; px_per_unit = 1)
 
 fig2 = Figure(size = (1200, 500))
