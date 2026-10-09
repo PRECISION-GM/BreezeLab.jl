@@ -24,6 +24,7 @@ while /opt/slurm/bin/squeue -h -j "$GPU_JOB" -o %t | grep -q .; do
   STATE=$(/opt/slurm/bin/squeue -h -j "$GPU_JOB" -o %t)
   # newest segment of the run (segment_<n> after a Slurm requeue)
   RUN=$(ls -d "$BASE" "$BASE"/segment_* 2>/dev/null | sort -V | tail -1)
+  if [ -z "$RUN" ]; then sleep 300; continue; fi    # job not started yet (pending or held)
   SNAP="$BASE/../watch_snapshot_$(basename "$BASE")_$(basename "$RUN")"; mkdir -p "$SNAP"
   CSV="$RUN/monitor.csv"; [ -f "$CSV" ] || echo "$HEADER" > "$CSV"
   if [ "$STATE" = R ] && [ -f "$RUN/outer_slices.jld2" ]; then
