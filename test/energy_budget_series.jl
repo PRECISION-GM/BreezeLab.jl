@@ -83,12 +83,12 @@ if HAVE_COVERT
         times = [day_to_seconds(d, case.config.day0) for d in sfc.day]
         H = interpolate_time_series(times, sfc.sensible_heat_flux, 0.0)
         LE = interpolate_time_series(times, sfc.latent_heat_flux, 0.0)
-        fluxes = surface_heat_fluxes(case.model; temperature_neutral_evaporation=true)
+        # θ formulation: the prescribed energy flux is the sfc file's H (no (cᵖᵛ - cᵖᵈ) T E term), and the
+        # writer's diagnostic follows the constructor's setting
+        @test case.config.temperature_neutral_evaporation == false
+        fluxes = surface_heat_fluxes(case.model)
         @test domain_mean(fluxes.latent) ≈ LE rtol=1e-6
-        @test domain_mean(fluxes.sensible) ≈ H atol=0.1        # T₁ in place of the SST in the (cᵖᵛ-cᵖᵈ)TE term
-        # without the correction the energy flux carries the extra (cᵖᵛ - cᵖᵈ) T E
-        raw = domain_mean(surface_heat_fluxes(case.model).sensible)
-        @test raw - H > 0.05 * LE
+        @test domain_mean(fluxes.sensible) ≈ H rtol=1e-3
         r = radiative_boundary_fluxes(case.model.radiation, case.model.grid)
         F = Array(interior(case.model.radiation.flux))
         @test domain_mean(r.surface_net_longwave) ≈ mean(F[:, :, 1]) && domain_mean(r.top_net_longwave) ≈ mean(F[:, :, end])
