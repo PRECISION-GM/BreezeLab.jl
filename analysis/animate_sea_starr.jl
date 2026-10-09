@@ -47,15 +47,18 @@ function parse_args(args)
 end
 
 opts = parse_args(ARGS)
-ctrl_dir = get(opts, "ctrl", "runs/ctrl_full_66h_job211")
-n100_dir = get(opts, "n100", "runs/n100_full_66h_job214")
-n030_dir = get(opts, "n030", "runs/n030_full_66h_job218")
+# Each run may be a comma-separated list of restart-segment directories (segment 1 first).
+include(joinpath(@__DIR__, "sea_starr_segments.jl"))
+ctrl_dirs = segment_dirs(get(opts, "ctrl", "runs/ctrl_full_66h_job211"))
+n100_dirs = segment_dirs(get(opts, "n100", "runs/n100_full_66h_job214"))
+n030_dirs = segment_dirs(get(opts, "n030", "runs/n030_full_66h_job218"))
+ctrl_dir = first(ctrl_dirs); n100_dir = first(n100_dirs); n030_dir = first(n030_dirs)
 copy_to = get(opts, "copy-to", "/shared/home/greg/breezelab-work/campaign-figures/animations")
 max_frames = parse(Int, get(opts, "max-frames", "100000"))
 framerate = parse(Int, get(opts, "framerate", "12"))
 trajectories = get(opts, "trajectories", "/shared/home/greg/breezelab-runs/20261006/inputs/mip_sources/seastarr_22241697/SEA_STARR_Raw_Trajectories.nc")
 compression = parse(Int, get(opts, "compression", "24"))
-members = [(:CTRL, ctrl_dir, "sea_starr_ctrl"), (:N100, n100_dir, "sea_starr_n100"), (:N030, n030_dir, "sea_starr_n030")]
+members = [(:CTRL, ctrl_dirs, "sea_starr_ctrl"), (:N100, n100_dirs, "sea_starr_n100"), (:N030, n030_dirs, "sea_starr_n030")]
 commit = try strip(read(`git rev-parse --short HEAD`, String)) catch; "unknown" end
 
 epoch = DateTime(2017, 8, 15, 21)     # driver start (seconds since 2017-08-15 21:00:00 UTC)
@@ -137,11 +140,10 @@ fmt_mb(path) = @sprintf("%.1f MB", filesize(path) / 1e6)
 
 function plan_view_animation()
     series = map(members) do (name, dir, prefix)
-        file = joinpath(dir, prefix * "_2d.jld2")
         (; name, dir,
-           cwp = FieldTimeSeries(file, "cwp"; backend = OnDisk()),
-           rwp = FieldTimeSeries(file, "rwp"; backend = OnDisk()),
-           rain = FieldTimeSeries(file, "rain"; backend = OnDisk()))
+           cwp = stitched_series(dir, prefix * "_2d.jld2", "cwp"; backend = OnDisk()),
+           rwp = stitched_series(dir, prefix * "_2d.jld2", "rwp"; backend = OnDisk()),
+           rain = stitched_series(dir, prefix * "_2d.jld2", "rain"; backend = OnDisk()))
     end
     # times common to the three runs (they are at different stages of the 66 h integration)
     common = reduce(intersect, [round.(s.cwp.times) for s in series])
@@ -207,12 +209,12 @@ function cross_section_animation()
     # introduced); fall back to the hourly 3D fields for older runs.
     file2d = joinpath(ctrl_dir, "sea_starr_ctrl_2d.jld2")
     has_slices = jldopen(f -> haskey(f["timeseries"], "qᶜˡ_xz"), file2d)
-    file = has_slices ? file2d : joinpath(ctrl_dir, "sea_starr_ctrl_3d.jld2")
+    filename = has_slices ? "sea_starr_ctrl_2d.jld2" : "sea_starr_ctrl_3d.jld2"
     suffix = has_slices ? "_xz" : ""
-    qc = FieldTimeSeries(file, "qᶜˡ" * suffix; backend = OnDisk())
-    qr = FieldTimeSeries(file, "qʳ" * suffix; backend = OnDisk())
-    na = FieldTimeSeries(file, "nᵃ" * suffix; backend = OnDisk())
-    nc = FieldTimeSeries(file, "nᶜˡ" * suffix; backend = OnDisk())
+    qc = stitched_series(ctrl_dirs, filename, "qᶜˡ" * suffix; backend = OnDisk())
+    qr = stitched_series(ctrl_dirs, filename, "qʳ" * suffix; backend = OnDisk())
+    na = stitched_series(ctrl_dirs, filename, "nᵃ" * suffix; backend = OnDisk())
+    nc = stitched_series(ctrl_dirs, filename, "nᶜˡ" * suffix; backend = OnDisk())
     grid = qc.grid
     j = size(grid, 2) ÷ 2
     x = xnodes(grid, Center()) ./ 1e3
@@ -258,9 +260,9 @@ end
 #####
 
 function time_height_animation()
-    file = joinpath(ctrl_dir, "sea_starr_ctrl_statistics.jld2")
-    na = FieldTimeSeries(file, "nᵃ"); nc = FieldTimeSeries(file, "nᶜˡ"); qc = FieldTimeSeries(file, "qᶜˡ")
-    zi = FieldTimeSeries(joinpath(ctrl_dir, "sea_starr_ctrl_timeseries.jld2"), "zi")
+    stats(name) = stitched_series(ctrl_dirs, "sea_starr_ctrl_statistics.jld2", name)
+    na = stats("nᵃ"); nc = stats("nᶜˡ"); qc = stats("qᶜˡ")
+    zi = stitched_series(ctrl_dirs, "sea_starr_ctrl_timeseries.jld2", "zi")
     z = znodes(na.grid, Center())
     kmax = findlast(≤(3000), z)
     zc = z[1:kmax]
@@ -326,7 +328,7 @@ end
 open(joinpath(copy_to, "README.md"), "w") do io
     println(io, "# SEA STARR animations\n")
     println(io, "Rendered ", Dates.format(now(UTC), "yyyy-mm-dd HH:MM"), " UTC by `analysis/animate_sea_starr.jl` (BreezeLab commit ", commit, ") from the ",
-            "JLD2 output of the 66 h runs on wpcluster: CTRL `", ctrl_dir, "`, N100 `", n100_dir, "`, N030 `", n030_dir, "` (runs still in progress ",
+            "JLD2 output of the 66 h runs on wpcluster: CTRL `", segment_label(ctrl_dirs), "`, N100 `", segment_label(n100_dirs), "`, N030 `", segment_label(n030_dirs), "` (restart segments stitched at their restore times; runs may still be in progress ",
             "when rendered; the frames stop at the last record available). MP4 = H.264, ", width, " px wide, ", framerate, " frames per second.\n")
     r = results["planview"]
     println(io, "- `", basename(r[1]), "` / `", basename(r[2]), "`: plan views of the liquid water path (cloud + rain water, g m⁻², top row, shared range 0–",
