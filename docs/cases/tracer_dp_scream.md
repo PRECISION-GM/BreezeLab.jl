@@ -71,3 +71,45 @@ in the paper (ARMBECLDRAD, VARANAL precipitation, MRMS) are not staged here.
 ## Output cadence
 
 Animation fields (xy maps at the slice height, the xz section, LWP and rain maps) are saved every 5 min at 3000 m by default (`TRACER_DP_SCREAM_SLICE_MINUTES`, `TRACER_DP_SCREAM_SLICE_HEIGHT`); profiles are 30-min means and time series are 60 s. The case script writes the slice-file storage estimate (saves, bytes per save, GB) into `provenance.toml`; job 202 (256² × 160, 30-min cadence) measured 1.175 MB per save.
+
+## 200 m baseline (job 202, pre-fix): budgets and comparison
+
+Job 202 (256² × 200 m, 2022-08-01 00 UTC – 08-15 00 UTC, A100, 1.21 days wall, branch commit bea5e8a)
+and the 100 m run job 416 (512² × 100 m, H100, main a627610) are **pre-fix** runs: their energy forcing and
+prescribed surface energy flux carried the `(cᵖᵛ − cᵖᵈ) T ×` vapor-rate cross term that belongs to the
+static-energy formulation only, a spurious heating in the potential-temperature formulation of ≈ +13 W m⁻²
+over the 14 days (surface ≈ 9, large-scale ≈ 4; branch `vapor-cross-term-formulation`). They form a matched
+pair for the 200 m → 100 m comparison; fixed reruns follow.
+
+**Budgets** (`analysis/tracer_dp_scream_budget.jl`, `src/tracer_dp_scream/budget.jl`). The column-static-energy
+budget written by the run (27 % residual) omitted the condensate removed by precipitation (ℒP = 125 of the
+146 MJ m⁻² residual) and is replaced by a moist-enthalpy budget: 14-day residual 15 MJ m⁻² (1.8 % of the
+sources, ≈ 12 W m⁻²), ≤ 0.9 % on dry days and 3–14 % (≈ 0.1–0.2 ℒP, a gain) on heavy-rain days — the
+potential-temperature formulation's sedimentation/phase-change energy coupling in Breeze (open, upstream).
+Water closes to 0.6 %.
+
+**Comparison** (`analysis/tracer_dp_scream_compare.jl`; hourly, 1–15 August UTC unless noted; VARANAL =
+the MRMS-constrained forcing analysis, domain mean; ARM = AMF1 site):
+
+| | LES 200 m | DP-SCREAM 3 km | DP-SCREAM 0.5 km (5–15 Aug) | VARANAL | ARM site |
+| --- | --- | --- | --- | --- | --- |
+| precipitation (mm day⁻¹) | 3.58 | 3.22 | 4.23 | 4.12 | 7.57 (gauge) |
+| hourly correlation with VARANAL | 0.65 | 0.26 | 0.14 | 1 | 0.43 |
+| daily-total correlation with VARANAL | 0.97 | 0.84 | 0.76 | 1 | 0.77 |
+| mean daily peak hour (CDT) / mean abs. difference from VARANAL | 15.4 / 1.9 h | 18.2 / 3.3 h | 16.3 / 2.7 h | 15.8 | 22.4 / 4.5 h |
+| LWP (g m⁻²) | 40 | 19 | 11 | 64 | 31 (MWR) |
+| IWP (g m⁻², 5–15 Aug) | 200 | 200 | 200 | — | — |
+| precipitable water (kg m⁻²) | 56.1 | 53.4 | — | 51.6 | 52.7 (MWR) |
+| T − sondes 0–2 / 2–6 / 6–12 km (K) | +1.7 / −0.1 / −0.9 | +3.1 / +1.8 / +0.3 | | −0.1 / −0.2 / −0.5 | |
+| RH − sondes 0–2 / 2–6 km (%) | −7 / +10 | −8 / −7 | | | |
+| cloud fraction <3 / 3–8 / >8 km | 0.020 / 0.067 / 0.111 | 0.018 / 0.024 / 0.100 | | | 0.118 / 0.080 / 0.119 (ARSCL occurrence) |
+
+The convective episodes and their timing follow the forcing in all three models; the LES tracks the
+MRMS-constrained precipitation more closely than DP-SCREAM 3 km (whose daily peak is ≈ 2.5 h late) and
+has more mid-level (congestus) cloud, closer to ARSCL, while both underrepresent cloud below 3 km relative
+to ARSCL (which also counts precipitation at a point). The LES is too moist at 2–6 km (+10 % RH, +4.5 kg m⁻²
+PW) and warm in the lowest 2 km (+1.7 K; the surface part of the cross term heats the boundary layer —
+re-evaluate with the fixed rerun). Without wind nudging (as the archived DP-SCREAM code) the LES mean wind
+stays near the 1 August profile: upper-tropospheric easterlies reach −14 m s⁻¹ at 12 km against ≈ −5 m s⁻¹
+in VARANAL (RMS 4.2 m s⁻¹ in u over 0–12 km); the archive has no winds to compare. Agreement with DP-SCREAM
+is not observational validation, and the point observations are not domain means.
