@@ -39,7 +39,7 @@ end
 
 # ARM observations (2022-08-07 and 08-08 files concatenated); times decoded by NCDatasets
 function arm(prefix, vars)
-    out = Dict{String, Vector}(v => Any[] for v in vars); out["time"] = DateTime[]
+    out = Dict{String, Vector}(v => Float64[] for v in vars); out["time"] = DateTime[]
     for f in sort(filter(x -> startswith(x, prefix), readdir(arm_dir)))
         ds = NCDataset(joinpath(arm_dir, f))
         append!(out["time"], DateTime.(ds["time"][:]))
@@ -75,7 +75,7 @@ model_onset = let idx = findall(t -> t ≥ t0 + Hour(6), mtime), found = nothing
 end
 obs_rain_mm = sum(filter(!isnan, met["tbrg_precip_total"][window(met)])); model_rain_mm = sum(RR) / 6
 sel(d, v) = (m = window(d); (d["time"][m], d[v][m]))
-hourly_mean(times, vals, h) = (m = [t0 + Hour(h) ≤ t < t0 + Hour(h + 1) for t in times]; any(m) ? mean(filter(!isnan, vals[m])) : NaN)
+hourly_mean(times, vals, h) = (m = [t0 + Hour(h) ≤ t < t0 + Hour(h + 1) for t in times]; v = filter(!isnan, Float64.(vals[m])); isempty(v) ? NaN : mean(v))
 hours = 0:floor(Int, times[nt] / 3600)
 summary = Dict("site" => "AMF1 La Porte 29.670N 95.059W; model cell ($I, $J) at $(λ[I]), $(φ[J]); lowest level $(round(zc[1]-z0)) m vs met 2 m T / 10 m wind",
     "model_last_time" => string(mtime[end]), "obs_seabreeze_onset" => string(obs_onset), "model_seabreeze_onset" => string(model_onset),

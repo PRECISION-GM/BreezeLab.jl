@@ -69,7 +69,7 @@ open(joinpath(out_dir, "blowup_diagnosis.toml"), "w") do io; TOML.print(io, repo
 
 fig = Figure(size = (1200, 800))
 ax1 = Axis(fig[1, 1]; xlabel = "hours after 06 UTC", ylabel = "max |w| (m/s)", title = "extremes vs time", yscale = log10)
-lines!(ax1, t10, max.(ten["max_abs_w_2km"], 1e-2); label = "2 km slice, whole domain"); lines!(ax1, t10, max.(ten["max_abs_w_2km_rim"], 1e-2); label = "2 km slice, rim"; linestyle = :dash)
+lines!(ax1, t10, max.(ten["max_abs_w_2km"], 1e-2); label = "2 km slice, whole domain"); lines!(ax1, t10, max.(ten["max_abs_w_2km_rim"], 1e-2), label = "2 km slice, rim", linestyle = :dash)
 lines!(ax1, t10[1:length(ten["inner_max_abs_w"])], max.(ten["inner_max_abs_w"], 1e-2); label = "inner box 3-D")
 scatterlines!(ax1, hours, [h["max_abs_w"] for h in hourly]; label = "3-D hourly", marker = :circle); axislegend(ax1; position = :lt)
 ax2 = Axis(fig[1, 2]; xlabel = "hours after 06 UTC", ylabel = "T (K)", title = "min T (3-D hourly) and surface T range")
