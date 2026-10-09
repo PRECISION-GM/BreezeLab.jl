@@ -31,7 +31,7 @@ for n in eachindex(hours)
     aw = abs.(w); iw = argmax(aw); iT = argmin(T); iu = argmax(abs.(u))
     for k in 1:Nz; per_level_maxw[n, k] = maximum(@view aw[:, :, min(k, size(aw, 3))]); end
     big = findall(>(10), aw)   # cells with |w| > 10 m/s
-    cfl_v = maximum(aw[:, :, k] ./ dz[min(k, Nz)] .* Δt for k in 1:size(aw, 3))
+    cfl_v = maximum(maximum(@view aw[:, :, k]) / dz[min(k, Nz)] * Δt for k in 1:size(aw, 3))
     push!(hourly, Dict("hour" => hours[n], "max_abs_w" => maximum(aw), "max_w_at" => describe(Tuple(iw)...),
                        "min_T" => minimum(T), "min_T_at" => describe(Tuple(iT)...), "max_T" => maximum(T),
                        "max_abs_u" => maximum(abs.(u)), "max_u_at" => describe(min(Tuple(iu)[1], Nx), Tuple(iu)[2], Tuple(iu)[3]),
