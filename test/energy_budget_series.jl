@@ -83,9 +83,7 @@ if HAVE_COVERT
         times = [day_to_seconds(d, case.config.day0) for d in sfc.day]
         H = interpolate_time_series(times, sfc.sensible_heat_flux, 0.0)
         LE = interpolate_time_series(times, sfc.latent_heat_flux, 0.0)
-        # θ formulation: the prescribed energy flux is the sfc file's H (no (cᵖᵛ - cᵖᵈ) T E term), and the
-        # writer's diagnostic follows the constructor's setting
-        @test case.config.temperature_neutral_evaporation == false
+        # the prescribed energy flux is the sfc file's H and the latent flux LE
         fluxes = surface_heat_fluxes(case.model)
         @test domain_mean(fluxes.latent) ≈ LE rtol=1e-6
         @test domain_mean(fluxes.sensible) ≈ H rtol=1e-3

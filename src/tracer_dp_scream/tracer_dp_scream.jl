@@ -176,7 +176,7 @@ function tracer_dp_scream(;
         :u => (nudge(forcing_profiles.uls), sponge),
         :v => (nudge(forcing_profiles.vls), sponge),
         :w => (sponge,),
-        :E => (thermodynamic.s,),
+        :E => (thermodynamic.E,),
         moisture_name => (thermodynamic[moisture_name],)))
 
     #####

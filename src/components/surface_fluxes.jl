@@ -12,11 +12,10 @@
 #####     SAM's `oceflx.f90` neutral drag law cdn = 0.0027/U + 0.000142 + 0.0000764 U is the
 #####     Large & Yeager polynomial that Breeze's `PolynomialCoefficient` uses by default.
 #####
-##### Static-energy convention. Breeze's prognostic is s = cᵖᵐ(q) T + gz - ℒqˡ. Adding vapor
-##### at the surface at fixed s lowers T because cᵖᵐ grows; SAM's t = T + gz/cp (constant
-##### cp) does not have this coupling. To keep the surface latent heat flux temperature-
-##### neutral (the same physical-temperature invariant used for tls/qls) the prescribed
-##### energy flux is H + (cᵖᵛ - cᵖᵈ) T₀ E, where E = LE/ℒ is the vapor mass flux.
+##### Energy convention. BreezeLab uses Breeze's liquid-ice potential-temperature formulation,
+##### which converts a `ρE` energy flux F as cᵖᵐ dT = F and adds vapor at fixed θ without
+##### changing T, so the prescribed energy flux is the sfc file's H and the vapor flux is
+##### E = LE/ℒ, the same physical-temperature invariant as the tls/qls forcing.
 #####
 
 using Oceananigans: FieldTimeSeries, Field, Center, Face, set!
@@ -66,21 +65,12 @@ function (updater::PrescribedStressUpdater)(simulation)
     return nothing
 end
 
-# The vapor heat-capacity term of the prescribed energy flux belongs to the static-energy formulation only.
-default_temperature_neutral_evaporation(formulation) =
-    formulation === :StaticEnergy ? true :
-    formulation === :LiquidIcePotentialTemperature ? false :
-    throw(ArgumentError("formulation must be :LiquidIcePotentialTemperature or :StaticEnergy, got $formulation"))
-
 """
     prescribed_surface_flux_boundary_conditions(grid, sfc, day0; thermodynamic_constants,
-                                                surface_density, moisture_name,
-                                                formulation=:LiquidIcePotentialTemperature,
-                                                temperature_neutral_evaporation=(formulation === :StaticEnergy))
+                                                surface_density, moisture_name, frame_velocity=(0, 0))
 
 Bottom boundary conditions for `ρu`, `ρv`, the energy key `ρE` and the moisture density from the SAM
-`sfc` time series: energy flux H(t) [+ (cᵖᵛ - cᵖᵈ) SST(t) E(t)], vapor flux E = LE/ℒ, and a
-horizontally uniform stress of kinematic magnitude τ(t) aligned with the domain-mean
+`sfc` time series: energy flux H(t), vapor flux E = LE/ℒ, and a horizontally uniform stress of kinematic magnitude τ(t) aligned with the domain-mean
 lowest-level wind (updated by [`PrescribedStressUpdater`](@ref)). Returns
 `(boundary_conditions, stress_record)`.
 """
@@ -88,12 +78,9 @@ function prescribed_surface_flux_boundary_conditions(grid, sfc::SAMSurfaceForcin
                                                      thermodynamic_constants,
                                                      surface_density,
                                                      moisture_name,
-                                                     formulation = :LiquidIcePotentialTemperature,
-                                                     temperature_neutral_evaporation = default_temperature_neutral_evaporation(formulation),
                                                      frame_velocity = (0, 0))
     FT = eltype(grid)
-    heat = prescribed_heat_flux_boundary_conditions(grid, sfc, day0; thermodynamic_constants, moisture_name,
-                                                    temperature_neutral_evaporation)
+    heat = prescribed_heat_flux_boundary_conditions(grid, sfc, day0; thermodynamic_constants, moisture_name)
     ρ₀ = FT(surface_density)
 
     τˣ = Field{Face, Center, Nothing}(grid)
@@ -109,38 +96,26 @@ function prescribed_surface_flux_boundary_conditions(grid, sfc::SAMSurfaceForcin
 end
 
 """
-    prescribed_heat_flux_boundary_conditions(grid, sfc, day0; thermodynamic_constants, moisture_name,
-                                             formulation=:LiquidIcePotentialTemperature,
-                                             temperature_neutral_evaporation=(formulation === :StaticEnergy))
+    prescribed_heat_flux_boundary_conditions(grid, sfc, day0; thermodynamic_constants, moisture_name)
 
 The energy (`ρE`) and vapor flux bottom boundary conditions of the `sfc` series alone: energy
-flux H(t) [+ (cᵖᵛ - cᵖᵈ) SST(t) E(t)] and vapor flux E = LE/ℒ, as `FieldTimeSeries`
-interpolated linearly in time. Returns `(; bcs, energy_flux, vapor_flux, times)`; combine
+flux H(t) and vapor flux E = LE/ℒ, as `FieldTimeSeries` interpolated linearly in time. Returns `(; bcs, energy_flux, vapor_flux, times)`; combine
 with a stress condition (`prescribed_surface_flux_boundary_conditions`) or a `BulkDrag`
 (the DP-SCREAM `iop_srf_prop` pathway of `tracer_dp_scream`).
 
-The `(cᵖᵛ - cᵖᵈ) SST E` term keeps evaporation temperature-neutral in the **static-energy**
-formulation, where vapor added at fixed `s` cools. In the liquid-ice potential-temperature
-formulation (the default, and every BreezeLab case) Breeze converts the `ρE` flux as
-`cᵖᵐ dT = F` and vapor added at fixed θ leaves `T` unchanged, so the term would be a spurious
-heating; `temperature_neutral_evaporation` therefore defaults to `formulation === :StaticEnergy`.
+Breeze's liquid-ice potential-temperature formulation converts the `ρE` flux as `cᵖᵐ dT = H`
+and adds the vapor at fixed θ, which leaves `T` unchanged, so H and LE enter as they are.
 """
 function prescribed_heat_flux_boundary_conditions(grid, sfc::SAMSurfaceForcing, day0;
                                                   thermodynamic_constants,
-                                                  moisture_name,
-                                                  formulation = :LiquidIcePotentialTemperature,
-                                                  temperature_neutral_evaporation = default_temperature_neutral_evaporation(formulation))
+                                                  moisture_name)
     FT = eltype(grid)
     constants = thermodynamic_constants
     ℒ = constants.liquid.reference_latent_heat
-    cᵖᵈ = constants.dry_air.heat_capacity
-    cᵖᵛ = constants.vapor.heat_capacity
     times = FT[day_to_seconds(d, day0) for d in sfc.day]
 
     E = sfc.latent_heat_flux ./ ℒ
-    energy = temperature_neutral_evaporation ?
-             sfc.sensible_heat_flux .+ (cᵖᵛ - cᵖᵈ) .* sfc.sst .* E :
-             copy(sfc.sensible_heat_flux)
+    energy = copy(sfc.sensible_heat_flux)
 
     make(values) = begin
         fts = FieldTimeSeries{Center, Center, Nothing}(grid, times)

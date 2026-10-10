@@ -25,9 +25,9 @@
 #####
 ##### with T₁ the lowest-level temperature. In the potential-temperature formulation an energy
 ##### source F heats as cᵖᵐ dT = F and a vapor source at fixed θ leaves T unchanged, so a
-##### `(cᵖᵛ − cᵖᵈ) T ×` vapor-rate "temperature-neutral" term in F (designed for the static-energy
-##### formulation) is a net heating there; `applied_vapor_cross_term` states whether the run's
-##### forcing and surface flux contained it, and the budget reports its integral.
+##### `(cᵖᵛ − cᵖᵈ) T ×` vapor-rate "temperature-neutral" term in F is a net heating; runs made before
+##### PR #21 carried it (TRACER–DP-SCREAM jobs 202 and 416), and `applied_vapor_cross_term = true`
+##### accounts for it and reports its integral.
 ##### Profiles (30-min means) supply T and the condensate for cᵖᵐ and the cross terms.
 #####
 
@@ -54,31 +54,18 @@ end
 held(times, values, t) = values[clamp(searchsortedlast(times, t), 1, length(values))]
 
 """
-    tracer_dp_scream_budget(case, timeseries_file, profiles_file; applied_vapor_cross_term = true,
+    tracer_dp_scream_budget(case, timeseries_file, profiles_file; applied_vapor_cross_term = false,
                             interval = 86400)
 
 Water and moist-enthalpy budgets (see the file header) of a TRACER–DP-SCREAM run, totals and per
 `interval` (default daily). `case` is a `tracer_dp_scream(...)` bundle with the run's vertical
 grid and window (it supplies ρᵣ, the forcing profiles and the surface series; any horizontal size).
 `applied_vapor_cross_term` states whether the run's energy forcing and surface energy flux included
-the `(cᵖᵛ − cᵖᵈ) T ×` vapor-rate term; by default it is read from `case` (pass `true` explicitly when
-analysing a run made before the formulation-aware fix with a `case` built from newer code). Also returns
+the `(cᵖᵛ − cᵖᵈ) T ×` vapor-rate term: `false` for the current code; pass `true` for runs made before
+the fix of PR #21 (e.g. TRACER–DP-SCREAM jobs 202 and 416). Also returns
 the legacy static-energy residual (precipitation and phase-change terms excluded) for comparison.
 """
-# Whether the case's energy forcing applies the vapor heat-capacity cross term (it did in every
-# θ-formulation model before the forcing became formulation-aware; the surface flux was fixed together).
-function applies_vapor_cross_term(case)
-    found = Ref{Any}(nothing)
-    visit(f) = f isa LargeScaleEnergyForcing ? (found[] = f) :
-               f isa Breeze.Forcings.SpecificForcing ? visit(f.forcing) :
-               f isa Oceananigans.Forcings.MultipleForcings ? foreach(visit, f.forcings) : nothing
-    foreach(visit, values(case.model.forcing))
-    f = found[]
-    isnothing(f) && return false
-    return hasfield(typeof(f), :static_energy) ? f.static_energy : true
-end
-
-function tracer_dp_scream_budget(case, timeseries_file, profiles_file; applied_vapor_cross_term = applies_vapor_cross_term(case),
+function tracer_dp_scream_budget(case, timeseries_file, profiles_file; applied_vapor_cross_term = false,
                                  interval = 86400)
     constants = ThermodynamicConstants(Float64)
     ℒˡ = constants.liquid.reference_latent_heat

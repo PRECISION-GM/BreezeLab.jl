@@ -21,24 +21,16 @@ end
 
 # Breeze converts an enthalpy flux 𝒬ᵀ = ρ cᵖᵐ w'T' to the θ flux as Jᶿ = 𝒬ᵀ / (cᵖᵐ Π); the
 # inverse with vapor-only mixture properties at the first cell gives the sensible heat flux.
-# `neutral_evaporation = true` removes the (cᵖᵛ - cᵖᵈ) T E term the prescribed Covert energy flux
-# carries (`temperature_neutral_evaporation`), leaving the sfc file's H.
-@inline function surface_sensible_heat_flux_kernel(i, j, k, grid, bcθ, bcq, clock, fields, dynamics_fields,
-                                                   cᵖᵈ, cᵖᵛ, Rᵈ, Rᵛ, p₀, neutral_evaporation)
+@inline function surface_sensible_heat_flux_kernel(i, j, k, grid, bcθ, clock, fields, dynamics_fields,
+                                                   cᵖᵈ, cᵖᵛ, Rᵈ, Rᵛ, p₀)
     Jᶿ = getbc(bcθ, i, j, grid, clock, fields, dynamics_fields)
     qᵛ = @inbounds fields.qᵛ[i, j, 1]
     p = @inbounds dynamics_fields.p[i, j, 1]
     cᵖᵐ = (1 - qᵛ) * cᵖᵈ + qᵛ * cᵖᵛ
     Rᵐ = (1 - qᵛ) * Rᵈ + qᵛ * Rᵛ
     Π = (p / p₀)^(Rᵐ / cᵖᵐ)
-    𝒬ᵀ = cᵖᵐ * Π * Jᶿ
-    E = getbc(bcq, i, j, grid, clock, fields, dynamics_fields)
-    T = @inbounds fields.T[i, j, 1]
-    return 𝒬ᵀ - ifelse(neutral_evaporation, (cᵖᵛ - cᵖᵈ) * T * E, zero(𝒬ᵀ))
+    return cᵖᵐ * Π * Jᶿ
 end
-
-heat_prognostic_name(fields) = haskey(fields, :ρθ) ? :ρθ : haskey(fields, :ρe) ? :ρe :
-    throw(ArgumentError("surface_heat_fluxes needs a ρθ or ρe prognostic"))
 
 function moisture_prognostic_name(fields)
     for name in (:ρqᵛ, :ρqᵗ, :ρqᵉ)
@@ -48,40 +40,33 @@ function moisture_prognostic_name(fields)
 end
 
 """
-    surface_heat_fluxes(model; temperature_neutral_evaporation=false)
+    surface_heat_fluxes(model)
 
 2D fields `(; sensible, latent)` of the upward surface sensible and latent heat fluxes
 [W m⁻²], evaluated from the model's bottom boundary conditions (the fluxes the model
-actually applies). The latent flux is ℒ E with Breeze's reference latent heat; the sensible
-flux is cᵖᵐ Π Jᶿ at the first cell for the potential-temperature formulation (the static-energy
-formulation's flux is already W m⁻²). `temperature_neutral_evaporation = true` subtracts the
-(cᵖᵛ - cᵖᵈ) T E term that the prescribed Covert energy flux adds, returning the sfc file's H.
+actually applies): the latent flux is ℒ E with Breeze's reference latent heat and the
+sensible flux is cᵖᵐ Π Jᶿ at the first cell of the liquid-ice potential-temperature model.
+For prescribed fluxes these are the sfc file's H and LE.
 """
-function surface_heat_fluxes(model; temperature_neutral_evaporation=false)
+function surface_heat_fluxes(model)
     grid = model.grid
     FT = eltype(grid)
     prognostic = Oceananigans.prognostic_fields(model)
-    heat = heat_prognostic_name(prognostic)
-    bcθ = prognostic[heat].boundary_conditions.bottom
+    haskey(prognostic, :ρθ) || throw(ArgumentError("surface_heat_fluxes needs the liquid-ice potential-temperature prognostic ρθ"))
+    bcθ = prognostic.ρθ.boundary_conditions.bottom
     bcq = prognostic[moisture_prognostic_name(prognostic)].boundary_conditions.bottom
     clock, fields, dynamics_fields = boundary_condition_args(model)
     constants = model.thermodynamic_constants
     ℒ = FT(constants.liquid.reference_latent_heat)
     latent = KernelFunctionOperation{Center, Center, Nothing}(surface_latent_heat_flux_kernel, grid,
                                                               bcq, clock, fields, dynamics_fields, ℒ)
-    sensible = if heat === :ρθ
-        cᵖᵈ = FT(constants.dry_air.heat_capacity)
-        cᵖᵛ = FT(constants.vapor.heat_capacity)
-        Rᵈ = FT(constants.molar_gas_constant / constants.dry_air.molar_mass)
-        Rᵛ = FT(constants.molar_gas_constant / constants.vapor.molar_mass)
-        p₀ = FT(model.dynamics.reference_state.standard_pressure)
-        KernelFunctionOperation{Center, Center, Nothing}(surface_sensible_heat_flux_kernel, grid, bcθ, bcq,
-                                                         clock, fields, dynamics_fields,
-                                                         cᵖᵈ, cᵖᵛ, Rᵈ, Rᵛ, p₀, temperature_neutral_evaporation)
-    else
-        KernelFunctionOperation{Center, Center, Nothing}(surface_latent_heat_flux_kernel, grid,
-                                                         bcθ, clock, fields, dynamics_fields, one(FT))
-    end
+    cᵖᵈ = FT(constants.dry_air.heat_capacity)
+    cᵖᵛ = FT(constants.vapor.heat_capacity)
+    Rᵈ = FT(constants.molar_gas_constant / constants.dry_air.molar_mass)
+    Rᵛ = FT(constants.molar_gas_constant / constants.vapor.molar_mass)
+    p₀ = FT(model.dynamics.reference_state.standard_pressure)
+    sensible = KernelFunctionOperation{Center, Center, Nothing}(surface_sensible_heat_flux_kernel, grid, bcθ,
+                                                                clock, fields, dynamics_fields, cᵖᵈ, cᵖᵛ, Rᵈ, Rᵛ, p₀)
     return (; sensible = Field(sensible), latent = Field(latent))
 end
 

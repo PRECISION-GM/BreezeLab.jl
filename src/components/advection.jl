@@ -3,10 +3,10 @@
 #####
 
 """
-    scalar_advection_schemes(order, microphysics, moisture_name; bounded_condensates=true, positive_moments=true, energy_name=:ρs)
+    scalar_advection_schemes(order, microphysics, moisture_name; bounded_condensates=true, positive_moments=true, energy_name=:ρθ)
 
-Advection scheme per prognostic scalar, following Breeze's `examples/rico.jl`: the static
-energy uses plain WENO; every microphysical *water-mass* tracer (the vapor / equilibrium
+Advection scheme per prognostic scalar, following Breeze's `examples/rico.jl`: the potential
+temperature (`energy_name`, `ρθ`) uses plain WENO; every microphysical *water-mass* tracer (the vapor / equilibrium
 moisture and all condensate masses `ρq*`) uses bounds-preserving WENO with bounds `(0, 1)`;
 dimensional number and volume moments (`ρn*`, `ρb*`), whose magnitudes are not bounded by
 one, use the same limiter with bounds `(0, ∞)`, i.e. positivity only. Plain WENO for the
@@ -26,7 +26,7 @@ reconstruction with its own cell's factor, which restores conservation (validate
 `test/diagnostics/mass_budget_probe.jl` and the GPU smokes). `bounded_condensates = false` (plain WENO for the
 condensate masses) is retained as a diagnostic sensitivity only.
 """
-function scalar_advection_schemes(order, microphysics, moisture_name; bounded_condensates=true, positive_moments=true, energy_name=:ρs)
+function scalar_advection_schemes(order, microphysics, moisture_name; bounded_condensates=true, positive_moments=true, energy_name=:ρθ)
     weno = WENO(; order)
     bounded = WENO(; order, bounds=(0, 1))
     # Number and volume moments are not bounded by one, so their limiter only enforces

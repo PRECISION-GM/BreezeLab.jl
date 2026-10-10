@@ -8,6 +8,7 @@
 #   surface:      (cᵖᵛ − cᵖᵈ) SST LE / ℒˡᵣ  (prescribed-flux cases with temperature_neutral_evaporation)
 #
 #   julia --project analysis/vapor_cross_term_by_case.jl <covert data dir> <LASSO bundle dir> <TRACER IOP file> [out.toml]
+# Note: this describes the code before PR #21; the cross terms and temperature_neutral_evaporation no longer exist.
 using BreezeLab, Oceananigans, Breeze, TOML, Printf, Dates
 using BreezeLab: day_to_seconds, lasso_documented_dimensions, epoch_from_day_of_year, parse_lasso_member, DEFAULT_LASSO_MEMBER
 covert_dir, lasso_dir, iop_path = ARGS[1:3]
