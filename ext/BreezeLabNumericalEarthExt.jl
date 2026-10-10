@@ -33,11 +33,12 @@ using Statistics: mean
 # Rain-to-land shim. NumericalEarth d07eb240's Breeze extension imports
 # `Breeze.AtmosphereModels.surface_precipitation_flux`, renamed `bottom_precipitation_flux` before the
 # pinned Breeze, so the binding is undefined and `applicable(surface_precipitation_flux, …)` throws at
-# coupling time. Supply it: Breeze's diagnostic is the bottom-face advective flux (positive upward),
-# NumericalEarth's `Jʳⁿ` is positive downward (kg m⁻² s⁻¹), hence the sign flip. Remove once upstream
-# follows the rename. The child's rain then reaches the slab bucket as intended.
-surface_precipitation_flux_shim(model, microphysics) =
-    Field(-1 * Breeze.AtmosphereModels.bottom_precipitation_flux(model, microphysics).operand)
+# coupling time. Supply it. Both conventions are positive DOWNWARD: Breeze documents
+# `bottom_advective_tracer_flux` (summed by `bottom_precipitation_flux`) as "a positive value for downward
+# (out-of-domain) flux", and NumericalEarth's `Jʳⁿ` (kg m⁻² s⁻¹) enters the slab as precipitation
+# `P = Jʳⁿ + …`. So the flux passes through unchanged. (Until 2026-10-10 a spurious −1 here made rain dry the
+# bucket; see docs/cases/tracer_mip_control_aug07.md.) Remove once upstream follows the rename.
+surface_precipitation_flux_shim(model, microphysics) = Breeze.AtmosphereModels.bottom_precipitation_flux(model, microphysics)
 
 function __init__()
     # Define the name where NumericalEarth's import points (`Breeze.AtmosphereModels`), at run time, so
