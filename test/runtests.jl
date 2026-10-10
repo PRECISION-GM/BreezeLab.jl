@@ -763,6 +763,7 @@ include("tracer_mip.jl")
 include("tracer_mip_aerosol_model.jl")
 if !isnothing(Base.find_package("NumericalEarth"))
     include("tracer_mip_regional.jl")   # case sub-environment only (cases/tracer_mip/Project.toml)
+    include("tracer_mip_rain_to_land.jl")
 else
     @info "NumericalEarth not in the test environment: skipping the TRACER-MIP regional machinery tests"
 end
