@@ -149,10 +149,13 @@ function extended_column_radiation(grid, constants; driver,
     surface_radiation = SurfaceRadiation(surface_temperature, surface_emissivity, surface_albedo, surface_albedo)
     ext.update_rrtmgp_surface_boundary_conditions!(solver, surface_radiation, grid)
     radius(r) = r isa ConstantRadiusParticles ? ConstantRadiusParticles(convert(FT, r.radius)) : r
+    # Breeze 0.12 (PR 998) added `column_batches` before `schedule`; `nothing` is its one unbatched solve,
+    # which keeps the solver's own (extended) state. Breeze 0.11 (cases/tracer_mip) has no such field.
+    column_batches = hasfield(RadiativeTransferModel, :column_batches) ? (nothing,) : ()
     rtm = RadiativeTransferModel(convert(FT, solar_constant), solar_position, surface_radiation, background_atmosphere,
                                  atmospheric_state, solver, nothing,
                                  ZFaceField(grid), ZFaceField(grid), ZFaceField(grid), ZFaceField(grid), CenterField(grid),
-                                 radius(liquid_effective_radius), radius(ice_effective_radius), schedule)
+                                 radius(liquid_effective_radius), radius(ice_effective_radius), column_batches..., schedule)
     return rtm, (; layers_above = Nₑ, z_top, column_top = upper.faces[end], p_top = upper.p_faces[end])
 end
 

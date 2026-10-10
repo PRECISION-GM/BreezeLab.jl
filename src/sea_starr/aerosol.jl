@@ -2,7 +2,8 @@
 ##### SEA STARR interactive aerosol: κ-Köhler activation from the local prognostic reservoir,
 ##### a prescribed surface number source, and aerosol regeneration on droplet evaporation.
 #####
-##### What the pinned Breeze P3 (0.11.3, 5264d3c) provides, and what is added here:
+##### What Breeze's P3 provides (written against 0.11.3 / 5264d3c; unchanged in 0.12.0 except as noted), and what
+##### is added here:
 #####
 #####   * Breeze `AerosolActivation(...; prognostic=true)` carries the unactivated reservoir
 #####     `ρnᵃ` and removes one aerosol per activated droplet. Its activated number is the
@@ -12,9 +13,11 @@
 #####     ([`KappaAerosolMode`](@ref)) so that the activated target is `f(S) (nᶜˡ + nᵃ)` with
 #####     the κ-Köhler critical supersaturation. (A Breeze function specialized on a
 #####     BreezeLab type: an extension, not piracy.)
-#####   * P3 has no surface aerosol flux: a `FluxBoundaryCondition` under `ρnᵃ` is accepted
-#####     but ignored (P3 materializes its fields with default no-flux conditions). The
-#####     source is applied as a bottom-cell forcing ([`SurfaceAerosolSource`](@ref)).
+#####   * P3 has no surface aerosol flux. Before Breeze 0.12 a `FluxBoundaryCondition` under `ρnᵃ`
+#####     was accepted but ignored (P3 materialized its fields with default no-flux conditions), so
+#####     the source is applied as a bottom-cell forcing ([`SurfaceAerosolSource`](@ref)). Breeze
+#####     0.12 (PR 1006) applies such a condition; the forcing is kept until the switch is made and
+#####     checked separately (docs/breeze_0.12_upgrade.md): `F / Δz₁` either way.
 #####   * P3 never returns aerosol: droplets that evaporate carry their aerosol away
 #####     (`ρnᶜˡ` is zeroed when `ρqᶜˡ` is exhausted) and the reservoir only decreases.
 #####     [`EvaporationRegeneration`](@ref) removes droplet number in proportion to the

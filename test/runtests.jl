@@ -719,10 +719,16 @@ if HAVE_COVERT
         @test record["config"]["microphysics"] == case.config.microphysics
         @test haskey(record["inputs"], "snd_sha256") && haskey(record["inputs"], "prm_sha256")
         @test record["software"]["Breeze_source"] isa String
-        # the recorded sources are the revisions pinned in Project.toml
+        # the recorded sources are the revisions pinned in Project.toml, or the registered release
         pins = TOML.parsefile(joinpath(@__DIR__, "..", "Project.toml"))["sources"]
         @test occursin(pins["Oceananigans"]["rev"], record["software"]["Oceananigans_source"])
-        @test occursin(pins["Breeze"]["rev"], record["software"]["Breeze_source"])
+        if haskey(pins, "Breeze")
+            @test occursin(pins["Breeze"]["rev"], record["software"]["Breeze_source"])
+        else
+            # (a case sub-environment such as cases/tracer_mip may pin its own Breeze revision)
+            source = record["software"]["Breeze_source"]
+            @test startswith(source, "registered v$(pkgversion(Breeze)) (git-tree-sha1 ") || occursin("Breeze.jl@", source)
+        end
         @test record["extra"]["tuple"] == [1, 2]
         # output writers build (profiles of already-averaged fields, time series, slices), and an
         # aerosol reservoir switches the diagnostic-CCN projection on
