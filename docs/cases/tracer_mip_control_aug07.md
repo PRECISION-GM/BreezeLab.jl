@@ -107,9 +107,34 @@ precipitation), houceilM1.b1 (first cloud base), houarsclkazr1kolliasM1.c0 (clou
 - **ERA5 10 m wind** (whole domain, `diagnostics/surface_wind_check.png`): model 25 m wind 0.58–0.83 of ERA5's 10 m wind
   after the first hour (see `tracer_mip.md`).
 
+## Land water budget: rain-to-land sign error (found 2026-10-10)
+
+Job 233 (and every outer run before commit 4d6f477 / PR #26) coupled the child's rain to the slab land with the wrong
+sign: the rain-to-land shim multiplied Breeze's `bottom_precipitation_flux`, which is already positive downward, by −1,
+and NumericalEarth adds the coupler's `Jʳⁿ` to the bucket as precipitation. Rain over land therefore *removed* water
+from the bucket (≈ 2 × the accumulated rain relative to a correct run, until the bucket emptied). Sea cells are
+unaffected (their bucket is reset to saturation every step).
+
+Size in job 233 (`analysis/tracer_mip_rain_sign_impact.jl` on the run's own correctly signed `surface_rain_flux`;
+`analysis/rain_sign_impact.toml`), 06:00–19:00 UTC, 383 680 land cells:
+
+| quantity | value |
+| --- | --- |
+| land-mean accumulated rain | 0.069 mm (0.0014 mm by 12 UTC, 0.014 mm by 16 UTC, 0.03 mm by 18 UTC) |
+| land cells with > 1 mm / > 10 mm | 1.02 % (3903 cells) / 0.15 % |
+| largest column accumulation | 120.9 mm (bucket capacity 150 kg m⁻²) |
+| implied bucket error, land mean / max | 0.14 kg m⁻² (0.1 % of capacity) / up to emptying the bucket |
+| bucket saturation change, rainy (> 1 mm) vs dry land cells | −0.046 vs −0.015 (rainy cells dried faster instead of wetting) |
+
+Assessment: negligible for the domain-mean land state and for the La Porte comparison (0.02 mm of model rain at the
+site), but locally wrong in the ~1 % of land cells under the afternoon convection after ≈ 16 UTC, where the surface
+became drier (less evaporation, warmer skin) than it should have. It cannot have caused the 13 h failure: the runaway
+cells were 99 % over the Gulf from 12 UTC, where land rain was still 0.0014 mm, and sea buckets are pinned.
+
 ## Departures from the reference treatments (this run)
 
 Lat-lon grid (not polar stereographic); 94 cells from the 95 ACPC scalar levels; P3 bulk two-moment (not bin);
 slab land with bucket hydrology, no vegetation/urban physics, sea pinned to ERA5 skin temperature with land roughness;
-hourly ERA5 boundaries; **no turbulence/PBL closure (the defect)**; aerosol activation spectrum scaled by the prescribed
+hourly ERA5 boundaries; **no turbulence/PBL closure (the defect)**; **rain removed from instead of added to the land
+bucket (sign error, see above)**; aerosol activation spectrum scaled by the prescribed
 profile; process rates re-evaluated per step rather than P3's internal budget; inner nest not run.
