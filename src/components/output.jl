@@ -5,7 +5,6 @@
 function add_output_writers!(simulation; output_dir, output_prefix, profile_interval,
                              timeseries_interval, slice_interval, slice_height,
                              energy_budget_series = false,
-                             temperature_neutral_evaporation = false,
                              in_cloud_threshold = 1e-5)
     model = simulation.model
     grid = model.grid
@@ -16,7 +15,9 @@ function add_output_writers!(simulation; output_dir, output_prefix, profile_inte
     qᵛ = μ.qᵛ
     θ = liquid_ice_potential_temperature(model)
     T = model.temperature
-    s = Breeze.AtmosphereModels.Diagnostics.StaticEnergy(model)   # a diagnostic in either formulation
+    # Breeze's static-energy *diagnostic* s = cᵖᵐ T + gz − ℒˡqˡ − ℒⁱqⁱ: its column integral, with the water
+    # paths, reconstructs the column moist enthalpy of the budgets (tracer_dp_scream_budget)
+    s = Breeze.AtmosphereModels.Diagnostics.StaticEnergy(model)
 
     profile_fields = (; u, v, w² = w^2, uw = u * w, vw = v * w, θ, T, s, qᵛ, qᶜˡ, qʳ,
                         cloud_fraction = cloud_fraction_profile(model),
@@ -61,7 +62,7 @@ function add_output_writers!(simulation; output_dir, output_prefix, profile_inte
 
     if energy_budget_series
         # SAM's SHF/LHF, LWNS/SWNS, LWNT/SWNT (here at the LES top) and the in-cloud droplet number
-        fluxes = surface_heat_fluxes(model; temperature_neutral_evaporation)
+        fluxes = surface_heat_fluxes(model)
         timeseries = merge(timeseries, (; surface_sensible_heat_flux = Average(fluxes.sensible, dims=(1, 2)),
                                           surface_latent_heat_flux = Average(fluxes.latent, dims=(1, 2))))
         radiative = radiative_boundary_fluxes(model.radiation, grid)

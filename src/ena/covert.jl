@@ -245,7 +245,7 @@ function ena_covert(; arch = GPU(),
         :u => (geostrophic.u, subsidence, sponge),
         :v => (geostrophic.v, subsidence, sponge),
         :w => (sponge,),
-        :E => (thermodynamic.s, upper.s),            # tls and the top relaxation, as energy tendencies
+        :E => (thermodynamic.E, upper.E),            # tls and the top relaxation, as energy tendencies
         :θ => (subsidence,))
     for name in specific_prognostic_names(microphysics)
         forcing[name] = (subsidence,)                # subsidence.f90 advects every microphysical field
@@ -257,14 +257,9 @@ function ena_covert(; arch = GPU(),
     ##### Surface: prescribed H, LE and wind-aligned stress τ (SFC_FLX_FXD, SFC_TAU_FXD)
     #####
 
-    # the (cᵖᵛ - cᵖᵈ) T E term belongs to the static-energy formulation only (false here); the output
-    # writer's sensible-heat diagnostic follows the same setting
-    temperature_neutral_evaporation = default_temperature_neutral_evaporation(:LiquidIcePotentialTemperature)
     boundary_conditions, stress = prescribed_surface_flux_boundary_conditions(grid, sfc, day0;
                                                                              thermodynamic_constants = constants,
                                                                              surface_density = ρᵣ[1], moisture_name,
-                                                                             formulation = :LiquidIcePotentialTemperature,
-                                                                             temperature_neutral_evaporation,
                                                                              frame_velocity = (uᶠ, vᶠ))
 
     #####
@@ -325,7 +320,7 @@ function ena_covert(; arch = GPU(),
         mkpath(output_dir)
         add_output_writers!(simulation; output_dir, output_prefix, profile_interval,
                             timeseries_interval, slice_interval, slice_height,
-                            energy_budget_series = true, temperature_neutral_evaporation)
+                            energy_budget_series = true)
         if !isnothing(checkpoint_interval)
             simulation.output_writers[:checkpointer] =
                 Checkpointer(model; schedule = TimeInterval(checkpoint_interval), dir = output_dir,
@@ -343,7 +338,7 @@ function ena_covert(; arch = GPU(),
                 initial_droplet_number = something(initial_droplet_number, 0),
                 radiation = radiation_scheme === :simple_longwave ? "SAM rad_simple longwave (every step)" :
                             "RRTMGP all-sky longwave only (solar constant 0), every 60 s, SST surface, emissivity 0.95, r_eff 10/30 μm",
-                surface = "prescribed H, LE and wind-aligned τ (SFC_FLX_FXD, SFC_TAU_FXD)", temperature_neutral_evaporation,
+                surface = "prescribed H, LE and wind-aligned τ (SFC_FLX_FXD, SFC_TAU_FXD)",
                 wind_nudging = "none (donudging_uv = .false.)",
                 sponge = isnothing(sponge) ? "nothing" : summary(sponge),
                 closure = isnothing(closure) ? "nothing" : summary(closure), advection_order,

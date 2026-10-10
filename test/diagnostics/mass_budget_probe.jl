@@ -19,7 +19,7 @@ qʳ₀(x, y, z) = (300 ≤ z ≤ 400) ? (2e-3 * (1 + 0.5 * sin(2π * x / 280) * 
 nʳ₀(x, y, z) = qʳ₀(x, y, z) / (4/3 * π * 1000 * (0.5e-3)^3)
 for bounded in (true, false)
     sa = BreezeLab.scalar_advection_schemes(5, p3, :qᵛ; bounded_condensates=bounded)
-    model = AtmosphereModel(grid; formulation=:StaticEnergy, dynamics, microphysics=p3, thermodynamic_constants=constants, momentum_advection=WENO(order=5), scalar_advection=sa)
+    model = AtmosphereModel(grid; formulation=:LiquidIcePotentialTemperature, dynamics, microphysics=p3, thermodynamic_constants=constants, momentum_advection=WENO(order=5), scalar_advection=sa)
     set!(model; T=T₀, qᵛ=col(qsat), qʳ=qʳ₀, nʳ=nʳ₀)
     μ = model.microphysical_fields
     ρΔV = reshape(ρᵣ .* Δz .* (35.0^2), 1, 1, :)

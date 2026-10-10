@@ -7,12 +7,13 @@
 #####   * `MeanProfileNudging` — domain-mean wind relaxed to `uls/vls` (nudging.f90 uses ul0/vl0)
 #####   * `LargeScaleVerticalAdvection` — full-field upwind −wls ∂zϕ (subsidence.f90)
 #####   * `LargeScaleEnergyForcing` / `LargeScaleMoistureForcing` — the horizontal
-#####     advective tendencies tls/qls mapped to Breeze's static energy (forcing.f90 adds
-#####     tls to SAM's `t` and qls to vapor)
+#####     advective tendencies tls/qls as the energy source cᵖᵐ tls of the liquid-ice
+#####     potential-temperature formulation and a vapor source (forcing.f90 adds tls to SAM's
+#####     `t` and qls to vapor)
 #####   * `SAMSponge` — the upper-30% geometric Rayleigh damping (damping.f90)
 #####
 ##### All kernels return *specific* tendencies and are meant to be supplied under the
-##### specific prognostic keys (`u`, `v`, `w`, `s`, `qᵛ`, `qʳ`, ...); Breeze wraps them in
+##### specific prognostic keys (`u`, `v`, `w`, `θ`, the energy key `E`, `qᵛ`, `qʳ`, ...); Breeze wraps them in
 ##### `SpecificForcing` and multiplies by the density at kernel time.
 #####
 
@@ -202,11 +203,14 @@ end
 #####
 
 """
-    large_scale_thermodynamic_forcings(tls, qls; microphysics, thermodynamic_constants, moisture_name)
+    large_scale_thermodynamic_forcings(tls, qls; microphysics, thermodynamic_constants, moisture_name,
+                                       moisture_basis=:mixing_ratio)
 
-Return `(; s = energy_forcing, <moisture_name> = moisture_forcing)` implementing SAM's
+Return `(; E = energy_forcing, <moisture_name> = moisture_forcing)` implementing SAM's
 `forcing.f90`, which adds `tls` to the temperature-like variable `t` (SAM: `t = T + gz/cp
-- (Lv/cp) qˡ - (Ls/cp) qⁱ` with constant `cp = 1004`) and `qls` to the vapor.
+- (Lv/cp) qˡ - (Ls/cp) qⁱ` with constant `cp = 1004`) and `qls` to the vapor. Supply the
+energy forcing under the energy key `E` of a liquid-ice potential-temperature model (the only
+formulation BreezeLab uses) and the moisture forcing under `moisture_name`.
 
 SAM's vapor is a mixing ratio (per kg dry air) while Breeze carries mass fractions: SAM
 imposes `drᵛ/dt = qls`. **Approximation:** SAM holds the *dry-basis* condensate ratios fixed
@@ -215,39 +219,25 @@ untouched; with `qᵛ + qᵈ = 1 - qᶜ` fixed the vapor source maps to
 
     dqᵛ/dt = qᵈ² / (1 - qᶜ) R,   qᶜ = qˡ + qⁱ
 
-(`moisture_basis = :mixing_ratio`, the default; `:mass_fraction` applies `qls` verbatim),
-and only that vapor rate enters the energy cross term. In clear air the two conventions
-coincide; in cloudy cells they differ at O(qᶜ) ≈ 0.1 %. See the Jacobian tests in
-`test/runtests.jl`.
+(`moisture_basis = :mixing_ratio`, the default; `:mass_fraction` applies `qls` verbatim).
+In clear air the two conventions coincide; in cloudy cells they differ at O(qᶜ) ≈ 0.1 %.
 
-Breeze's prognostic is `s = cᵖᵐ(q) T + gz - ℒˡ qˡ - ℒⁱ qⁱ`, so the tendencies are mapped so
-that the **physical temperature invariant** holds: over a forcing-only step the state
-must satisfy `dT/dt = tls` and `dqᵛ/dt = qls` at fixed condensate and height. To first
-order in the heat-capacity coupling,
-
-    ds/dt = cᵖᵐ(q) tls + (cᵖᵛ - cᵖᵈ) T dqᵛ/dt
-
-The second term is what keeps the temperature unchanged while vapor with heat capacity
-`cᵖᵛ ≠ cᵖᵈ` replaces dry air; multiplying `tls` by `cᵖᵈ` alone (SAM's constant `cp`) would
-change `T` whenever `qls ≠ 0`. **The cross term belongs to the static-energy formulation only.**
-In the liquid-ice potential-temperature formulation Breeze converts an energy source `F` into
-`dθ/dt = F / (cᵖᵐ Π)`, i.e. `cᵖᵐ dT/dt = F`, and a vapor source at fixed θ leaves `T` unchanged
-(up to the composition dependence of the Exner function, which vanishes at the standard
-pressure), so the same invariant needs `F = cᵖᵐ tls` alone; the forcing detects the prognostic
-at materialization ([`static_energy_prognostic`](@ref)) and drops the cross term there. (Before
-this was formulation-aware the θ-formulation cases — ENA Covert, ENA LASSO, TRACER–DP-SCREAM —
-received the cross term as a spurious heating `(cᵖᵛ - cᵖᵈ) T dqᵛ/dt`.) The invariants are `dT/dt = tls` and `drᵛ/dt = qls` with
-`dqᵛ/dt` following the mapping above; `test/runtests.jl` checks them in a forcing-only step
-(clear air) and against Breeze's thermodynamic state in cloudy cells.
+**Physical-temperature invariant.** Over a forcing-only step the state must satisfy
+`dT/dt = tls` and `dqᵛ/dt` as above at fixed condensate and height. Breeze's potential-temperature
+formulation converts an energy source `F` into `dθ/dt = F / (cᵖᵐ Π)`, i.e. `cᵖᵐ dT/dt = F`, and a
+vapor source at fixed θ leaves `T` unchanged (up to the composition dependence of the Exner
+function, which vanishes at the standard pressure), so the energy forcing is `F = cᵖᵐ(q) tls`
+and the vapor source needs no energy counterpart. `test/runtests.jl` checks both in
+forcing-only steps.
 """
 function large_scale_thermodynamic_forcings(tls, qls; microphysics, thermodynamic_constants, moisture_name,
                                             moisture_basis=:mixing_ratio)
     basis = moisture_basis === :mixing_ratio ? Val(:mixing_ratio) :
             moisture_basis === :mass_fraction ? Val(:mass_fraction) :
             throw(ArgumentError("moisture_basis must be :mixing_ratio or :mass_fraction"))
-    energy = LargeScaleEnergyForcing(tls, qls, microphysics, thermodynamic_constants, nothing, Val(moisture_name), basis)
+    energy = LargeScaleEnergyForcing(tls, microphysics, thermodynamic_constants, nothing, Val(moisture_name))
     moisture = LargeScaleMoistureForcing(qls, microphysics, nothing, Val(moisture_name), basis)
-    return NamedTuple{(:s, moisture_name)}((energy, moisture))
+    return NamedTuple{(:E, moisture_name)}((energy, moisture))
 end
 
 # Vapor mass-fraction rate implied by a SAM vapor mixing-ratio source R with the condensate
@@ -259,65 +249,42 @@ end
 end
 @inline moisture_rates(::Val{:mass_fraction}, q, R) = (; vapor = R)
 
-struct LargeScaleEnergyForcing{T, Q, M, C, D, N, B}
+"""
+    LargeScaleEnergyForcing
+
+The heating `cᵖᵐ(q) tls` [W kg⁻¹] of a large-scale temperature tendency `tls(z, t)`, with the
+mixture heat capacity of the local moisture state; supplied under the energy key `E`.
+"""
+struct LargeScaleEnergyForcing{T, M, C, D, N}
     tls :: T
-    qls :: Q
     microphysics :: M
     thermodynamic_constants :: C
     density :: D
     moisture_name :: N
-    moisture_basis :: B
-    static_energy :: Bool      # vapor heat-capacity cross term; set at materialization
 end
 
-LargeScaleEnergyForcing(tls, qls, microphysics, constants, density, moisture_name, moisture_basis) =
-    LargeScaleEnergyForcing(tls, qls, microphysics, constants, density, moisture_name, moisture_basis, false)
-
 Adapt.adapt_structure(to, f::LargeScaleEnergyForcing) =
-    LargeScaleEnergyForcing(adapt(to, f.tls), adapt(to, f.qls), adapt(to, f.microphysics),
-                            adapt(to, f.thermodynamic_constants), adapt(to, f.density), f.moisture_name, f.moisture_basis,
-                            f.static_energy)
+    LargeScaleEnergyForcing(adapt(to, f.tls), adapt(to, f.microphysics), adapt(to, f.thermodynamic_constants),
+                            adapt(to, f.density), f.moisture_name)
 
-Base.summary(f::LargeScaleEnergyForcing) =
-    f.static_energy ? "LargeScaleEnergyForcing(cᵖᵐ tls + (cᵖᵛ - cᵖᵈ) T qls)" : "LargeScaleEnergyForcing(cᵖᵐ tls)"
+Base.summary(f::LargeScaleEnergyForcing) = "LargeScaleEnergyForcing(cᵖᵐ tls)"
 Base.show(io::IO, f::LargeScaleEnergyForcing) = print(io, summary(f))
 
 @inline function (f::LargeScaleEnergyForcing)(i, j, k, grid, clock, fields)
-    t = clock.time
-    tls = profile_value(f.tls, k, t)
-    qls = profile_value(f.qls, k, t)
-    constants = f.thermodynamic_constants
+    tls = profile_value(f.tls, k, clock.time)
     ρ = @inbounds f.density[i, j, k]
     qᵛᵉ = @inbounds field_by_name(fields, f.moisture_name)[i, j, k]
-    T = @inbounds fields.T[i, j, k]
     q = grid_moisture_fractions(i, j, k, grid, f.microphysics, ρ, qᵛᵉ, fields)
-    cᵖᵐ = mixture_heat_capacity(q, constants)
-    cᵖᵈ = constants.dry_air.heat_capacity
-    cᵖᵛ = constants.vapor.heat_capacity
-    rates = moisture_rates(f.moisture_basis, q, qls)
-    cross = ifelse(f.static_energy, (cᵖᵛ - cᵖᵈ) * T * rates.vapor, zero(T))
-    return cᵖᵐ * tls + cross
+    cᵖᵐ = mixture_heat_capacity(q, f.thermodynamic_constants)
+    return cᵖᵐ * tls
 end
-
-"""
-    static_energy_prognostic(context)
-
-Whether the model being materialized carries static energy `s` (Breeze `:StaticEnergy`
-formulation) rather than the liquid-ice potential temperature `θ`, from the forcing context's
-specific fields. The vapor heat-capacity cross terms of the energy forcings apply only to `s`:
-there a vapor source at fixed `s` cools by `(cᵖᵛ - cᵖᵈ) T dqᵛ / cᵖᵐ`, whereas at fixed `θ` the
-temperature is unchanged and `cᵖᵐ dT = F`.
-"""
-static_energy_prognostic(context) = haskey(context.specific_fields, :s)
 
 function AtmosphereModels.materialize_atmosphere_model_forcing(f::LargeScaleEnergyForcing,
                                                                field, name, model_field_names, context::NamedTuple)
-    name ∈ (:E, :s) || throw(ArgumentError("LargeScaleEnergyForcing must be supplied under the energy key `E` (or `s`), got $name"))
+    name === :E || throw(ArgumentError("LargeScaleEnergyForcing must be supplied under the energy key `E`, got $name"))
     # The scheme's lookup tables must live on the device, as Breeze does for model.microphysics
     microphysics = on_architecture(architecture(field.grid), f.microphysics)
-    return LargeScaleEnergyForcing(f.tls, f.qls, microphysics, f.thermodynamic_constants,
-                                   context.total_density, f.moisture_name, f.moisture_basis,
-                                   static_energy_prognostic(context))
+    return LargeScaleEnergyForcing(f.tls, microphysics, f.thermodynamic_constants, context.total_density, f.moisture_name)
 end
 
 struct LargeScaleMoistureForcing{Q, M, D, N, B}
@@ -457,43 +424,32 @@ SAM's `upperbound.f90` (`doupperbound = .true.` with `dolargescale`): in the top
 scalar levels, `t` is relaxed toward `tg0 + gamaz` and the vapor toward `qg0` with
 `tau_nudging = 3600 s`, where `tg0(z, t)` and `qg0(z, t)` are the observed sounding
 (`snd`) interpolated in time. With constant `cp` this imposes `dT/dt = -(T - Tg0)/τ` and
-`dqᵛ/dt = -(qᵛ - qg0)/τ`. In Breeze's `s = cᵖᵐ(q) T + gz - ℒqˡ` the same temperature
-response requires the heat-capacity cross term of the simultaneous moisture relaxation,
-
-    ds/dt = -cᵖᵐ (T - Tg0)/τ - (cᵖᵛ - cᵖᵈ) T (qᵛ - qg0)/τ
-
-(the same physical-temperature invariant as `large_scale_thermodynamic_forcings`). In the
-liquid-ice potential-temperature formulation the cross term is omitted (see
-[`static_energy_prognostic`](@ref)): there `cᵖᵐ dT = F` and the vapor relaxation at fixed θ
-leaves `T` unchanged. Returns `(; s, <moisture_name>)`. This is distinct from the momentum sponge.
+`dqᵛ/dt = -(qᵛ - qg0)/τ`. In the potential-temperature formulation the energy forcing
+`F = -cᵖᵐ (T - Tg0)/τ` gives that temperature response (`cᵖᵐ dT = F`; the simultaneous vapor
+relaxation at fixed θ leaves `T` unchanged). Returns `(; E, <moisture_name>)`. This is
+distinct from the momentum sponge.
 """
 function upper_boundary_relaxation_forcings(T_target, q_target; microphysics, thermodynamic_constants,
                                             moisture_name, timescale=3600, levels=2)
-    energy = UpperBoundaryEnergyRelaxation(T_target, q_target, microphysics, thermodynamic_constants, nothing,
+    energy = UpperBoundaryEnergyRelaxation(T_target, microphysics, thermodynamic_constants, nothing,
                                            Val(moisture_name), 1 / timescale, levels)
     moisture = UpperBoundaryMoistureRelaxation(q_target, Val(moisture_name), 1 / timescale, levels)
-    return NamedTuple{(:s, moisture_name)}((energy, moisture))
+    return NamedTuple{(:E, moisture_name)}((energy, moisture))
 end
 
-struct UpperBoundaryEnergyRelaxation{T, Q, M, C, D, N, R}
+struct UpperBoundaryEnergyRelaxation{T, M, C, D, N, R}
     target :: T             # Tg0(z, t)
-    moisture_target :: Q    # qg0(z, t)
     microphysics :: M
     thermodynamic_constants :: C
     density :: D
     moisture_name :: N
     rate :: R
     levels :: Int
-    static_energy :: Bool      # vapor heat-capacity cross term; set at materialization
 end
 
-UpperBoundaryEnergyRelaxation(T, q, microphysics, constants, density, moisture_name, rate, levels) =
-    UpperBoundaryEnergyRelaxation(T, q, microphysics, constants, density, moisture_name, rate, levels, false)
-
 Adapt.adapt_structure(to, f::UpperBoundaryEnergyRelaxation) =
-    UpperBoundaryEnergyRelaxation(adapt(to, f.target), adapt(to, f.moisture_target), adapt(to, f.microphysics),
-                                  adapt(to, f.thermodynamic_constants), adapt(to, f.density), f.moisture_name, f.rate, f.levels,
-                                  f.static_energy)
+    UpperBoundaryEnergyRelaxation(adapt(to, f.target), adapt(to, f.microphysics), adapt(to, f.thermodynamic_constants),
+                                  adapt(to, f.density), f.moisture_name, f.rate, f.levels)
 
 Base.summary(f::UpperBoundaryEnergyRelaxation) = string("UpperBoundaryEnergyRelaxation(top ", f.levels, " levels, τ=", 1 / f.rate, " s)")
 Base.show(io::IO, f::UpperBoundaryEnergyRelaxation) = print(io, summary(f))
@@ -502,29 +458,22 @@ Base.show(io::IO, f::UpperBoundaryEnergyRelaxation) = print(io, summary(f))
     Nz = size(grid, 3)
     active = k > Nz - f.levels
     Tᵗ = profile_value(f.target, k, clock.time)
-    qᵗ = profile_value(f.moisture_target, k, clock.time)
-    constants = f.thermodynamic_constants
     ρ = @inbounds f.density[i, j, k]
     qᵛᵉ = @inbounds field_by_name(fields, f.moisture_name)[i, j, k]
     T = @inbounds fields.T[i, j, k]
     q = grid_moisture_fractions(i, j, k, grid, f.microphysics, ρ, qᵛᵉ, fields)
-    cᵖᵐ = mixture_heat_capacity(q, constants)
-    cᵖᵈ = constants.dry_air.heat_capacity
-    cᵖᵛ = constants.vapor.heat_capacity
+    cᵖᵐ = mixture_heat_capacity(q, f.thermodynamic_constants)
     dTdt = - f.rate * (T - Tᵗ)
-    dqdt = - f.rate * (qᵛᵉ - qᵗ)
-    cross = ifelse(f.static_energy, (cᵖᵛ - cᵖᵈ) * T * dqdt, zero(T))
-    return ifelse(active, cᵖᵐ * dTdt + cross, zero(T))
+    return ifelse(active, cᵖᵐ * dTdt, zero(T))
 end
 
 function AtmosphereModels.materialize_atmosphere_model_forcing(f::UpperBoundaryEnergyRelaxation,
                                                                field, name, model_field_names, context::NamedTuple)
-    name ∈ (:E, :s) || throw(ArgumentError("UpperBoundaryEnergyRelaxation must be supplied under the energy key `E` (or `s`), got $name"))
+    name === :E || throw(ArgumentError("UpperBoundaryEnergyRelaxation must be supplied under the energy key `E`, got $name"))
     FT = eltype(field.grid)
     microphysics = on_architecture(architecture(field.grid), f.microphysics)
-    return UpperBoundaryEnergyRelaxation(f.target, f.moisture_target, microphysics, f.thermodynamic_constants,
-                                         context.total_density, f.moisture_name, convert(FT, f.rate), f.levels,
-                                         static_energy_prognostic(context))
+    return UpperBoundaryEnergyRelaxation(f.target, microphysics, f.thermodynamic_constants,
+                                         context.total_density, f.moisture_name, convert(FT, f.rate), f.levels)
 end
 
 struct UpperBoundaryMoistureRelaxation{T, N, R}

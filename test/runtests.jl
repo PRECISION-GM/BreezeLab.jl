@@ -10,6 +10,7 @@ using TOML
 using Dates: DateTime
 using CUDA
 using Breeze.Microphysics.PredictedParticleProperties: CloudDroplets, has_prognostic_aerosol, activated_number, AerosolActivation
+using Breeze.Thermodynamics: MoistureMassFractions, mixture_heat_capacity
 # Components exercised by the unit tests (the package exports only the case-level API).
 using BreezeLab: LargeScaleForcingProfiles, LargeScaleVerticalAdvection, LargeScaleEnergyForcing, LargeScaleMoistureForcing,
                  MeanProfileNudging, TimeVaryingGeostrophicForcing, UpperBoundaryEnergyRelaxation, UpperBoundaryMoistureRelaxation,
@@ -301,44 +302,19 @@ end
     microphysics = SaturationAdjustment(Float64; equilibrium=WarmPhaseEquilibrium())
     thermo = large_scale_thermodynamic_forcings(tls, qls; microphysics, thermodynamic_constants=constants, moisture_name=:qᵉ)
 
-    @testset "tls/qls physical-temperature invariant" begin
-        for basis in (:mass_fraction, :mixing_ratio)
-            thermo_b = large_scale_thermodynamic_forcings(tls, qls; microphysics, thermodynamic_constants=constants,
-                                                          moisture_name=:qᵉ, moisture_basis=basis)
-            model = AtmosphereModel(grid; formulation=:StaticEnergy, dynamics, microphysics, thermodynamic_constants=constants,
-                                    forcing=(; s=thermo_b.s, qᵉ=thermo_b.qᵉ))
-            set!(model; T=290.0, qᵗ=8e-3)
-            T₀ = copy(interior(model.temperature)); q₀ = copy(interior(model.microphysical_fields.qᵛ))
-            Δt = 10.0
-            for _ in 1:10
-                time_step!(model, Δt)
-            end
-            ΔT = interior(model.temperature) .- T₀
-            Δq = interior(model.microphysical_fields.qᵛ) .- q₀
-            @test all(isapprox.(ΔT, -5e-5 * 100; rtol=1e-3))   # dT/dt = tls while vapor is forced
-            if basis === :mass_fraction
-                @test all(isapprox.(Δq, 1e-7 * 100; rtol=1e-6))    # dqᵛ/dt = qls verbatim
-            else
-                # SAM mixing-ratio source R: dqᵛ/dt = qᵈ² / (1 - qᶜ) R with qᶜ = 0 here
-                expected = @. (1 - q₀)^2 * 1e-7 * 100
-                @test all(isapprox.(Δq, expected; rtol=1e-3))
-                @test all(Δq .< 1e-7 * 100)                        # ~1.6 % below the verbatim rate
-            end
-        end
-    end
+    # BreezeLab models use the liquid-ice potential-temperature formulation: an energy source F heats as
+    # cᵖᵐ dT = F and vapor added at fixed θ leaves T unchanged (to the Exner-composition effect, ≤ a few per
+    # cent of the (cᵖᵛ − cᵖᵈ) T dqᵛ/dt heating it would take to cancel, zero at the standard pressure).
+    θ_model(; kwargs...) = AtmosphereModel(grid; formulation=:LiquidIcePotentialTemperature, dynamics, microphysics,
+                                           thermodynamic_constants=constants, kwargs...)
+    spurious = (1850 - 1005) * 290 * 1e-7 * 100 / 1010          # ≈ 2.4e-3 K: what a vapor cross term would add in 100 s
+    zero_profile = profile_time_series(grid, times, [zeros(24), zeros(24)])
 
-    @testset "tls/qls invariant in the potential-temperature formulation (no vapor cross term)" begin
-        # In the θ formulation an energy source F heats as cᵖᵐ dT = F and vapor added at fixed θ leaves T
-        # unchanged (to the Exner-composition effect), so the forcing must not add (cᵖᵛ − cᵖᵈ) T dqᵛ/dt.
-        spurious = (1850 - 1005) * 290 * 1e-7 * 100 / 1010          # ≈ 2.4e-3 K: what the cross term would add
-        zero_tls = profile_time_series(grid, times, [zeros(24), zeros(24)])
-        zero_qls = profile_time_series(grid, times, [zeros(24), zeros(24)])
-        for (τ, r, expected) in ((zero_tls, qls, 0.0), (tls, zero_qls, -5e-5 * 100), (tls, qls, -5e-5 * 100))
-            thermo_θ = large_scale_thermodynamic_forcings(τ, r; microphysics, thermodynamic_constants=constants,
-                                                          moisture_name=:qᵉ, moisture_basis=:mass_fraction)
-            model = AtmosphereModel(grid; formulation=:LiquidIcePotentialTemperature, dynamics, microphysics,
-                                    thermodynamic_constants=constants, forcing=(; E=thermo_θ.s, qᵉ=thermo_θ.qᵉ))
-            @test !inner(model.forcing.ρE).static_energy
+    @testset "tls/qls physical-temperature invariant (cᵖᵐ dT = cᵖᵐ tls; vapor at fixed θ)" begin
+        for basis in (:mass_fraction, :mixing_ratio), (τ, r, expected) in ((tls, qls, -5e-5 * 100), (zero_profile, qls, 0.0), (tls, zero_profile, -5e-5 * 100))
+            thermo_b = large_scale_thermodynamic_forcings(τ, r; microphysics, thermodynamic_constants=constants,
+                                                          moisture_name=:qᵉ, moisture_basis=basis)
+            model = θ_model(forcing=(; E=thermo_b.E, qᵉ=thermo_b.qᵉ))
             set!(model; T=290.0, qᵗ=8e-3)
             T₀ = copy(interior(model.temperature)); q₀ = copy(interior(model.microphysical_fields.qᵛ))
             for _ in 1:10
@@ -346,81 +322,64 @@ end
             end
             ΔT = interior(model.temperature) .- T₀
             Δq = interior(model.microphysical_fields.qᵛ) .- q₀
-            # residual Exner-composition effect ≤ 2 % of the removed cross term over this 6-km column
-            @test maximum(abs, ΔT .- expected) < 0.06 * spurious
-            r === qls && @test all(isapprox.(Δq, 1e-7 * 100; rtol=1e-6))
+            @test maximum(abs, ΔT .- expected) < 0.06 * spurious     # dT/dt = tls; the vapor source does not heat
+            r === qls || continue
+            if basis === :mass_fraction
+                @test all(isapprox.(Δq, 1e-7 * 100; rtol=1e-6))       # dqᵛ/dt = qls verbatim
+            else
+                # SAM mixing-ratio source R: dqᵛ/dt = qᵈ² / (1 - qᶜ) R with qᶜ = 0 here
+                @test all(isapprox.(Δq, @.((1 - q₀)^2 * 1e-7 * 100); rtol=1e-3))
+                @test all(Δq .< 1e-7 * 100)                           # ~1.6 % below the verbatim rate
+            end
         end
-        # the static-energy model keeps the cross term (materialization sets it from the prognostic)
-        model_s = AtmosphereModel(grid; formulation=:StaticEnergy, dynamics, microphysics, thermodynamic_constants=constants,
-                                  forcing=(; s=thermo.s, qᵉ=thermo.qᵉ))
-        @test inner(model_s.forcing.ρs).static_energy
+        # the energy kernel is exactly cᵖᵐ(q) tls
+        model = θ_model(forcing=(; E=thermo.E, qᵉ=thermo.qᵉ))
+        set!(model; T=290.0, qᵗ=8e-3)
+        Oceananigans.TimeSteppers.update_state!(model)
+        fields = Oceananigans.fields(model)
+        fE = inner(model.forcing.ρE)
+        @test fE isa LargeScaleEnergyForcing
+        qk = MoistureMassFractions(fields.qᵛ[1, 1, 5], 0.0, 0.0)
+        @test fE(1, 1, 5, grid, model.clock, fields) ≈ mixture_heat_capacity(qk, constants) * (-5e-5)
     end
 
-    @testset "tls/qls Jacobian in cloudy cells (P3 and one-moment moisture)" begin
-        using Breeze.Thermodynamics: StaticEnergyState, MoistureMassFractions, temperature, mixture_heat_capacity
-        # Apply the forcing kernels' s and qᵛ rates for Δt to a cloudy state (condensate fixed) and
-        # recover T from Breeze's own state: dT/dt must be tls, dqᵛ/dt the mapped source.
-        R = -1e-7; tls_value = 5e-5; Δt = 100.0
-        for (label, qˡ) in (("cloudy", 5e-4), ("clear", 0.0))
-            T = 288.0; qᵛ = 9e-3; p = 90000.0; z = 900.0
-            q = MoistureMassFractions(qᵛ, qˡ, 0.0)
-            s = mixture_heat_capacity(q, constants) * T + constants.gravitational_acceleration * z - constants.liquid.reference_latent_heat * qˡ
-            qᵈ = 1 - qᵛ - qˡ
-            dqᵛ = qᵈ^2 / (1 - qˡ) * R                       # moisture_basis = :mixing_ratio
-            ds = mixture_heat_capacity(q, constants) * tls_value + (1850 - 1005) * T * dqᵛ
-            q₁ = MoistureMassFractions(qᵛ + dqᵛ * Δt, qˡ, 0.0)
-            𝒰₁ = StaticEnergyState{Float64}(s + ds * Δt, q₁, z, p)
-            T₁ = temperature(𝒰₁, constants)
-            @test isapprox((T₁ - T) / Δt, tls_value; rtol=2e-3)
-            # ... whereas the verbatim rate or a cᵖᵐ-only mapping would not
-            𝒰₂ = StaticEnergyState{Float64}(s + mixture_heat_capacity(q, constants) * tls_value * Δt, q₁, z, p)
-            @test !isapprox((temperature(𝒰₂, constants) - T) / Δt, tls_value; rtol=2e-3)
-            # the kernels reproduce the same rates in a one-moment model with this cloudy state
-            if label == "cloudy"
-                ext = Base.get_extension(Breeze, :BreezeCloudMicrophysicsExt)
-                one_moment = ext.OneMomentCloudMicrophysics(Float64; cloud_formation=SaturationAdjustment(Float64; equilibrium=WarmPhaseEquilibrium()))
-                tls_f = profile_time_series(grid, times, [fill(tls_value, 24), fill(tls_value, 24)])
-                qls_f = profile_time_series(grid, times, [fill(R, 24), fill(R, 24)])
-                thermo_1m = large_scale_thermodynamic_forcings(tls_f, qls_f; microphysics=one_moment, thermodynamic_constants=constants, moisture_name=:qᵉ)
-                model_1m = AtmosphereModel(grid; formulation=:StaticEnergy, dynamics, microphysics=one_moment, thermodynamic_constants=constants,
-                                           forcing=(; s=thermo_1m.s, qᵉ=thermo_1m.qᵉ))
-                set!(model_1m; θ=290.0, qᵗ=12e-3)             # saturated at 290 K near the surface → cloud
-                Oceananigans.TimeSteppers.update_state!(model_1m)
-                f1 = Oceananigans.fields(model_1m)
-                k1 = findfirst(k -> f1.qˡ[1, 1, k] > 1e-5, 1:grid.Nz)
-                @test !isnothing(k1)
-                fs1 = inner(model_1m.forcing.ρs); fq1 = inner(model_1m.forcing.ρqᵉ)
-                qᵛ1 = f1.qᵛ[1, 1, k1]; qˡ1 = f1.qˡ[1, 1, k1]; T1 = f1.T[1, 1, k1]; qᵈ1 = 1 - qᵛ1 - qˡ1
-                @test fq1(1, 1, k1, grid, model_1m.clock, f1) ≈ qᵈ1^2 / (1 - qˡ1) * R
-                @test fs1(1, 1, k1, grid, model_1m.clock, f1) ≈ mixture_heat_capacity(MoistureMassFractions(qᵛ1, qˡ1, 0.0), constants) * tls_value + (1850 - 1005) * T1 * qᵈ1^2 / (1 - qˡ1) * R
-            end
-            # ... and in a P3 model with this state
-            if label == "cloudy"
-                using Breeze.Microphysics.PredictedParticleProperties: CloudDroplets
-                p3 = P3Microphysics(Float64; cloud=CloudDroplets(Float64; number_concentration=75e6))
-                tls_f = profile_time_series(grid, times, [fill(tls_value, 24), fill(tls_value, 24)])
-                qls_f = profile_time_series(grid, times, [fill(R, 24), fill(R, 24)])
-                thermo_p3 = large_scale_thermodynamic_forcings(tls_f, qls_f; microphysics=p3, thermodynamic_constants=constants, moisture_name=:qᵛ)
-                model = AtmosphereModel(grid; formulation=:StaticEnergy, dynamics, microphysics=p3, thermodynamic_constants=constants,
-                                        forcing=(; s=thermo_p3.s, qᵛ=thermo_p3.qᵛ))
-                set!(model; T=T, qᵛ=qᵛ, qᶜˡ=qˡ)
-                Oceananigans.TimeSteppers.update_state!(model)
-                fields = Oceananigans.fields(model)
-                fs = inner(model.forcing.ρs); fq = inner(model.forcing.ρqᵛ)
-                k = 8
-                Tk = fields.T[1, 1, k]; qᵛk = fields.qᵛ[1, 1, k]; qˡk = fields.qᶜˡ[1, 1, k]
-                qᵈk = 1 - qᵛk - qˡk
-                @test fq(1, 1, k, grid, model.clock, fields) ≈ qᵈk^2 / (1 - qˡk) * R
-                qk = MoistureMassFractions(qᵛk, qˡk, 0.0)
-                @test fs(1, 1, k, grid, model.clock, fields) ≈ mixture_heat_capacity(qk, constants) * tls_value + (1850 - 1005) * Tk * qᵈk^2 / (1 - qˡk) * R
-            end
-        end
+    @testset "tls/qls kernels in cloudy cells (P3 and one-moment moisture)" begin
+        R = -1e-7; tls_value = 5e-5
+        tls_f = profile_time_series(grid, times, [fill(tls_value, 24), fill(tls_value, 24)])
+        qls_f = profile_time_series(grid, times, [fill(R, 24), fill(R, 24)])
+        ext = Base.get_extension(Breeze, :BreezeCloudMicrophysicsExt)
+        one_moment = ext.OneMomentCloudMicrophysics(Float64; cloud_formation=SaturationAdjustment(Float64; equilibrium=WarmPhaseEquilibrium()))
+        thermo_1m = large_scale_thermodynamic_forcings(tls_f, qls_f; microphysics=one_moment, thermodynamic_constants=constants, moisture_name=:qᵉ)
+        model_1m = AtmosphereModel(grid; formulation=:LiquidIcePotentialTemperature, dynamics, microphysics=one_moment,
+                                   thermodynamic_constants=constants, forcing=(; E=thermo_1m.E, qᵉ=thermo_1m.qᵉ))
+        set!(model_1m; θ=290.0, qᵗ=12e-3)             # saturated at 290 K near the surface → cloud
+        Oceananigans.TimeSteppers.update_state!(model_1m)
+        f1 = Oceananigans.fields(model_1m)
+        k1 = findfirst(k -> f1.qˡ[1, 1, k] > 1e-5, 1:grid.Nz)
+        @test !isnothing(k1)
+        fE1 = inner(model_1m.forcing.ρE); fq1 = inner(model_1m.forcing.ρqᵉ)
+        qᵛ1 = f1.qᵛ[1, 1, k1]; qˡ1 = f1.qˡ[1, 1, k1]; qᵈ1 = 1 - qᵛ1 - qˡ1
+        @test fq1(1, 1, k1, grid, model_1m.clock, f1) ≈ qᵈ1^2 / (1 - qˡ1) * R
+        @test fE1(1, 1, k1, grid, model_1m.clock, f1) ≈ mixture_heat_capacity(MoistureMassFractions(qᵛ1, qˡ1, 0.0), constants) * tls_value
+
+        using Breeze.Microphysics.PredictedParticleProperties: CloudDroplets
+        p3 = P3Microphysics(Float64; cloud=CloudDroplets(Float64; number_concentration=75e6))
+        thermo_p3 = large_scale_thermodynamic_forcings(tls_f, qls_f; microphysics=p3, thermodynamic_constants=constants, moisture_name=:qᵛ)
+        model = AtmosphereModel(grid; formulation=:LiquidIcePotentialTemperature, dynamics, microphysics=p3,
+                                thermodynamic_constants=constants, forcing=(; E=thermo_p3.E, qᵛ=thermo_p3.qᵛ))
+        set!(model; T=288.0, qᵛ=9e-3, qᶜˡ=5e-4)
+        Oceananigans.TimeSteppers.update_state!(model)
+        fields = Oceananigans.fields(model)
+        fE = inner(model.forcing.ρE); fq = inner(model.forcing.ρqᵛ)
+        k = 8
+        qᵛk = fields.qᵛ[1, 1, k]; qˡk = fields.qᶜˡ[1, 1, k]; qᵈk = 1 - qᵛk - qˡk
+        @test fq(1, 1, k, grid, model.clock, fields) ≈ qᵈk^2 / (1 - qˡk) * R
+        @test fE(1, 1, k, grid, model.clock, fields) ≈ mixture_heat_capacity(MoistureMassFractions(qᵛk, qˡk, 0.0), constants) * tls_value
     end
 
     @testset "mean-profile nudging leaves eddies alone" begin
         nudge = MeanProfileNudging(uls; timescale=7200)
-        model = AtmosphereModel(grid; formulation=:StaticEnergy, dynamics, microphysics, thermodynamic_constants=constants,
-                                forcing=(; u=nudge))
+        model = θ_model(forcing=(; u=nudge))
         set!(model; T=290.0, qᵗ=5e-3, u=(x, y, z) -> 4 + 0.5 * sin(2π * x / 800))
         Oceananigans.TimeSteppers.update_state!(model)
         ρ = interior(reference_state.density)
@@ -437,8 +396,7 @@ end
 
     @testset "time-varying geostrophic forcing" begin
         geo = time_varying_geostrophic_forcings(ug, vg)
-        model = AtmosphereModel(grid; formulation=:StaticEnergy, dynamics, microphysics, thermodynamic_constants=constants,
-                                coriolis=FPlane(f=1e-4), forcing=(; u=geo.u, v=geo.v))
+        model = θ_model(coriolis=FPlane(f=1e-4), forcing=(; u=geo.u, v=geo.v))
         set!(model; T=290.0, qᵗ=5e-3)
         fu = inner(model.forcing.ρu)
         fv = inner(model.forcing.ρv)
@@ -453,23 +411,22 @@ end
 
     @testset "full-field upwind vertical advection" begin
         vadv = LargeScaleVerticalAdvection(wls)
-        model = AtmosphereModel(grid; formulation=:StaticEnergy, dynamics, microphysics, thermodynamic_constants=constants,
-                                forcing=(; s=vadv, u=vadv))
+        model = θ_model(forcing=(; θ=vadv, u=vadv))
         set!(model; T=(x, y, z) -> 290 - 0.005z + 0.5 * (x > 400), qᵗ=5e-3, u=(x, y, z) -> 0.001z)
         Oceananigans.TimeSteppers.update_state!(model; compute_tendencies=false)
-        fs = inner(model.forcing.ρs)
+        fθ = inner(model.forcing.ρθ)
         fields = Oceananigans.fields(model)
-        s = fields.s
+        θ = fields.θ
         Δz = 6000 / 24
         for i in (1, 8), k in (2, 12)
-            # wls < 0 → upwind from above: -(w) (s[k+1] - s[k]) / Δz
-            expected = -(-0.01) * (s[i, 1, k+1] - s[i, 1, k]) / Δz
-            @test fs(i, 1, k, grid, model.clock, fields) ≈ expected
+            # wls < 0 → upwind from above: -(w) (θ[k+1] - θ[k]) / Δz
+            expected = -(-0.01) * (θ[i, 1, k+1] - θ[i, 1, k]) / Δz
+            @test fθ(i, 1, k, grid, model.clock, fields) ≈ expected
         end
-        @test fs(1, 1, 1, grid, model.clock, fields) == 0       # SAM skips the bottom cell
-        @test fs(1, 1, 24, grid, model.clock, fields) == 0      # ... and the top cell
+        @test fθ(1, 1, 1, grid, model.clock, fields) == 0       # SAM skips the bottom cell
+        @test fθ(1, 1, 24, grid, model.clock, fields) == 0      # ... and the top cell
         # pointwise: differs between the two halves of the domain
-        @test fs(1, 1, 12, grid, model.clock, fields) != fs(8, 1, 12, grid, model.clock, fields) skip=true
+        @test fθ(1, 1, 12, grid, model.clock, fields) != fθ(8, 1, 12, grid, model.clock, fields)
         fu = inner(model.forcing.ρu)
         @test fu(1, 1, 12, grid, model.clock, fields) ≈ 0.01 * 0.001
     end
@@ -479,8 +436,7 @@ end
         targets_T = profile_time_series(grid, times, [fill(280.0, 24), fill(280.0, 24)])
         targets_q = profile_time_series(grid, times, [fill(1e-3, 24), fill(1e-3, 24)])
         upper = upper_boundary_relaxation_forcings(targets_T, targets_q; microphysics, thermodynamic_constants=constants, moisture_name=:qᵉ)
-        model = AtmosphereModel(grid; formulation=:StaticEnergy, dynamics, microphysics, thermodynamic_constants=constants,
-                                forcing=(; u=sponge, v=sponge, w=sponge, s=upper.s, qᵉ=upper.qᵉ))
+        model = θ_model(forcing=(; u=sponge, v=sponge, w=sponge, E=upper.E, qᵉ=upper.qᵉ))
         set!(model; T=290.0, qᵗ=5e-3, u=(x, y, z) -> 5 + sin(2π * x / 800), w=0)
         Oceananigans.TimeSteppers.update_state!(model; compute_tendencies=false)
         fields = Oceananigans.fields(model)
@@ -491,13 +447,12 @@ end
         @test fq(1, 1, 24, grid, model.clock, fields) ≈ -(5e-3 - 1e-3) / 3600
         @test fq(1, 1, 23, grid, model.clock, fields) ≈ -(5e-3 - 1e-3) / 3600
         @test fq(1, 1, 22, grid, model.clock, fields) == 0
-        fs = inner(model.forcing.ρs)
-        @test fs(1, 1, 24, grid, model.clock, fields) < 0        # T = 290 relaxed toward 280
-        @test fs(1, 1, 22, grid, model.clock, fields) == 0
+        fE = inner(model.forcing.ρE)
+        @test fE(1, 1, 24, grid, model.clock, fields) < 0        # T = 290 relaxed toward 280
+        @test fE(1, 1, 22, grid, model.clock, fields) == 0
 
         # forcing-only step: the top levels follow dT/dt = -(T - Tg0)/τ, dqᵛ/dt = -(q - qg0)/τ
-        model2 = AtmosphereModel(grid; formulation=:StaticEnergy, dynamics, microphysics, thermodynamic_constants=constants,
-                                 forcing=(; s=upper.s, qᵉ=upper.qᵉ))
+        model2 = θ_model(forcing=(; E=upper.E, qᵉ=upper.qᵉ))
         set!(model2; T=290.0, qᵗ=5e-3)
         T₀ = copy(interior(model2.temperature)); q₀ = copy(interior(model2.microphysical_fields.qᵛ))
         for _ in 1:5
@@ -505,40 +460,27 @@ end
         end
         ΔT = interior(model2.temperature) .- T₀
         Δq = interior(model2.microphysical_fields.qᵛ) .- q₀
-        # exponential relaxation of the *actual* initial state toward the targets
+        # exponential relaxation of the *actual* initial state toward the targets; a vapor cross term would
+        # add ≈ (cᵖᵛ − cᵖᵈ) T Δq / cᵖᵐ ≈ +0.013 K (≈ 10 %) here
         expected_ΔT = @. -(T₀[:, :, 23:24] - 280) * (1 - exp(-50 / 3600))
         expected_Δq = @. -(q₀[:, :, 23:24] - 1e-3) * (1 - exp(-50 / 3600))
-        @test all(isapprox.(ΔT[:, :, 23:24], expected_ΔT; rtol=5e-3))
+        @test all(isapprox.(ΔT[:, :, 23:24], expected_ΔT; rtol=1e-2))
         @test all(isapprox.(Δq[:, :, 23:24], expected_Δq; rtol=5e-3))
         @test all(abs.(ΔT[:, :, 1:22]) .< 1e-8)
-
-        # the same relaxation in the θ formulation: no vapor cross term, the same temperature response
-        model3 = AtmosphereModel(grid; formulation=:LiquidIcePotentialTemperature, dynamics, microphysics,
-                                 thermodynamic_constants=constants, forcing=(; E=upper.s, qᵉ=upper.qᵉ))
-        @test !inner(model3.forcing.ρE).static_energy
-        set!(model3; T=290.0, qᵗ=5e-3)
-        T₀ = copy(interior(model3.temperature)); q₀ = copy(interior(model3.microphysical_fields.qᵛ))
-        for _ in 1:5
-            time_step!(model3, 10.0)
-        end
-        ΔT = interior(model3.temperature) .- T₀
-        expected_ΔT = @. -(T₀[:, :, 23:24] - 280) * (1 - exp(-50 / 3600))
-        # the removed cross term would add ≈ (cᵖᵛ − cᵖᵈ) T Δq / cᵖᵐ ≈ +0.013 K (≈ 10 %) here
-        @test all(isapprox.(ΔT[:, :, 23:24], expected_ΔT; rtol=1e-2))
     end
 end
 
-@testset "Prescribed surface stress is uniform and wind-aligned" begin
+@testset "Prescribed surface stress is uniform and wind-aligned; H and LE enter as prescribed" begin
     grid = test_grid(; Nz=24, Lz=6000)
     constants = ThermodynamicConstants(Float64)
     reference_state = ReferenceState(grid, constants; base_pressure=101930, potential_temperature=292)
     dynamics = AnelasticDynamics(reference_state)
     sfc = read_sam_surface_forcing(joinpath(FIXTURES, "sfc"))
     bcs, stress = prescribed_surface_flux_boundary_conditions(grid, sfc, 199.25; thermodynamic_constants=constants,
-                                                              surface_density=1.2, moisture_name=:qᵉ, formulation=:StaticEnergy)
+                                                              surface_density=1.2, moisture_name=:qᵉ)
     microphysics = SaturationAdjustment(Float64; equilibrium=WarmPhaseEquilibrium())
-    model = AtmosphereModel(grid; formulation=:StaticEnergy, dynamics, microphysics, thermodynamic_constants=constants,
-                            boundary_conditions=bcs)
+    model = AtmosphereModel(grid; formulation=:LiquidIcePotentialTemperature, dynamics, microphysics,
+                            thermodynamic_constants=constants, boundary_conditions=bcs)
     set!(model; T=290.0, qᵗ=5e-3, u=(x, y, z) -> 3 + 2 * sin(2π * x / 800), v=(x, y, z) -> -4 + cos(2π * y / 800))
     simulation = Simulation(model; Δt=1.0, stop_time=1.0)
     updater = prescribed_stress_updater(stress, model.velocities)
@@ -549,42 +491,36 @@ end
     U = max(1, sqrt(ū^2 + v̄^2))
     @test τˣ[1, 1, 1] ≈ -1.2 * 0.0625 * ū / U
     @test τʸ[1, 1, 1] ≈ -1.2 * 0.0625 * v̄ / U
-    # energy flux includes the temperature-neutral evaporation term in the static-energy formulation
+    # the energy flux is the sfc file's H and the vapor flux LE / ℒ
     ℒ = constants.liquid.reference_latent_heat
-    H = model.formulation.energy_density.boundary_conditions.bottom.condition[1, 1, 1, Time(0.0)]
-    @test H ≈ 11.5361 + (1850 - 1005) * 294.937 * 85.8638 / ℒ
-    # ... and not in the potential-temperature formulation (the default)
-    bcs_θ, _ = prescribed_surface_flux_boundary_conditions(grid, sfc, 199.25; thermodynamic_constants=constants,
-                                                           surface_density=1.2, moisture_name=:qᵉ)
-    @test bcs_θ.ρE.bottom.condition[1, 1, 1, Time(0.0)] ≈ 11.5361
-    @test_throws ArgumentError prescribed_surface_flux_boundary_conditions(grid, sfc, 199.25; thermodynamic_constants=constants,
-                                                                           surface_density=1.2, moisture_name=:qᵉ, formulation=:θ)
+    @test bcs.ρE.bottom.condition[1, 1, 1, Time(0.0)] ≈ 11.5361
+    @test bcs.ρqᵉ.bottom.condition[1, 1, 1, Time(0.0)] ≈ 85.8638 / ℒ
+    # ... and the model's own surface-flux diagnostic returns them
+    Oceananigans.TimeSteppers.update_state!(model)
+    fluxes = BreezeLab.surface_heat_fluxes(model)
+    Oceananigans.compute!(fluxes.sensible); Oceananigans.compute!(fluxes.latent)
+    @test interior(fluxes.latent)[1, 1, 1] ≈ 85.8638 rtol=1e-6
+    @test interior(fluxes.sensible)[1, 1, 1] ≈ 11.5361 rtol=1e-2
 end
 
-@testset "Latent-heat-only surface flux leaves the surface temperature unchanged in both formulations" begin
+@testset "A prescribed latent-heat flux leaves the lowest-cell temperature unchanged" begin
     grid = test_grid(; Nz=24, Lz=6000)
     constants = ThermodynamicConstants(Float64)
     reference_state = ReferenceState(grid, constants; base_pressure=101000, potential_temperature=z -> 300 + 0.004z)
     dynamics = AnelasticDynamics(reference_state)
     microphysics = SaturationAdjustment(Float64; equilibrium=WarmPhaseEquilibrium())
     sfc = SAMSurfaceForcing([200.0, 201.0], [300.0, 300.0], [0.0, 0.0], [300.0, 300.0], [0.0, 0.0])
-    ΔT(formulation; kwargs...) = begin
-        heat = prescribed_heat_flux_boundary_conditions(grid, sfc, 200.0; thermodynamic_constants=constants,
-                                                        moisture_name=:qᵉ, formulation, kwargs...)
-        model = AtmosphereModel(grid; formulation, dynamics, microphysics, thermodynamic_constants=constants,
-                                boundary_conditions=heat.bcs)
-        set!(model; T=295.0, qᵗ=5e-3)
-        T₀ = interior(model.temperature)[1, 1, 1]
-        for _ in 1:10
-            time_step!(model, 10.0)
-        end
-        interior(model.temperature)[1, 1, 1] - T₀
+    heat = prescribed_heat_flux_boundary_conditions(grid, sfc, 200.0; thermodynamic_constants=constants, moisture_name=:qᵉ)
+    model = AtmosphereModel(grid; formulation=:LiquidIcePotentialTemperature, dynamics, microphysics,
+                            thermodynamic_constants=constants, boundary_conditions=heat.bcs)
+    set!(model; T=295.0, qᵗ=5e-3)
+    T₀ = interior(model.temperature)[1, 1, 1]; q₀ = interior(model.microphysical_fields.qᵛ)[1, 1, 1]
+    for _ in 1:10
+        time_step!(model, 10.0)
     end
-    # LE = 300 W m⁻² for 100 s into a 250-m cell: the wrong pairing changes T by ≈ 1e-2 K
-    @test abs(ΔT(:StaticEnergy)) < 5e-4
-    @test abs(ΔT(:LiquidIcePotentialTemperature)) < 5e-5
-    @test ΔT(:StaticEnergy; temperature_neutral_evaporation=false) < -5e-3
-    @test ΔT(:LiquidIcePotentialTemperature; temperature_neutral_evaporation=true) > 5e-3
+    # LE = 300 W m⁻² for 100 s into a 250-m cell: a (cᵖᵛ − cᵖᵈ) T E heating would warm it by ≈ 1e-2 K
+    @test abs(interior(model.temperature)[1, 1, 1] - T₀) < 5e-5
+    @test interior(model.microphysical_fields.qᵛ)[1, 1, 1] > q₀                 # ... while the vapor arrives
 end
 
 @testset "Scalar advection: bounded water masses, plain energy and moments" begin
@@ -594,10 +530,10 @@ end
     for (microphysics, moisture) in ((aer2, :qᵛ), (p3_microphysics(; aerosol = covert_aerosol(; reference_density=1.17)), :qᵛ),
                                      (p3_microphysics(), :qᵛ), (one_moment_microphysics(), :qᵗ))
         schemes = BreezeLab.scalar_advection_schemes(5, microphysics, moisture)
-        @test !is_bounded(schemes.ρs)
+        @test !is_bounded(schemes.ρθ)
         @test is_bounded(schemes[Symbol("ρ", moisture)])
         for name in keys(schemes)
-            name === :ρs && continue
+            name === :ρθ && continue
             s = string(name)
             @test is_bounded(schemes[name])
             if occursin("ρq", s)
@@ -615,7 +551,7 @@ end
     schemes = BreezeLab.scalar_advection_schemes(5, aer2, :qᵛ)
     @test all(s -> is_bounded(s) && s.bounds.maximum_value == 1, (schemes.ρqᶜˡ, schemes.ρqʳ, schemes.ρqⁱ, schemes.ρqᶠ, schemes.ρqʷⁱ))
     @test all(s -> is_bounded(s) && isinf(s.bounds.maximum_value), (schemes.ρnᶜˡ, schemes.ρnʳ, schemes.ρnⁱ, schemes.ρbᶠ, schemes.ρnᵃ))
-    @test !is_bounded(schemes.ρs)
+    @test !is_bounded(schemes.ρθ)
     plain_moments = BreezeLab.scalar_advection_schemes(5, aer2, :qᵛ; positive_moments=false)
     @test all(!is_bounded, (plain_moments.ρnᶜˡ, plain_moments.ρnʳ, plain_moments.ρnⁱ, plain_moments.ρbᶠ, plain_moments.ρnᵃ))
     @test is_bounded(plain_moments.ρqʳ)
@@ -624,7 +560,7 @@ end
 @testset "Sedimenting rain carries its enthalpy (Breeze PR 959)" begin
     # Before PR 959 Breeze moved condensate mass but not its energy content, and this package
     # supplied the missing flux as a forcing. The coupling is now Breeze's own: a rain shaft
-    # crossing an isothermal saturated column must leave T unchanged in either formulation
+    # crossing an isothermal saturated column must leave T unchanged
     # (without the coupling the arriving rain warmed it by ~ℒΔqʳ/cᵖ, above 1 K here).
     using Breeze.Thermodynamics: saturation_specific_humidity, PlanarLiquidSurface
     using Breeze.Microphysics.PredictedParticleProperties: CloudDroplets
@@ -639,12 +575,10 @@ end
     col(v) = repeat(reshape(v, 1, 1, 40), 8, 8, 1)
     qʳ₀ = [600 ≤ z ≤ 750 ? 2e-3 : 0.0 for z in zc]
     nʳ₀ = qʳ₀ ./ (4/3 * π * 1000 * (0.5e-3)^3)
-    function rain_column(formulation, T_profile; steps)
+    function rain_column(T_profile; steps)
         qsat = [saturation_specific_humidity(T_profile[k], ρᵣ[k], constants, PlanarLiquidSurface()) for k in 1:40]
-        schemes = formulation === :StaticEnergy ? scalar_advection :
-                  NamedTuple((n === :ρs ? :ρθ : n) => v for (n, v) in pairs(scalar_advection))
-        model = AtmosphereModel(grid; formulation, dynamics, microphysics=p3, thermodynamic_constants=constants,
-                                momentum_advection=WENO(order=5), scalar_advection=schemes)
+        model = AtmosphereModel(grid; formulation=:LiquidIcePotentialTemperature, dynamics, microphysics=p3,
+                                thermodynamic_constants=constants, momentum_advection=WENO(order=5), scalar_advection)
         set!(model; T=col(T_profile), qᵛ=col(qsat), qʳ=col(qʳ₀), nʳ=col(nʳ₀))
         Tᵢ = copy(interior(model.temperature)); qʳᵢ = copy(interior(model.microphysical_fields.qʳ))
         for _ in 1:steps
@@ -652,15 +586,13 @@ end
         end
         return interior(model.temperature) .- Tᵢ, interior(model.microphysical_fields.qʳ) .- qʳᵢ, qsat
     end
-    for formulation in (:StaticEnergy, :LiquidIcePotentialTemperature)
-        ΔT, Δqʳ, _ = rain_column(formulation, fill(285.0, 40); steps=60)
-        @test maximum(abs, Δqʳ) > 1e-4          # the shaft has moved
-        @test maximum(abs, ΔT) < 0.05           # ... and the column stays isothermal
-    end
+    ΔT, Δqʳ, _ = rain_column(fill(285.0, 40); steps=60)
+    @test maximum(abs, Δqʳ) > 1e-4          # the shaft has moved
+    @test maximum(abs, ΔT) < 0.05           # ... and the column stays isothermal
 
     # Cold rain from above a temperature jump (280 K over 285 K) cools the warm cells it enters.
     T_jump = [z > 600 ? 280.0 : 285.0 for z in zc]
-    ΔT, Δqʳ, qsat_jump = rain_column(:StaticEnergy, T_jump; steps=8)   # the front crosses 612.5 m, stays aloft
+    ΔT, Δqʳ, qsat_jump = rain_column(T_jump; steps=8)   # the front crosses 612.5 m, stays aloft
     k_warm = findlast(≤(600), zc)
     @test Δqʳ[1, 1, k_warm] > 1e-4                       # rain has arrived in the warm cell
     @test ΔT[1, 1, k_warm] < 0                           # ... and cooled it
@@ -674,7 +606,7 @@ end
     dynamics = AnelasticDynamics(reference_state)
     microphysics = SaturationAdjustment(Float64; equilibrium=WarmPhaseEquilibrium())
     radiation = SimpleLongwaveRadiation(grid; schedule=IterationInterval(1))
-    model = AtmosphereModel(grid; formulation=:StaticEnergy, dynamics, microphysics, thermodynamic_constants=constants, radiation)
+    model = AtmosphereModel(grid; formulation=:LiquidIcePotentialTemperature, dynamics, microphysics, thermodynamic_constants=constants, radiation)
     set!(model; θ=(x, y, z) -> z < 1000 ? 290 : 296 + 0.003z, qᵗ=(x, y, z) -> z < 1000 ? 11e-3 : 3e-3)
     Oceananigans.TimeSteppers.update_state!(model)
     F = interior(radiation.flux); H = interior(radiation.flux_divergence)

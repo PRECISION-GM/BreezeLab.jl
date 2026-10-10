@@ -264,7 +264,7 @@ function ena_lasso(; member = DEFAULT_LASSO_MEMBER,
         :u => (geostrophic.u, nudging_u, subsidence, sponge),
         :v => (geostrophic.v, nudging_v, subsidence, sponge),
         :w => (sponge,),
-        :E => (thermodynamic.s, upper.s),            # tls and the top relaxation, as energy tendencies
+        :E => (thermodynamic.E, upper.E),            # tls and the top relaxation, as energy tendencies
         :θ => (subsidence,))
     for name in specific_prognostic_names(microphysics)
         forcing[name] = (subsidence,)                # subsidence.f90 advects every microphysical field
