@@ -8,7 +8,7 @@
 # Writes figures (PNG) and `summary.md` / `summary.toml` with the numbers under --out.
 
 using BreezeLab
-using BreezeLab: interpolate_profile
+using BreezeLab: interpolate_profile, driver_initial_profile, LargeScaleVerticalAdvection, InversionFollowingNudging
 using Breeze
 using Oceananigans
 using Oceananigans.Units
@@ -33,12 +33,16 @@ function parse_args(args)
     return opts
 end
 opts = parse_args(ARGS)
-run_dir = get(opts, "run", "runs/ctrl_full_66h_job211")
+run_spec = get(opts, "run", "runs/ctrl_full_66h_job211")   # comma-separated segment directories, segment 1 first
+include(joinpath(@__DIR__, "sea_starr_segments.jl"))
+run_dirs = segment_dirs(run_spec)
+run_dir = first(run_dirs)
 member = Symbol(get(opts, "member", "CTRL"))
 out_dir = get(opts, "out", joinpath(run_dir, "analysis"))
 inputs = get(opts, "inputs", "/shared/home/greg/breezelab-runs/20261006/inputs/mip_sources/seastarr_22241697")
 mkpath(out_dir)
 prefix = joinpath(run_dir, "sea_starr_" * lowercase(string(member)))
+base_prefix = "sea_starr_" * lowercase(string(member))
 epoch = DateTime(2017, 8, 15, 21)
 CairoMakie.activate!(type = "png", px_per_unit = 1.5)
 commit = try strip(read(`git rev-parse --short HEAD`, String)) catch; "unknown" end
@@ -68,7 +72,7 @@ sev_count(n) = [count(isfinite, sev[n][i, :]) for i in axes(sev[n], 1)]
 #####
 
 ts_file = prefix * "_timeseries.jld2"
-series(name) = FieldTimeSeries(ts_file, name)
+series(name) = stitched_series(run_dirs, base_prefix * "_timeseries.jld2", name)
 value(f) = [f[n][1, 1, 1] for n in eachindex(f.times)]
 cwp_s = series("cwp"); t1 = cwp_s.times
 cwp = 1e3 .* value(cwp_s); rwp = 1e3 .* value(series("rwp")); cf = value(series("cloud_fraction"))
@@ -77,7 +81,7 @@ na_col = value(series("nᵃ_column")); nc_col = value(series("nᶜˡ_column")); 
 th = t1 ./ 3600
 
 st_file = prefix * "_statistics.jld2"
-prof(name) = FieldTimeSeries(st_file, name)
+prof(name) = stitched_series(run_dirs, base_prefix * "_statistics.jld2", name)
 θp = prof("θ"); t15 = θp.times; th15 = t15 ./ 3600
 z = Array(znodes(θp.grid, Center())); zf = Array(znodes(θp.grid, Face())); Nz = length(z)
 column(fts, n) = vec(Array(interior(fts[n], 1, 1, :)))
@@ -246,7 +250,7 @@ night = [(a, b) for (a, b) in zip(th15[1:end-1], th15[2:end]) if swd_top[findfir
 shade_night!(ax) = for (a, b) in night; vspan!(ax, a, b, color = (:gray, 0.12)); end
 
 fig = Figure(size = (1100, 1500), fontsize = 12)
-Label(fig[0, 1:2], "SEA STARR $(member) (job $(basename(run_dir))): 15-min statistics vs SEVIRI along the composite trajectories (grey: night at the LES top)", font = :bold, tellwidth = false)
+Label(fig[0, 1:2], "SEA STARR $(member) ($(segment_label(run_dirs))): 15-min statistics vs SEVIRI along the composite trajectories (grey: night at the LES top)", font = :bold, tellwidth = false)
 ax = Axis(fig[1, 1], ylabel = "Water path (g m⁻²)"); shade_night!(ax)
 lines!(ax, th15, lwp15, label = "model LWP (cloud + rain)"); lines!(ax, th15, rwp15, label = "model RWP")
 scatter!(ax, trajectory_hours, sev_mean("lwp"), color = :black, markersize = 6, label = "SEVIRI LWP (all)")
@@ -319,11 +323,11 @@ save(joinpath(out_dir, "ctrl_profiles_vs_targets.png"), fig3)
 #####
 
 open(joinpath(out_dir, "summary.toml"), "w") do io
-    TOML.print(io, Dict("run" => run_dir, "member" => string(member), "commit" => commit, "generated" => string(now(UTC)),
+    TOML.print(io, Dict("run" => run_spec, "member" => string(member), "commit" => commit, "generated" => string(now(UTC)),
                         "numbers" => Dict(k => (v isa Tuple || v isa Vector ? string(v) : v) for (k, v) in numbers)))
 end
 open(joinpath(out_dir, "summary.md"), "w") do io
-    println(io, "# SEA STARR $(member) analysis summary (", run_dir, ", commit ", commit, ", ", Dates.format(now(UTC), "yyyy-mm-dd HH:MM"), " UTC)\n")
+    println(io, "# SEA STARR $(member) analysis summary (", segment_label(run_dirs), ", commit ", commit, ", ", Dates.format(now(UTC), "yyyy-mm-dd HH:MM"), " UTC)\n")
     println(io, "| quantity | value |\n| --- | --- |")
     for k in sort(collect(keys(numbers)))
         v = numbers[k]
