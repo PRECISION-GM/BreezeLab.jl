@@ -155,6 +155,9 @@ function plan_view(; zoom = false)
         end
     end
     wind_arrows!(ax1, xs, ys, u, v; step = zoom ? 8 : 30, lengthscale = zoom ? 0.02 : 0.06)
+    for ax in (ax1, ax2)   # arrows near an edge must not stretch the axes beyond the data
+        limits!(ax, extrema(xs)..., extrema(ys)...)
+    end
     function draw!(n)
         if zoom
             f = inner_fields(n)
@@ -226,7 +229,7 @@ for (name, make) in products
         -1
     end
     report[name * "_mp4_decoded_frames"] = nframes
-    run(pipeline(`$ffmpeg -y -v error -sseof -0.3 -i $mp4 -update 1 -frames:v 1 $(joinpath(out_dir, "tracer_mip_aug07_$(name)_last_frame.png"))`; stderr = devnull))
+    run(pipeline(`$ffmpeg -y -v error -sseof -0.05 -i $mp4 -update 1 -frames:v 1 $(joinpath(out_dir, "tracer_mip_aug07_$(name)_last_frame.png"))`; stderr = devnull))
     # 4-frame montage: one full figure per pick, rendered to PNG then composed
     panels = map(enumerate(picks)) do (k, n)
         draw!(n)
