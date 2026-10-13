@@ -34,6 +34,17 @@ opts = parse_args(ARGS)
 specs = [(:CTRL, get(opts, "ctrl", "runs/ctrl_full_66h_job211")),
          (:N100, get(opts, "n100", "runs/n100_full_66h_job214")),
          (:N030, get(opts, "n030", "runs/n030_full_66h_job218"))]
+# Optional labelled run list "label|member|dirs;…" (e.g. a 192² vs 384² CTRL domain comparison) and a file tag.
+if haskey(opts, "runs")
+    specs = map(split(opts["runs"], ';')) do entry
+        label, member, dirs = split(entry, '|')
+        (String(label), Symbol(member), String(dirs))
+    end
+else
+    specs = [(string(name), name, spec) for (name, spec) in specs]
+end
+tag = get(opts, "tag", "members")
+title_text = get(opts, "title", "SEA STARR CTRL / N100 / N030")
 out_dir = get(opts, "out", "runs/members_analysis")
 inputs = get(opts, "inputs", "/shared/home/greg/breezelab-runs/20261006/inputs/mip_sources/seastarr_22241697")
 mkpath(out_dir)
@@ -73,9 +84,9 @@ smooth(x, n) = [mean(x[max(1, i - n):min(length(x), i + n)]) for i in eachindex(
     vec(Array(interior(rs.density, 1, 1, :)))
 end
 
-function member_diagnostics(name, spec)
+function member_diagnostics(name, member, spec)
     dirs = segment_dirs(spec)
-    prefix = "sea_starr_" * lowercase(string(name))
+    prefix = "sea_starr_" * lowercase(string(member))
     ts(n) = stitched_series(dirs, prefix * "_timeseries.jld2", n)
     st(n) = stitched_series(dirs, prefix * "_statistics.jld2", n)
     cwp_s = ts("cwp"); t1 = cwp_s.times
@@ -113,7 +124,7 @@ function member_diagnostics(name, spec)
               nd15, rain_fraction15, incloud_lwp15, na_bl15, we, end_hours = t1[end] / 3600)
 end
 
-members = [member_diagnostics(name, spec) for (name, spec) in specs]
+members = [member_diagnostics(label, member, spec) for (label, member, spec) in specs]
 
 #####
 ##### Numbers
@@ -168,10 +179,10 @@ end
 ##### Figures
 #####
 
-colors = Dict(:CTRL => Makie.wong_colors()[1], :N100 => Makie.wong_colors()[2], :N030 => Makie.wong_colors()[3])
+colors = Dict(m.name => Makie.wong_colors()[i] for (i, m) in enumerate(members))
 hours_ticks(ax) = (ax.xticks = (collect(0:6:66), [@sprintf("%d\n%02d LST", h, round(Int, local_solar_hour(h * 3600))) for h in 0:6:66]))
 fig = Figure(size = (1150, 1450), fontsize = 12)
-Label(fig[0, 1:2], "SEA STARR CTRL / N100 / N030 (15-min means; segments stitched at the restore time) vs SEVIRI composite", font = :bold, tellwidth = false)
+Label(fig[0, 1:2], title_text * " (15-min means; segments stitched at the restore time) vs SEVIRI composite", font = :bold, tellwidth = false)
 panels = ((1, 1, "LWP cloud + rain (g m⁻²)", m -> m.lwp15, "lwp"), (1, 2, "Cloud fraction (LWP > 5 g m⁻²)", m -> m.cf15, "cf"),
           (2, 1, "Surface rain (mm day⁻¹)", m -> m.rain15, nothing), (2, 2, "Rain fraction of liquid water", m -> m.rain_fraction15, nothing),
           (3, 1, "Mean inversion height (m)", m -> m.zi15, nothing), (3, 2, "LWC-weighted in-cloud N_d (cm⁻³)", m -> m.nd15, "nd_good"),
@@ -185,13 +196,13 @@ for (r, c, label, getter, sevkey) in panels
     (r, c) == (1, 1) && axislegend(ax, position = :lt, labelsize = 10)
     label == "Surface rain (mm day⁻¹)" && (ax.yscale = Makie.pseudolog10)
 end
-save(joinpath(out_dir, "members_timeseries.png"), fig)
+save(joinpath(out_dir, "$(tag)_timeseries.png"), fig)
 
 # Drizzle state space (preprint Fig. 7): hourly markers, colour = rain fraction; adiabatic cloud-top rₑ isolines
 cw = 2.0e-6; ρw = 1000.0; kdisp = 0.8     # adiabatic condensate gradient [kg m⁻⁴], water density, dispersion factor
 lwp_for_re(N, re) = (4π / 3 * ρw * kdisp * N * re^3)^2 / (2cw) * 1e3     # g m⁻² for N in m⁻³, rₑ in m
 fig2 = Figure(size = (1200, 430), fontsize = 12)
-Label(fig2[0, 1:4], "Fraction of liquid in rain vs LWC-weighted N_d and in-cloud LWP (hourly); lines: adiabatic cloud-top rₑ = 12, 14, 16 µm", font = :bold, tellwidth = false)
+Label(fig2[0, 1:(length(members) + 1)], "Fraction of liquid in rain vs LWC-weighted N_d and in-cloud LWP (hourly); lines: adiabatic cloud-top rₑ = 12, 14, 16 µm", font = :bold, tellwidth = false)
 Nd_axis = 10 .^ range(log10(5), log10(800), length = 100)
 for (i, m) in enumerate(members)
     ax = Axis(fig2[1, i], title = string(m.name), xscale = log10, yscale = log10, xlabel = "N_d (cm⁻³)", ylabel = i == 1 ? "in-cloud LWP (g m⁻²)" : "")
@@ -201,25 +212,25 @@ for (i, m) in enumerate(members)
     hourly = 1:4:length(m.t15)
     ok = [n for n in hourly if isfinite(m.nd15[n]) && m.nd15[n] > 0 && m.incloud_lwp15[n] > 1]
     sc = scatter!(ax, m.nd15[ok], m.incloud_lwp15[ok], color = m.rain_fraction15[ok], colormap = :viridis, colorrange = (0, 0.3),
-                  marker = (:circle, :rect, :utriangle)[i], markersize = 8)
+                  marker = (:circle, :rect, :utriangle)[mod1(i, 3)], markersize = 8)
     xlims!(ax, 5, 800); ylims!(ax, 5, 1000)
-    i == 3 && Colorbar(fig2[1, 4], sc, label = "rain / (cloud + rain)")
+    i == length(members) && Colorbar(fig2[1, length(members) + 1], sc, label = "rain / (cloud + rain)")
 end
-save(joinpath(out_dir, "members_state_space.png"), fig2)
+save(joinpath(out_dir, "$(tag)_state_space.png"), fig2)
 
 #####
 ##### Summary
 #####
 
-open(joinpath(out_dir, "members_summary.toml"), "w") do io
+open(joinpath(out_dir, "$(tag)_summary.toml"), "w") do io
     TOML.print(io, Dict(k => (v isa Tuple || v isa Vector ? string(v) : v) for (k, v) in numbers))
 end
-open(joinpath(out_dir, "members_summary.md"), "w") do io
-    println(io, "# SEA STARR CTRL / N100 / N030 summary (commit ", commit, ", ", Dates.format(now(UTC), "yyyy-mm-dd HH:MM"), " UTC)\n")
+open(joinpath(out_dir, "$(tag)_summary.md"), "w") do io
+    println(io, "# ", title_text, " summary (commit ", commit, ", ", Dates.format(now(UTC), "yyyy-mm-dd HH:MM"), " UTC)\n")
     for m in members
         println(io, "- ", m.name, ": ", segment_label(m.dirs), @sprintf(" (to t = %.2f h)", m.end_hours))
     end
-    println(io, "\n| quantity | CTRL | N100 | N030 | SEVIRI |\n| --- | --- | --- | --- | --- |")
+    println(io, "\n| quantity | ", join([string(m.name) for m in members], " | "), " | SEVIRI |\n|", repeat(" --- |", length(members) + 2))
     fmt(v) = v isa AbstractFloat ? @sprintf("%.3g", v) : string(v)
     rows = ["day1_lwp", "day2_lwp", "day3_lwp", "day1_cf", "day2_cf", "day3_cf", "day1_rain_mm_d", "day2_rain_mm_d", "day3_rain_mm_d",
             "day1_rwp", "day2_rwp", "day3_rwp", "day1_rain_fraction", "day2_rain_fraction", "day3_rain_fraction",
@@ -235,7 +246,7 @@ open(joinpath(out_dir, "members_summary.md"), "w") do io
         println(io, "| ", r, " | ", join(vals, " | "), " | ", s, " |")
     end
 end
-println("members analysis written to ", out_dir)
+println(tag, " analysis written to ", out_dir)
 for k in sort(collect(keys(numbers)))
     println(k, " = ", numbers[k])
 end
