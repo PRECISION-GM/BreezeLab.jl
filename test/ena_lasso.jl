@@ -332,6 +332,7 @@ end
                     Nx=8, Ny=8, Lx=800, Ly=800, write_output=false, progress_interval=100)
     end
     @test case.config.radiation == "RRTMGP all-sky LW+SW" && case.config.radiation_interval == 60.0
+    @test case.config.slice_interval == 60                    # movie standard: 1-min slices by default
     @test case.config.surface_emissivity == 0.95 && case.config.liquid_effective_radius == 14e-6
     @test !isnothing(case.model.radiation)
     @test case.model.radiation.solar_position.epoch == LASSO_EPOCH
