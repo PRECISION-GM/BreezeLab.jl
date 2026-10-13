@@ -49,6 +49,9 @@ zgrid = collect(0.25:0.25:16.0) .* 1000
 #####
 
 config = TOML.parsefile(joinpath(run_dir, "provenance.toml"))["config"]
+Δx_run = round(Int, config["Lx"] / config["Nx"])
+run_label = get(ENV, "COMPARE_RUN_LABEL", "")          # e.g. "pre-fix" for runs made before PR #21
+les_label = string("Breeze LES ", Δx_run, " m", isempty(run_label) ? "" : " ($run_label)")
 Oceananigans.defaults.FloatType = config["FT"] == "Float32" ? Float32 : Float64
 case = tracer_dp_scream(; iop_path = joinpath(data_dir, "TRACER_iopfile_4scam.nc"), start, stop, arch = CPU(),
                         Nx = 8, Ny = 8, Δx = Float64(config["Lx"]) / 8, radiation = false, write_output = false)
@@ -211,12 +214,13 @@ function daily_timing(x)
 end
 circmean(h) = (v = filter(isfinite, h); isempty(v) ? NaN : mod(angle(mean(cis.(2π .* v ./ 24))) * 24 / (2π), 24))
 circdiff(a, b) = (d = mod(a - b + 12, 24) - 12; abs(d))
-precips = Dict("Breeze LES 200 m" => les.precip, "DP-SCREAM 3 km" => dps[:dp3].precip, "DP-SCREAM 0.5 km" => dps[:dp05].precip,
+precips = Dict("Breeze LES" => les.precip, "DP-SCREAM 3 km" => dps[:dp3].precip, "DP-SCREAM 0.5 km" => dps[:dp05].precip,
                "VARANAL (MRMS-constrained, domain)" => va.precip, "ARM gauge (site)" => arm.precip)
 timing = Dict(k => daily_timing(v) for (k, v) in precips)
 diurnal(x) = [nanmean(x[findall(h -> Dates.hour(cdt(h - Minute(30))) == H && h > cdt_days[1], hours)]) for H in 0:23]
 
 summary = Dict{String, Any}()
+summary["run"] = Dict("dir" => abspath(run_dir), "label" => les_label, "Δx_m" => Δx_run, "run_label" => run_label)
 summary["window"] = Dict("start" => string(start), "stop" => string(stop), "hours" => length(hours), "sondes" => length(sondes),
                          "arscl_hours" => count(>(0), arscl_count))
 means(x; sel = eachindex(hours)) = nanmean(x[sel])
@@ -268,7 +272,7 @@ colors = Dict("les" => :black, "dp3" => :dodgerblue, "dp05" => :purple, "varanal
 fig = Figure(size = (1100, 1100), fontsize = 12)
 for (row, (field, label)) in enumerate(((:precip, "precipitation (mm day⁻¹)"), (:lwp, "LWP (g m⁻²)"), (:iwp, "IWP (g m⁻²)"), (:pw, "precipitable water (kg m⁻²)")))
     ax = Axis(fig[row, 1], ylabel = label, xlabel = row == 4 ? "hours since 2022-08-01 00 UTC" : "")
-    lines!(ax, th, les[field], color = colors["les"], label = "Breeze LES 200 m (51 km)")
+    lines!(ax, th, les[field], color = colors["les"], label = string(les_label, " (51 km)"))
     lines!(ax, th, dps[:dp3][field], color = colors["dp3"], label = "DP-SCREAM 3 km (200 km)")
     lines!(ax, th, dps[:dp05][field], color = colors["dp05"], label = "DP-SCREAM 0.5 km")
     haskey(va, field) && lines!(ax, th, va[field], color = colors["varanal"], label = "VARANAL (domain)")
@@ -278,7 +282,7 @@ end
 save(joinpath(out_dir, "timeseries_comparison.png"), fig)
 
 fig = Figure(size = (1100, 1100), fontsize = 12)
-for (row, (M, title)) in enumerate(((les_cf_grid, "Breeze LES 200 m: total cloud fraction (qᶜˡ + qⁱ > 10⁻⁵)"),
+for (row, (M, title)) in enumerate(((les_cf_grid, string(les_label, ": total cloud fraction (qᶜˡ + qⁱ > 10⁻⁵)")),
                                     (dp_cf[:dp3], "DP-SCREAM 3 km: TOT_CLOUD_FRAC"),
                                     (dp_cf[:dp05], "DP-SCREAM 0.5 km: TOT_CLOUD_FRAC"),
                                     (arscl_cf, "ARSCL (site): hourly hydrometeor occurrence")))
