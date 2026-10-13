@@ -47,15 +47,28 @@ function parse_args(args)
 end
 
 opts = parse_args(ARGS)
-ctrl_dir = get(opts, "ctrl", "runs/ctrl_full_66h_job211")
-n100_dir = get(opts, "n100", "runs/n100_full_66h_job214")
-n030_dir = get(opts, "n030", "runs/n030_full_66h_job218")
+# Each run may be a comma-separated list of restart-segment directories (segment 1 first).
+include(joinpath(@__DIR__, "sea_starr_segments.jl"))
+ctrl_dirs = segment_dirs(get(opts, "ctrl", "runs/ctrl_full_66h_job211"))
+n100_dirs = segment_dirs(get(opts, "n100", "runs/n100_full_66h_job214"))
+n030_dirs = segment_dirs(get(opts, "n030", "runs/n030_full_66h_job218"))
+ctrl_dir = first(ctrl_dirs); n100_dir = first(n100_dirs); n030_dir = first(n030_dirs)
 copy_to = get(opts, "copy-to", "/shared/home/greg/breezelab-work/campaign-figures/animations")
 max_frames = parse(Int, get(opts, "max-frames", "100000"))
 framerate = parse(Int, get(opts, "framerate", "12"))
 trajectories = get(opts, "trajectories", "/shared/home/greg/breezelab-runs/20261006/inputs/mip_sources/seastarr_22241697/SEA_STARR_Raw_Trajectories.nc")
 compression = parse(Int, get(opts, "compression", "24"))
-members = [(:CTRL, ctrl_dir, "sea_starr_ctrl"), (:N100, n100_dir, "sea_starr_n100"), (:N030, n030_dir, "sea_starr_n030")]
+members = [(:CTRL, ctrl_dirs, "sea_starr_ctrl"), (:N100, n100_dirs, "sea_starr_n100"), (:N030, n030_dirs, "sea_starr_n030")]
+# Optional plan-view panel list "label|member|dirs;label|member|dirs" (e.g. a 192² vs 384² domain comparison);
+# `--tag` names the plan-view files and `--ctrl-tag` the cross-section and time–height files of the `--ctrl` run.
+if haskey(opts, "planview")
+    members = map(split(opts["planview"], ';')) do entry
+        label, member, dirs = split(entry, '|')
+        (String(label), segment_dirs(dirs), "sea_starr_" * lowercase(member))
+    end
+end
+tag = get(opts, "tag", "ctrl_n100_n030")
+ctrl_tag = get(opts, "ctrl-tag", "ctrl")
 commit = try strip(read(`git rev-parse --short HEAD`, String)) catch; "unknown" end
 
 epoch = DateTime(2017, 8, 15, 21)     # driver start (seconds since 2017-08-15 21:00:00 UTC)
@@ -137,20 +150,19 @@ fmt_mb(path) = @sprintf("%.1f MB", filesize(path) / 1e6)
 
 function plan_view_animation()
     series = map(members) do (name, dir, prefix)
-        file = joinpath(dir, prefix * "_2d.jld2")
         (; name, dir,
-           cwp = FieldTimeSeries(file, "cwp"; backend = OnDisk()),
-           rwp = FieldTimeSeries(file, "rwp"; backend = OnDisk()),
-           rain = FieldTimeSeries(file, "rain"; backend = OnDisk()))
+           cwp = stitched_series(dir, prefix * "_2d.jld2", "cwp"; backend = OnDisk()),
+           rwp = stitched_series(dir, prefix * "_2d.jld2", "rwp"; backend = OnDisk()),
+           rain = stitched_series(dir, prefix * "_2d.jld2", "rain"; backend = OnDisk()))
     end
     # times common to the three runs (they are at different stages of the 66 h integration)
     common = reduce(intersect, [round.(s.cwp.times) for s in series])
     isempty(common) && error("no common output times across the members")
     index(s, t) = findfirst(==(t), round.(s.cwp.times))
     frames = 1:min(length(common), max_frames)
-    grid = series[1].cwp.grid
-    x = xnodes(grid, Center()) ./ 1e3
-    y = ynodes(grid, Center()) ./ 1e3
+    xs = [xnodes(s.cwp.grid, Center()) ./ 1e3 for s in series]   # panels may differ in domain size
+    ys = [ynodes(s.cwp.grid, Center()) ./ 1e3 for s in series]
+    npanel = length(series)
     # fixed colour ranges from a subsample of frames, shared by the three members
     sample = frames[1:max(1, length(frames) ÷ 24):end]
     lwp_sample = Float32[]; rain_sample = Float32[]
@@ -164,20 +176,20 @@ function plan_view_animation()
 
     fig = Figure(size = (width, 790), fontsize = 13)
     title = Observable(time_label(common[1]))
-    Label(fig[0, 1:3], title, fontsize = 15, font = :bold, tellwidth = false)
+    Label(fig[0, 1:npanel], title, fontsize = 15, font = :bold, tellwidth = false)
     Label(fig[1, 0], "Liquid water path (cloud + rain, g m⁻²)", rotation = π/2, tellheight = false)
     Label(fig[2, 0], "Surface rain rate (mm day⁻¹)", rotation = π/2, tellheight = false)
-    lwp_obs = [Observable(zeros(Float32, length(x), length(y))) for _ in series]
-    rain_obs = [Observable(zeros(Float32, length(x), length(y))) for _ in series]
+    lwp_obs = [Observable(zeros(Float32, length(xs[k]), length(ys[k]))) for k in eachindex(series)]
+    rain_obs = [Observable(zeros(Float32, length(xs[k]), length(ys[k]))) for k in eachindex(series)]
     member_titles = [Observable(string(s.name)) for s in series]
     for (k, s) in enumerate(series)
         ax1 = Axis(fig[1, k], title = member_titles[k], titlesize = 12, aspect = DataAspect(), xlabel = "", ylabel = k == 1 ? "y (km)" : "")
-        hm1 = heatmap!(ax1, x, y, lwp_obs[k], colormap = :viridis, colorrange = (0, lwp_max))
+        hm1 = heatmap!(ax1, xs[k], ys[k], lwp_obs[k], colormap = :viridis, colorrange = (0, lwp_max))
         ax2 = Axis(fig[2, k], aspect = DataAspect(), xlabel = "x (km)", ylabel = k == 1 ? "y (km)" : "")
-        hm2 = heatmap!(ax2, x, y, rain_obs[k], colormap = :dense, colorrange = (0, rain_max))
+        hm2 = heatmap!(ax2, xs[k], ys[k], rain_obs[k], colormap = :dense, colorrange = (0, rain_max))
         k > 1 && (hideydecorations!(ax1, grid = false); hideydecorations!(ax2, grid = false))
         hidexdecorations!(ax1, grid = false)
-        k == length(series) && (Colorbar(fig[1, 4], hm1, width = 10); Colorbar(fig[2, 4], hm2, width = 10))
+        k == npanel && (Colorbar(fig[1, npanel + 1], hm1, width = 10); Colorbar(fig[2, npanel + 1], hm2, width = 10))
     end
     function update!(n)
         t = common[n]
@@ -191,8 +203,8 @@ function plan_view_animation()
         end
         title[] = time_label(t)
     end
-    mp4 = mkpath_for(joinpath(ctrl_dir, "animations", "seastarr_planview_lwp_rain_ctrl_n100_n030.mp4"))
-    png = joinpath(ctrl_dir, "animations", "seastarr_planview_lwp_rain_ctrl_n100_n030_montage.png")
+    mp4 = mkpath_for(joinpath(ctrl_dir, "animations", "seastarr_planview_lwp_rain_$(tag).mp4"))
+    png = joinpath(ctrl_dir, "animations", "seastarr_planview_lwp_rain_$(tag)_montage.png")
     record_with_montage(fig, update!, frames, mp4, png; montage_frames = montage_indices(frames))
     @info "plan views: $(length(frames)) frames (15 min), t = $(common[first(frames)]/3600) – $(common[last(frames)]/3600) h; LWP range 0–$(round(lwp_max)) g m⁻², rain 0–$(round(rain_max; digits=2)) mm d⁻¹" mp4 fmt_mb(mp4) png
     return (mp4, png, length(frames), common[last(frames)], lwp_max, rain_max)
@@ -207,12 +219,12 @@ function cross_section_animation()
     # introduced); fall back to the hourly 3D fields for older runs.
     file2d = joinpath(ctrl_dir, "sea_starr_ctrl_2d.jld2")
     has_slices = jldopen(f -> haskey(f["timeseries"], "qᶜˡ_xz"), file2d)
-    file = has_slices ? file2d : joinpath(ctrl_dir, "sea_starr_ctrl_3d.jld2")
+    filename = has_slices ? "sea_starr_ctrl_2d.jld2" : "sea_starr_ctrl_3d.jld2"
     suffix = has_slices ? "_xz" : ""
-    qc = FieldTimeSeries(file, "qᶜˡ" * suffix; backend = OnDisk())
-    qr = FieldTimeSeries(file, "qʳ" * suffix; backend = OnDisk())
-    na = FieldTimeSeries(file, "nᵃ" * suffix; backend = OnDisk())
-    nc = FieldTimeSeries(file, "nᶜˡ" * suffix; backend = OnDisk())
+    qc = stitched_series(ctrl_dirs, filename, "qᶜˡ" * suffix; backend = OnDisk())
+    qr = stitched_series(ctrl_dirs, filename, "qʳ" * suffix; backend = OnDisk())
+    na = stitched_series(ctrl_dirs, filename, "nᵃ" * suffix; backend = OnDisk())
+    nc = stitched_series(ctrl_dirs, filename, "nᶜˡ" * suffix; backend = OnDisk())
     grid = qc.grid
     j = size(grid, 2) ÷ 2
     x = xnodes(grid, Center()) ./ 1e3
@@ -246,8 +258,8 @@ function cross_section_animation()
         nc_obs[] = 1e-6 .* slice(nc, n)
         title[] = string("CTRL x–z section at y = ", round(ynodes(grid, Center())[j] / 1e3; digits = 2), " km   —   ", time_label(qc.times[n]))
     end
-    mp4 = mkpath_for(joinpath(ctrl_dir, "animations", "seastarr_ctrl_xz_cloud_rain_aerosol.mp4"))
-    png = joinpath(ctrl_dir, "animations", "seastarr_ctrl_xz_cloud_rain_aerosol_montage.png")
+    mp4 = mkpath_for(joinpath(ctrl_dir, "animations", "seastarr_$(ctrl_tag)_xz_cloud_rain_aerosol.mp4"))
+    png = joinpath(ctrl_dir, "animations", "seastarr_$(ctrl_tag)_xz_cloud_rain_aerosol_montage.png")
     record_with_montage(fig, update!, frames, mp4, png; montage_frames = montage_indices(frames))
     @info "cross-section: $(length(frames)) frames ($(cadence) min cadence, $(has_slices ? "saved slices" : "hourly 3D")) to t = $(qc.times[last(frames)]/3600) h" mp4 fmt_mb(mp4) png
     return (mp4, png, length(frames), qc.times[last(frames)])
@@ -258,9 +270,9 @@ end
 #####
 
 function time_height_animation()
-    file = joinpath(ctrl_dir, "sea_starr_ctrl_statistics.jld2")
-    na = FieldTimeSeries(file, "nᵃ"); nc = FieldTimeSeries(file, "nᶜˡ"); qc = FieldTimeSeries(file, "qᶜˡ")
-    zi = FieldTimeSeries(joinpath(ctrl_dir, "sea_starr_ctrl_timeseries.jld2"), "zi")
+    stats(name) = stitched_series(ctrl_dirs, "sea_starr_ctrl_statistics.jld2", name)
+    na = stats("nᵃ"); nc = stats("nᶜˡ"); qc = stats("qᶜˡ")
+    zi = stitched_series(ctrl_dirs, "sea_starr_ctrl_timeseries.jld2", "zi")
     z = znodes(na.grid, Center())
     kmax = findlast(≤(3000), z)
     zc = z[1:kmax]
@@ -301,8 +313,8 @@ function time_height_animation()
         zi_obs[] = Point2f.(zi_t[m], zi_v[m])
         title[] = time_label(na.times[n])
     end
-    mp4 = mkpath_for(joinpath(ctrl_dir, "animations", "seastarr_ctrl_time_height_aerosol_droplets.mp4"))
-    png = joinpath(ctrl_dir, "animations", "seastarr_ctrl_time_height_aerosol_droplets_montage.png")
+    mp4 = mkpath_for(joinpath(ctrl_dir, "animations", "seastarr_$(ctrl_tag)_time_height_aerosol_droplets.mp4"))
+    png = joinpath(ctrl_dir, "animations", "seastarr_$(ctrl_tag)_time_height_aerosol_droplets_montage.png")
     record_with_montage(fig, update!, frames, mp4, png; montage_frames = montage_indices(frames))
     @info "time–height: $(length(frames)) frames (15 min) to t = $(t[last(frames)]) h" mp4 fmt_mb(mp4) png
     return (mp4, png, length(frames), na.times[last(frames)])
@@ -323,22 +335,24 @@ for (_, r) in results, path in r[1:2]
     cp(path, joinpath(copy_to, basename(path)); force = true)
     push!(copied, basename(path))
 end
-open(joinpath(copy_to, "README.md"), "w") do io
+readme = tag == "ctrl_n100_n030" && ctrl_tag == "ctrl" ? "README.md" : "README_$(ctrl_tag)_$(tag).md"
+open(joinpath(copy_to, readme), "w") do io
     println(io, "# SEA STARR animations\n")
     println(io, "Rendered ", Dates.format(now(UTC), "yyyy-mm-dd HH:MM"), " UTC by `analysis/animate_sea_starr.jl` (BreezeLab commit ", commit, ") from the ",
-            "JLD2 output of the 66 h runs on wpcluster: CTRL `", ctrl_dir, "`, N100 `", n100_dir, "`, N030 `", n030_dir, "` (runs still in progress ",
+            "JLD2 output of the 66 h runs on wpcluster: plan-view panels ", join(["$(m[1]) `$(segment_label(m[2]))`" for m in members], ", "),
+            "; cross-section and time–height from `", segment_label(ctrl_dirs), "` (restart segments stitched at their restore times; runs may still be in progress ",
             "when rendered; the frames stop at the last record available). MP4 = H.264, ", width, " px wide, ", framerate, " frames per second.\n")
     r = results["planview"]
     println(io, "- `", basename(r[1]), "` / `", basename(r[2]), "`: plan views of the liquid water path (cloud + rain water, g m⁻², top row, shared range 0–",
             round(Int, r[5]), ") and the surface rain rate (mm day⁻¹, bottom row, shared range 0–", round(r[6]; digits = 2),
-            ") for CTRL, N100 and N030 at the same times; 15 min cadence, ", r[3], " frames to t = ", round(r[4] / 3600; digits = 2),
+            ") for ", join(string.(first.(members)), ", "), " at the same times (each panel on its own domain); 15 min cadence, ", r[3], " frames to t = ", round(r[4] / 3600; digits = 2),
             " h. Title: UTC and the local solar time at the composite trajectory's mean longitude (GEOS-5 raw trajectories).")
     r = results["xz"]
-    println(io, "- `", basename(r[1]), "` / `", basename(r[2]), "`: CTRL x–z cross-section through the domain centre (y = 4.8 km) below 3 km: cloud water qᶜˡ (g kg⁻¹), ",
+    println(io, "- `", basename(r[1]), "` / `", basename(r[2]), "`: x–z cross-section of `", segment_label(ctrl_dirs), "` through the domain centre below 3 km: cloud water qᶜˡ (g kg⁻¹), ",
             "rain water qʳ (g kg⁻¹, log scale 10⁻⁴–10⁻¹) and interstitial aerosol number nᵃ (mg⁻¹ = 10⁶ kg⁻¹) with droplet-number contours (mg⁻¹); hourly 3D output, ",
             r[3], " frames to t = ", round(r[4] / 3600; digits = 2), " h.")
     r = results["time_height"]
-    println(io, "- `", basename(r[1]), "` / `", basename(r[2]), "`: CTRL time–height of the horizontal-mean interstitial aerosol nᵃ and droplet number nᶜˡ (mg⁻¹, 15 min averages) ",
+    println(io, "- `", basename(r[1]), "` / `", basename(r[2]), "`: time–height (", segment_label(ctrl_dirs), ") of the horizontal-mean interstitial aerosol nᵃ and droplet number nᶜˡ (mg⁻¹, 15 min averages) ",
             "below 3 km, revealed as time advances, with the domain-mean inversion height (white) and the ⟨qᶜˡ⟩ = 0.01 g kg⁻¹ contour; ", r[3], " frames to t = ",
             round(r[4] / 3600; digits = 2), " h.")
     println(io, "\nTime axis: seconds since the driver start 2017-08-15 21:00 UTC. The runs carry the labelled protocol departures listed in docs/cases/sea_starr.md ",

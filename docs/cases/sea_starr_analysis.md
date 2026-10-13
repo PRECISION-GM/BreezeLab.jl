@@ -121,3 +121,49 @@ intercomparison models.
 `day3_cf_mean = 0.93` vs `day3_seviri_cf_mean = 0.41`, `cf_final = 0.29` vs `seviri_cf_final_6h_mean = 0.29`,
 `day3_lwp_mean_g_m2 = 57.5` vs `day3_seviri_lwp_good_mean_g_m2 = 29.3`, `nd_top_day2_cm3 = 231` vs
 `seviri_nd_good_day2_cm3 = 186`.
+
+## 5. Domain size: CTRL 384² (19.2 km, job 230) vs 192² (9.6 km, job 211)
+
+Both runs use the same code (b54dafd) and protocol settings and differ only in the horizontal domain (384² vs 192² columns at
+50 m). Job 230 ran 66 h on an H100 (439 881 steps, 3.35 days wall). Products: `runs/ctrl_384_analysis/` (full CTRL diagnostics),
+`runs/domain_size_analysis/{domain_timeseries,domain_state_space,organization}.png` and `*_summary.{md,toml}`
+(`analysis/sea_starr_members.jl --runs …`, `analysis/sea_starr_organization.jl`); campaign copies
+`seastarr_ctrl_192_vs_384_{timeseries,organization}.png`, `seastarr_ctrl384_timeseries_vs_seviri.png`; animations
+`campaign-figures/animations/seastarr_planview_lwp_rain_ctrl_192_vs_384.mp4` (3.9 MB, 265 frames at 15 min, the two domains side by side),
+`seastarr_ctrl384_xz_cloud_rain_aerosol.mp4` (0.6 MB, hourly), `seastarr_ctrl384_time_height_aerosol_droplets.mp4` (0.25 MB).
+
+| quantity | 192² | 384² | SEVIRI |
+| --- | --- | --- | --- |
+| LWP day 1 / 2 / 3 (g m⁻²) | 113 / 82 / 58 | 120 / 99 / 74 | 70 / 44 / 29 |
+| cloud fraction day 1 / 2 / 3 | 0.99 / 0.92 / 0.93 | 0.99 / 0.91 / 0.93 | 0.86 / 0.66 / 0.41 |
+| first sustained CF < 0.9 / day-2 minimum CF | 40.8 h / 0.56 (43 h) | 40.8 h / 0.47 (43 h) | — |
+| final CF / LWP (66 h) | 0.29 / 7.8 | 0.30 / 10.6 | 0.23 / 16 |
+| surface rain, max (mm d⁻¹) | 0.006 | 0.013 | — |
+| ⟨zᵢ⟩ 66 h / rise (m h⁻¹) | 2205 / 15.8 | 2236 / 16.3 | cloud tops 1.5–1.9 km |
+| entrainment w_e (mm s⁻¹) | 8.36 | 8.49 | — |
+| N_d LWC-weighted day 1 / 2 / 3 (cm⁻³) | 261 / 475 / 501* | 258 / 463 / 457 | 136 / 186 / 108 |
+| integral length scale ℓ day 1 / 2 / 3 (km) | 1.5 / 1.6 / 1.3 | 2.0 / 2.4 / 2.2 | — |
+| final state: cover / object diameter / largest clear region | 0.28 / 0.28 km / 71 % | 0.27 / 0.26 km / 72 % | — |
+
+\* inflated after 54.5 h by the aerosol artifact described below.
+
+**Domain-size sensitivity is small for the bulk transition and moderate for LWP and organization.** Cloud fraction, the timing of
+both breakups (the day-2 afternoon collapse and the final one), the inversion height, entrainment, aerosol entrainment into the boundary
+layer and droplet number agree within a few per cent; the end state is the same broken trade-cumulus field (cover 0.27–0.30, ≈ 0.26 km cumuli,
+one connected clear region over ≈ 70 % of the domain). The larger domain holds 7–27 % more LWP on days 2–3 because its cloud field organizes
+on larger scales: the LWP integral length scale is 2.0–2.4 km at 19.2 km against 1.3–1.6 km at 9.6 km (domain-limited in the smaller run),
+with larger LWP variance and thicker cloud cores; while overcast the single cloud object spans either domain, so object sizes before breakup are
+domain-limited by construction. This agrees with the intercomparison's conclusion that 20-km domains capture the fundamental transition while
+barely resolving mesoscale circulations (its 10-km variants changed open-cell timing only in the cleaner cases). Against SEVIRI both domains
+remain too cloudy and too wet on days 2–3; the larger domain is slightly further from the observed LWP.
+
+**Numerical artifact found while comparing (affects 192², 384² and N100 late on day 3).** A single column of the 192² run acquired an
+aerosol column of 4.5×10¹⁴ m⁻² at t = 54.47 h (200× the median; nᵃ up to 3.9×10¹¹ kg⁻¹ by 55 h), raising the domain aerosol by 7.7 % in one
+minute — 4000× what the surface source supplies. The same signature occurs in 384² (+1.6 % and +0.9 % at 58.1 h) and N100 (+11.1 % and +3.8 %
+at 59.2 h), not in N030 or the CTRL rerun so far. Cause: `EvaporationRegeneration` uses the cloud-evaporation rate of the previous step; where
+the cloud water has since collapsed, `R = nᶜˡ E/qᶜˡ` explodes, nᶜˡ is driven negative and clamped to zero, and nᵃ gains number from nothing.
+Consequences: domain-mean N_d and boundary-layer aerosol after these times are biased high (192² day-3 N_d 501 vs 457 cm⁻³ at 384²; N_d jumps
+500 → 670 cm⁻³ at 55 h); cloud fraction, LWP and the breakup timing are not visibly affected (the two domains, with events of different size
+and timing, end within 0.01 in CF). Fix: the fractional regeneration rate is now bounded by P3's own sink-limiting bound (0.1 s⁻¹), with a
+regression test (branch `sea-starr-regeneration-bound`). Runs already integrated or resumed with the original code keep the artifact; the
+affected numbers are N_d and aerosol after the event times listed above.
