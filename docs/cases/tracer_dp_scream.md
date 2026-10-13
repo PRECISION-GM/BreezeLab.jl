@@ -70,7 +70,9 @@ in the paper (ARMBECLDRAD, VARANAL precipitation, MRMS) are not staged here.
 
 ## Output cadence
 
-Animation fields (xy maps at the slice height, the xz section, LWP and rain maps) are saved every 5 min at 3000 m by default (`TRACER_DP_SCREAM_SLICE_MINUTES`, `TRACER_DP_SCREAM_SLICE_HEIGHT`); profiles are 30-min means and time series are 60 s. The case script writes the slice-file storage estimate (saves, bytes per save, GB) into `provenance.toml`; job 202 (256² × 160, 30-min cadence) measured 1.175 MB per save.
+Animation fields (xy maps at the slice height, the xz section, LWP and rain maps) are saved every 1 min at 3000 m by default (`TRACER_DP_SCREAM_SLICE_MINUTES`, `TRACER_DP_SCREAM_SLICE_HEIGHT`); profiles are 30-min means and time series are 60 s. The case script writes the slice-file storage estimate (saves, bytes per save, GB) into `provenance.toml`: jobs 202 and 416 measured 1.09 and 3.51 MB per save, so 14 days at 1 min take ≈ 22 GB at 256² and ≈ 71 GB at 512².
+
+**Playback standard** (`analysis/animate_tracer_dp_scream.jl`): cloud-scale (episode) movies play at most 15 simulated minutes per second of video at 10–15 fps — 1-min slices at 12 fps give 12 min/s — and multi-day overviews about 1 simulated hour per second. The script computes the frame stride and frame rate from the saved frame spacing and the target speed (`ANIMATION_PLAYBACK_MINUTES_PER_SECOND`, default 12 for windows up to two days and 60 otherwise; `ANIMATION_MAX_FPS` = 15); explicit `ANIMATION_FPS` / `ANIMATION_FRAME_STRIDE` override it. Movies made earlier (202: 30-min frames at 12 fps; 416: 5-min frames at 24–30 fps) play faster than this standard.
 
 ## 200 m baseline (job 202, pre-fix): budgets and comparison
 
@@ -158,3 +160,8 @@ differences are indicative rather than precise. Both runs are pre-fix; the fixed
 515) will repeat the pair. Figures: `runs/analysis/resolution_pair_202_416/core_statistics.png` and
 each run's `analysis/` folder; animations of job 416 from its 5-min slices at 3 km (the first run with
 the finer cadence) are in `runs/baseline512_aug01_15_job416/animations/`.
+
+**1-min reruns.** On 2026-10-13 the fixed reruns were resubmitted with slices every 1 min at 3 km from main
+c7bf45d (job 514, which had run 3 h 17 min with 5-min slices, was cancelled; 515 was replaced): job 719
+`baseline_fixed_1min_aug01_15` (256² × 200 m, H100, started 22:17:55 UTC) and job 720
+`baseline512_fixed_1min_aug01_15` (512² × 100 m, after 719).
