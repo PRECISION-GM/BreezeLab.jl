@@ -38,6 +38,7 @@ frame_stride = parse(Int, get(ENV, "ANIMATION_FRAME_STRIDE", "1"))
 tag = get(ENV, "ANIMATION_TAG", "")
 parts = split(get(ENV, "ANIMATION_PARTS", "convection,montage,time_height"), ",")
 run_label = get(ENV, "ANIMATION_RUN_LABEL", "")
+px_per_unit = parse(Float64, get(ENV, "ANIMATION_PX_PER_UNIT", "2"))   # 2: 2000-px frames for the 1000-point figure; 1 for web versions
 tagged(name) = isempty(tag) ? name : replace(name, r"(\.[a-z0-9]+)$" => SubstitutionString("_" * tag * "\\1"))
 utc_offset = -5                                    # Houston, CDT
 
@@ -137,7 +138,7 @@ if "convection" in parts
     fig1, n1 = slice_figure()
     n1[] = first(frames)
     convection_path = joinpath(out_dir, tagged("convection.mp4"))
-    record(fig1, convection_path, frames; framerate, compression) do i
+    record(fig1, convection_path, frames; framerate, compression, px_per_unit) do i
         n1[] = i
     end
     @info "wrote $convection_path ($(round(filesize(convection_path) / 1e6, digits=1)) MB, $(length(frames)) frames at $framerate fps)"
