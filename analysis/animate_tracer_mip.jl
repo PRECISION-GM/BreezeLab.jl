@@ -220,16 +220,22 @@ for (name, make) in products
     report[name * "_mp4_MB"] = round(mb; digits = 2)
     # Independent check of the written file: decoded frame count and the last frame as PNG.
     ffmpeg = CairoMakie.Makie.FFMPEG_jll.ffmpeg()
-    log = read(pipeline(`$ffmpeg -v info -i $mp4 -f null -`; stderr = devnull, stdin = devnull), String)
-    decoded = read(pipeline(`$ffmpeg -v error -i $mp4 -map 0:v:0 -f null -`, stderr = devnull), String)
-    nframes = try
-        out = read(pipeline(`$ffmpeg -i $mp4 -map 0:v:0 -f null -`, stderr = stdout), String)
-        parse(Int, last(collect(eachmatch(r"frame=\s*(\d+)", out))).captures[1])
-    catch
-        -1
+    function decoded_frame_count(mp4)   # ffmpeg reports progress on stderr: capture it, do not pass it through
+        err = IOBuffer()
+        run(pipeline(`$ffmpeg -nostdin -i $mp4 -map 0:v:0 -f null -`; stdout = devnull, stderr = err))
+        m = collect(eachmatch(r"frame=\s*(\d+)", String(take!(err))))
+        return isempty(m) ? -1 : parse(Int, last(m).captures[1])
     end
+    nframes = try decoded_frame_count(mp4) catch; -1 end
     report[name * "_mp4_decoded_frames"] = nframes
-    run(pipeline(`$ffmpeg -y -v error -sseof -0.05 -i $mp4 -update 1 -frames:v 1 $(joinpath(out_dir, "tracer_mip_aug07_$(name)_last_frame.png"))`; stderr = devnull))
+    nframes == length(frames) || @warn "$(basename(mp4)): decoded $nframes frames, expected $(length(frames))"
+    last_png = joinpath(out_dir, "tracer_mip_aug07_$(name)_last_frame.png")
+    rm(last_png; force = true)   # never leave a stale frame from an earlier render
+    if nframes > 0
+        vf = "select=eq(n\\,$(nframes - 1))"
+        try run(pipeline(`$ffmpeg -nostdin -y -v error -i $mp4 -vf $vf -fps_mode passthrough -frames:v 1 $last_png`; stderr = devnull)) catch end
+    end
+    isfile(last_png) || @warn "last frame of $(basename(mp4)) was not extracted"
     # 4-frame montage: one full figure per pick, rendered to PNG then composed
     panels = map(enumerate(picks)) do (k, n)
         draw!(n)
