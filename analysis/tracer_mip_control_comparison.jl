@@ -20,15 +20,25 @@ onshore(u, v) = normal[1] * u + normal[2] * v
 es(T) = 611.2 * exp(17.67 * (T - 273.15) / (T - 29.65))
 hrs(t) = Dates.value.(t .- t0) ./ 3.6e6
 
+# Sea-breeze onset = a TRANSITION: the first time t ≥ `after` at which the onshore component, after having been below the
+# threshold, reaches it and stays there for `window`. Synoptic onshore flow already present at `after` is not an onset
+# (reported separately by `onshore_at`).
 function onset(times, comp; after = t0 + Hour(6), threshold = 1.5, window = Minute(30))
+    been_below = false
     for (i, t) in enumerate(times)
         t < after && continue
+        if comp[i] < threshold
+            been_below = true
+            continue
+        end
+        been_below || continue
         w = findall(s -> t ≤ s ≤ t + window, times)
         times[w[end]] - t < window - Minute(3) && return nothing     # not enough data left
         all(comp[w] .≥ threshold) && return t
     end
     return nothing
 end
+onshore_at(times, comp; at = t0 + Hour(6), threshold = 1.5) = (k = findfirst(≥(at), times); isnothing(k) ? missing : comp[k] ≥ threshold)
 
 #####
 ##### Observations (ARM) and ERA5
@@ -147,7 +157,7 @@ function skill(s::RunSeries)
                 "wind_bias_m_s" => mean(ok(dU)), "wind_rmse_m_s" => sqrt(mean(ok(dU) .^ 2)),
                 "RH_bias_pct" => mean(ok(dRH)), "RH_rmse_pct" => sqrt(mean(ok(dRH) .^ 2)),
                 "daytime_T_max_K" => maximum(s.T[[t0 + Hour(4) ≤ t ≤ t0 + Hour(16) for t in s.time]]; init = NaN),
-                "seabreeze_onset" => string(s.onset), "last_time" => string(s.last),
+                "seabreeze_onset" => string(s.onset), "onshore_at_12UTC" => string(onshore_at(s.time, s.c)), "last_time" => string(s.last),
                 "rain_at_site_mm" => sum(s.rain[1:end-1] .* diff(hrs(s.time))),
                 "max_w_2km" => maximum(s.w2km), "max_w_2km_interior" => maximum(s.w2km_interior),
                 "domain_mean_lowest_wind_hourly" => Float64[hourly(s.dom_time, s.dom_U, h) for h in hs],
@@ -155,10 +165,11 @@ function skill(s::RunSeries)
 end
 obs_daytime_Tmax = maximum(met["temp_mean"][[t0 + Hour(4) ≤ t ≤ t0 + Hour(16) for t in met["time"]]]) + 273.15
 report = Dict("observations" => Dict("seabreeze_onset" => string(obs_onset), "daytime_T2m_max_K" => obs_daytime_Tmax,
+                                     "onshore_at_12UTC" => string(onshore_at(met["time"], met_c)),
                                      "rain_mm" => sum(filter(!isnan, met["tbrg_precip_total"]))),
               "era5" => Dict("seabreeze_onset_hourly" => string(era5_onset)),
               "runs" => Dict(s.label => skill(s) for s in series),
-              "onset_rule" => "first time ≥ 12 UTC with onshore component toward 315° ≥ 1.5 m/s sustained 30 min (ERA5 hourly: 60 min)")
+              "onset_rule" => "first transition ≥ 12 UTC from below to ≥ 1.5 m/s onshore (toward 315°) sustained 30 min (ERA5 hourly: 60 min)")
 open(joinpath(out_dir, "control_comparison.toml"), "w") do io; TOML.print(io, report); end
 
 #####
