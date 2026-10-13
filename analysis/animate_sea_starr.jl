@@ -80,7 +80,7 @@ if haskey(opts, "planview")
 end
 tag = get(opts, "tag", "ctrl_n100_n030")
 ctrl_tag = get(opts, "ctrl-tag", "ctrl")
-commit = try strip(read(`git rev-parse --short HEAD`, String)) catch; "unknown" end
+commit = try strip(read(`git -C $(@__DIR__) rev-parse --short HEAD`, String)) catch; "unknown" end   # the commit of this script, not of the working directory
 
 epoch = DateTime(2017, 8, 15, 21)     # driver start (seconds since 2017-08-15 21:00:00 UTC)
 width = 1000                          # px, the maximum requested width
