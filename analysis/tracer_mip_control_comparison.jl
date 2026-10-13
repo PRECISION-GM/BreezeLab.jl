@@ -138,10 +138,11 @@ series = [load_run(r.label, r.dir) for r in runs]
 hourly(times, vals, h) = (m = [t0 + Hour(h) ≤ t < t0 + Hour(h + 1) for t in times]; v = filter(!isnan, Float64.(vals[m])); isempty(v) ? NaN : mean(v))
 function skill(s::RunSeries)
     hs = [h for h in 0:23 if t0 + Hour(h + 1) ≤ s.last]
-    dT = [hourly(s.time, s.T, h) - (hourly(met["time"], met["temp_mean"], h) + 273.15) for h in hs]
-    dU = [hourly(s.time, s.U, h) - hourly(met["time"], met["wspd_vec_mean"], h) for h in hs]
-    dRH = [hourly(s.time, s.rh, h) - hourly(met["time"], met["rh_mean"], h) for h in hs]
+    dT = Float64[hourly(s.time, s.T, h) - (hourly(met["time"], met["temp_mean"], h) + 273.15) for h in hs]
+    dU = Float64[hourly(s.time, s.U, h) - hourly(met["time"], met["wspd_vec_mean"], h) for h in hs]
+    dRH = Float64[hourly(s.time, s.rh, h) - hourly(met["time"], met["rh_mean"], h) for h in hs]
     ok(x) = filter(!isnan, x)
+    mean(x::Vector{Float64}) = isempty(x) ? NaN : Statistics.mean(x)
     return Dict("hours_compared" => length(hs), "T_bias_K" => mean(ok(dT)), "T_rmse_K" => sqrt(mean(ok(dT) .^ 2)),
                 "wind_bias_m_s" => mean(ok(dU)), "wind_rmse_m_s" => sqrt(mean(ok(dU) .^ 2)),
                 "RH_bias_pct" => mean(ok(dRH)), "RH_rmse_pct" => sqrt(mean(ok(dRH) .^ 2)),
@@ -149,8 +150,8 @@ function skill(s::RunSeries)
                 "seabreeze_onset" => string(s.onset), "last_time" => string(s.last),
                 "rain_at_site_mm" => sum(s.rain[1:end-1] .* diff(hrs(s.time))),
                 "max_w_2km" => maximum(s.w2km), "max_w_2km_interior" => maximum(s.w2km_interior),
-                "domain_mean_lowest_wind_hourly" => [hourly(s.dom_time, s.dom_U, h) for h in hs],
-                "era5_domain_mean_10m_wind_hourly" => [era5_mean_speed[k] for k in eachindex(e_t) if hrs([e_t[k]])[1] in hs])
+                "domain_mean_lowest_wind_hourly" => Float64[hourly(s.dom_time, s.dom_U, h) for h in hs],
+                "era5_domain_mean_10m_wind_hourly" => Float64[era5_mean_speed[k] for k in eachindex(e_t) if hrs([e_t[k]])[1] in hs])
 end
 obs_daytime_Tmax = maximum(met["temp_mean"][[t0 + Hour(4) ≤ t ≤ t0 + Hour(16) for t in met["time"]]]) + 273.15
 report = Dict("observations" => Dict("seabreeze_onset" => string(obs_onset), "daytime_T2m_max_K" => obs_daytime_Tmax,
