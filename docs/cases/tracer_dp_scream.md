@@ -119,3 +119,42 @@ the A100 partition with `execution/tracer_dp_scream_autogpu.sbatch` (`--no-reque
 slices every 5 min at 3 km): job 514 `baseline_fixed_aug01_15` (256² × 200 m) and job 515
 `baseline512_fixed_aug01_15` (512² × 100 m, starts after 514). Their budgets are computed with
 `analysis/tracer_dp_scream_budget.jl` (the case script on this branch writes the moist-enthalpy budget).
+
+## Resolution pair: 200 m (job 202) vs 100 m (job 416), both pre-fix
+
+Job 416 (512² × 100 m on the same 51.2 km domain and vertical grid, H100, main a627610, completed
+2026-10-12) carries the same pre-#21 vapor cross-term heating as job 202 (16.05 MJ m⁻² over 14 days in
+both), so the pair isolates horizontal resolution. `analysis/tracer_dp_scream_resolution_pair.jl`
+combines each run's comparison (`analysis/tracer_dp_scream_compare.jl`, labelled pre-fix) with
+convective-core statistics from the x–z section at y = Ly/2 sampled every 30 min in both runs
+(673 sections each; core = w > 2 m s⁻¹ with qᶜˡ > 10⁻⁵ kg kg⁻¹).
+
+| 1–15 Aug | 200 m | 100 m | DP-SCREAM 3 km | VARANAL |
+| --- | --- | --- | --- | --- |
+| precipitation (mm day⁻¹) | 3.58 | 3.61 | 3.22 | 4.12 |
+| hourly / daily-total correlation with VARANAL | 0.65 / 0.97 | 0.62 / 0.98 | 0.26 / 0.84 | — |
+| mean daily peak hour (CDT); mean abs. difference from VARANAL | 15.4; 1.9 h | 15.9; 2.6 h | 18.2; 3.3 h | 15.8 |
+| LWP / IWP (g m⁻²) | 40.5 / 145 | 43.1 / 148 | 19.2 / 145 | 64 / — |
+| precipitable water (kg m⁻²) | 56.1 | 56.0 | 53.4 | 51.6 |
+| cloud fraction <3 / 3–8 / >8 km | 0.020 / 0.067 / 0.111 | 0.021 / 0.067 / 0.110 | 0.018 / 0.024 / 0.100 | — |
+| T − sondes 0–2 / 2–6 / 6–12 km (K) | +1.7 / −0.1 / −0.9 | +1.7 / −0.1 / −0.8 | +3.1 / +1.8 / +0.3 | — |
+| RH − sondes 0–2 / 2–6 km (%) | −7.2 / +9.5 | −7.1 / +8.9 | −8.4 / −6.7 | — |
+| cores per section at 5 km; mean / median width (m) | 0.11; 851 / 600 | 0.16; 650 / 500 | — | — |
+| core fraction 1–5 / 5–10 km (×10⁻³) | 2.21 / 1.44 | 2.25 / 1.67 | — | — |
+| 99.9th-percentile w at 9–11 km (m s⁻¹) | ≈ 2.5–3.0 | ≈ 3.8–4.8 | — | — |
+| moist-enthalpy residual (MJ m⁻², % of sources) | 15.1 (1.8 %) | 13.9 (1.7 %) | — | — |
+| water residual | 0.57 % | 0.56 % | — | — |
+
+The domain means — precipitation, water paths, cloud-fraction profile, thermodynamic biases and the
+enthalpy and water budgets — change by less than 7 % between 200 m and 100 m, as expected with
+identical forcing and prescribed surface fluxes. Resolution changes the convection itself: at 100 m
+the cores at 5 km are about 50 % more numerous and about 25 % narrower (median 500 vs 600 m, i.e.
+5 vs 3 grid cells), the core fraction between 5 and 10 km is 16 % larger, and the strongest updrafts
+in the upper troposphere are about 1–2 m s⁻¹ faster (99.9th percentile of w at 9–11 km). Daily
+precipitation totals are reproduced equally well; the timing of the daily maximum shifts on 4 of 13
+days (mean absolute difference from VARANAL 1.9 h at 200 m, 2.6 h at 100 m). The core statistics
+come from one section line per output time (≈ 75 and ≈ 110 cores in total), so the width and count
+differences are indicative rather than precise. Both runs are pre-fix; the fixed reruns (jobs 514,
+515) will repeat the pair. Figures: `runs/analysis/resolution_pair_202_416/core_statistics.png` and
+each run's `analysis/` folder; animations of job 416 from its 5-min slices at 3 km (the first run with
+the finer cadence) are in `runs/baseline512_aug01_15_job416/animations/`.
