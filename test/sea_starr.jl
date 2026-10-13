@@ -228,6 +228,15 @@ end
         cparts = members(model.forcing.ρnᶜˡ)
         rc = cparts[findfirst(f -> f isa EvaporationRegeneration, cparts)]
         @test rc(1, 1, k_cloud, grid, model.clock, fields) ≈ -R
+        # a stale (one-step-lagged) evaporation rate meeting a collapsed cloud-water mass must not regenerate
+        # more droplets than exist: the fractional rate is bounded (default 0.1 s⁻¹, P3's sink-limiting bound)
+        stale = EvaporationRegeneration(fill(1e-6, 1, 1, 1))
+        collapsed = (; nᶜˡ = fill(8e7, 1, 1, 1), qᶜˡ = fill(1e-12, 1, 1, 1))
+        @test stale.nᵃ(1, 1, 1, grid, model.clock, collapsed) ≈ 8e7 * 0.1                 # unbounded: 8e7 × 1e6 = 8e13
+        @test stale.nᶜˡ(1, 1, 1, grid, model.clock, collapsed) ≈ -8e7 * 0.1
+        @test stale.nᵃ(1, 1, 1, grid, model.clock, collapsed) * 1.0 ≤ collapsed.nᶜˡ[1]      # ≤ the droplets present per 1-s step
+        @test EvaporationRegeneration(fill(1e-6, 1, 1, 1); maximum_fractional_rate = 0.5).nᵃ(1, 1, 1, grid, model.clock, collapsed) ≈ 8e7 * 0.5
+        @test stale.nᵃ(1, 1, 1, grid, model.clock, (; nᶜˡ = fill(-5.0, 1, 1, 1), qᶜˡ = fill(1e-4, 1, 1, 1))) == 0     # no number from negative nᶜˡ
         # the whole aerosol-number forcing is conservative: source + regeneration sum to the flux
         total = sum(rn(1, 1, k, grid, model.clock, fields) * ρᵣ[k] * Δz₁ + rc(1, 1, k, grid, model.clock, fields) * ρᵣ[k] * Δz₁ for k in 1:20)
         @test abs(total) < 1e-6 * 7e5
