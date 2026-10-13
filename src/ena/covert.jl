@@ -119,7 +119,8 @@ caller replaces is listed in `config.overrides` and appended to the label):
 - `perturbation = InitialPerturbation()` (`setperturb.f90` case 5)
 - `initialization = :condensate_free` or `:equilibrium` (P3 only), `initial_droplet_number`
 - output: `write_output`, `output_dir`, `output_prefix`, `profile_interval = 1hour`,
-  `timeseries_interval = 60`, `slice_interval = 10minutes`, `slice_height = 900`,
+  `timeseries_interval = 60`, `slice_interval = 1minute` (the movie standard: ≤ 15 simulated minutes per
+  second of video at 10–15 fps; ≈ 1.3 MB per frame on the 256² × 192 grid), `slice_height = 900`,
   `progress_interval = 10minutes`, `checkpoint_interval = nothing`, `checkpoint_cleanup = true`
 """
 function ena_covert(; arch = GPU(),
@@ -149,7 +150,7 @@ function ena_covert(; arch = GPU(),
                       output_prefix = "ena_covert",
                       profile_interval = 1hour,
                       timeseries_interval = 60,
-                      slice_interval = 10minutes,
+                      slice_interval = 1minute,
                       slice_height = 900,
                       progress_interval = 10minutes,
                       checkpoint_interval = nothing,

@@ -54,7 +54,8 @@ Oceananigans.defaults.FloatType = Float32
 arch = GPU()
 output_dir = joinpath(pkgdir(BreezeLab), "output", "ena_lasso", member)
 case = ena_lasso(; member, epoch, bundle_dir, arch, output_dir, output_prefix = "ena_lasso",
-                   timeseries_interval = 60seconds, profile_interval = 10minutes, slice_interval = 30minutes)
+                   timeseries_interval = 60seconds, profile_interval = 10minutes,
+                   slice_interval = 1minute)    # movie standard; ~1.4 MB per frame, ~2 GB of slices for 24 h
 simulation = case.simulation;
 
 # ## Run

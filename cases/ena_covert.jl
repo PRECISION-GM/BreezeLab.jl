@@ -31,7 +31,7 @@ z_faces = covert_public_bin_vertical_faces()
 stop_time = 6hours
 timeseries_interval = 60seconds
 profile_interval = 1hour
-slice_interval = 1hour
+slice_interval = 1minute    # movie standard: ≤ 15 sim-min per video second at 10–15 fps (~0.5 GB of slices for 6 h)
 
 microphysics = P3Microphysics(; cloud = CloudDroplets(; number_concentration = 75e6))
 

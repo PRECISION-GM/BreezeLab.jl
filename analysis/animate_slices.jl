@@ -1,17 +1,19 @@
 # Animate the saved slices of one or more runs: the cloud-liquid and rain sections at y = Ly/2,
 # and w at 900 m, the liquid water path and the surface rain rate as maps.
 #   RESULTS_SUBDIR=covert_grid julia --project=analysis analysis/animate_slices.jl output/run_a output/run_b ...
-# Writes results/<subdir>/animation_<run>.mp4, one frame per saved slice (ANIMATION_FPS frames per second,
-# default 6; 12 for the 1-minute-slice runs). ANIMATION_SIZE (default 1000x780 points), ANIMATION_FONTSIZE (12),
+# Writes results/<subdir>/animation_<run>.mp4, one frame per saved slice. The frame rate follows the
+# movie standard from the frame spacing (analysis/animation_playback.jl: ANIMATION_SPEED, default
+# ≤ 15 simulated min per video second, at most ANIMATION_FPS_MAX = 15 fps; ANIMATION_FPS overrides).
+# Times are labelled in UTC from the run's provenance epoch (ANIMATION_EPOCH overrides). ANIMATION_SIZE (default 1000x780 points), ANIMATION_FONTSIZE (12),
 # FIG_PX_PER_UNIT (1) and ANIMATION_COMPRESSION (H.264 CRF, 28) trade legibility for file size.
 # The color ranges are fixed across runs so members can be compared frame by frame; override with
 # QCL_MAX (g/kg), QR_MAX (g/kg), W_MAX (m/s), LWP_MAX (g/m²) and RAIN_MAX (mm/day).
-using CairoMakie, JLD2, Oceananigans, Oceananigans.Units, Printf
+using CairoMakie, JLD2, Oceananigans, Oceananigans.Units, Printf, Dates, TOML
+include(joinpath(@__DIR__, "animation_playback.jl"))
 
 runs = ARGS
 results_dir = joinpath(@__DIR__, "..", "results", get(ENV, "RESULTS_SUBDIR", ""))
 mkpath(results_dir)
-framerate = parse(Int, get(ENV, "ANIMATION_FPS", "6"))
 px_per_unit = parse(Float64, get(ENV, "FIG_PX_PER_UNIT", "1"))
 compression = parse(Int, get(ENV, "ANIMATION_COMPRESSION", "28"))
 width, height = parse.(Int, split(get(ENV, "ANIMATION_SIZE", "1000x780"), "x"))
@@ -34,6 +36,13 @@ for run in runs
     rain = FieldTimeSeries(file, "rain")
     times = qxz.times
     Nt = length(times)
+    playback = playback_framerate(times)
+    framerate = playback.framerate
+    provenance = joinpath(run, "provenance.toml")
+    epoch_string = get(ENV, "ANIMATION_EPOCH",
+                       isfile(provenance) ? get(get(TOML.parsefile(provenance), "config", Dict()), "epoch", "2017-07-18T06:00:00") :
+                                            "2017-07-18T06:00:00")
+    epoch = DateTime(epoch_string)
     grid = qxz.grid
     x = collect(xnodes(grid, Center())) ./ 1e3
     y = collect(ynodes(grid, Center())) ./ 1e3
@@ -51,7 +60,8 @@ for run in runs
     w_obs = @lift w_frames[$n]
     l_obs = @lift l_frames[$n]
     p_obs = @lift p_frames[$n]
-    title = @lift @sprintf("%s — t = %.2f h after 06 UTC 18 July 2017", label, times[$n] / 3600)
+    title = @lift string(label, " — ", Dates.format(epoch + Millisecond(round(Int, 1000 * times[$n])), "HH:MM"),
+                         " UTC ", Dates.format(epoch, "d U yyyy"), @sprintf(" (t = %.2f h)", times[$n] / 3600))
 
     fig = Figure(size=(width, height); fontsize)
     Label(fig[0, 1], title, fontsize=fontsize + 4, tellwidth=false)
@@ -89,5 +99,5 @@ for run in runs
     record(fig, path, 1:Nt; framerate, px_per_unit, compression) do i
         n[] = i
     end
-    println("wrote ", path, " (", Nt, " frames)")
+    println("wrote ", path, " (", Nt, " frames; ", playback_note(playback), ")")
 end
