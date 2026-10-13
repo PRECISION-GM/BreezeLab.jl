@@ -17,6 +17,7 @@ source "$W/execution/depot_layout.sh"
 export JULIA_DEPOT_PATH="$W/depot/$CPU_TAG:$D/depot-compute/$CPU_TAG:$D/depot-login:$C/depot:$HOME/.julia:"
 export JULIA_PKG_PRECOMPILE_AUTO=0 JULIA_NUM_THREADS=4
 INTERVAL=${INTERVAL:-1800}; BASE="$RUN"
+# The stabilised fallback may run on A100 (gpu-p4de-2c) or H100 (gpu-prod) nodes; the launcher picks an idle GPU at start.
 HEADER="wall_utc,record,t_hours,max_abs_w_2km,max_abs_w_2km_interior,min_T_sfc,max_T_sfc,max_abs_u_sfc,inner_max_abs_w,inner_max_w_z,inner_min_T,inner_min_T_z,inner_max_ncl"
 cd "$CHECKOUT"
 # Only act while the GPU job is RUNNING: a held, pending or requeued job is left alone (no cancel, no replacement).
@@ -54,7 +55,7 @@ while /opt/slurm/bin/squeue -h -j "$GPU_JOB" -o %t | grep -q .; do
       if awk -v th="$TH" -v wi="$WI" -v ti="$TI" 'BEGIN{exit !((wi > 15 && th < 8) || ti < 195)}'; then
         echo "== $(date -u) criterion met (t=$TH h, inner max|w|=$WI, min T=$TI): cancelling $GPU_JOB and launching the stabilised configuration"
         /opt/slurm/bin/scancel "$GPU_JOB"; sleep 20
-        NEW=$(/opt/slurm/bin/sbatch --partition=gpu-p4de-2c --gres=gpu:1 --cpus-per-task=12 --mem=96G --time=48:00:00 --requeue --dependency=afterany:$GPU_JOB \
+        NEW=$(/opt/slurm/bin/sbatch --partition=${FALLBACK_PARTITIONS:-gpu-p4de-2c,gpu-prod} --gres=gpu:1 --cpus-per-task=12 --mem=96G --time=48:00:00 --requeue --dependency=afterany:$GPU_JOB \
               --export=ALL,CHECKOUT=$CHECKOUT,EXPERIMENT=outer_era5_control_aug07_tke_stab,TRACER_MIP_NX=750,TRACER_MIP_NY=750,TRACER_MIP_STOP_HOURS=24,TRACER_MIP_PARENT=era5,TRACER_MIP_CLOSURE=tke,TRACER_MIP_CFL=0.5,TRACER_MIP_RELAX_WIDTH=20,TRACER_MIP_SPONGE_DEPTH=7000,TRACER_MIP_FAST_MINUTES=2.5,TRACER_MIP_CHECKPOINT_HOURS=3,TRACER_MIP_PROGRESS_SECONDS=600 \
               "$CHECKOUT/execution/tracer_mip_outer.sbatch" auto | awk '{print $NF}')
         echo "== launched stabilised control job $NEW" | tee -a "$BASE/../AUTO_REPLACE_LOG"
@@ -68,7 +69,7 @@ echo "== $(date -u) GPU job $GPU_JOB left the queue"
 RUN=$(ls -d "$BASE" "$BASE"/segment_* 2>/dev/null | sort -V | tail -1)
 if [ -n "${AUTO_REPLACE:-}" ] && [ ! -f "$RUN/COMPLETE" ]; then
   echo "== $(date -u) GPU job $GPU_JOB ended without COMPLETE: launching the stabilised configuration"
-  NEW=$(/opt/slurm/bin/sbatch --partition=gpu-p4de-2c --gres=gpu:1 --cpus-per-task=12 --mem=96G --time=48:00:00 --requeue \
+  NEW=$(/opt/slurm/bin/sbatch --partition=${FALLBACK_PARTITIONS:-gpu-p4de-2c,gpu-prod} --gres=gpu:1 --cpus-per-task=12 --mem=96G --time=48:00:00 --requeue \
         --export=ALL,CHECKOUT=$CHECKOUT,EXPERIMENT=outer_era5_control_aug07_tke_stab,TRACER_MIP_NX=750,TRACER_MIP_NY=750,TRACER_MIP_STOP_HOURS=24,TRACER_MIP_PARENT=era5,TRACER_MIP_CLOSURE=tke,TRACER_MIP_CFL=0.5,TRACER_MIP_RELAX_WIDTH=20,TRACER_MIP_SPONGE_DEPTH=7000,TRACER_MIP_FAST_MINUTES=2.5,TRACER_MIP_CHECKPOINT_HOURS=3,TRACER_MIP_PROGRESS_SECONDS=600 \
         "$CHECKOUT/execution/tracer_mip_outer.sbatch" auto | awk '{print $NF}')
   echo "== launched stabilised control job $NEW after failure of $GPU_JOB" | tee -a "$BASE/../AUTO_REPLACE_LOG"
