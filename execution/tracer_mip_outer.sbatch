@@ -75,7 +75,7 @@ printf 'job=%s restart=%s gpu=%s uuid=%s node=%s experiment=%s\nNX=%s NY=%s STOP
   "$SLURM_JOB_ID" "$RESTARTS" "$GPU_NAME" "$GPU_UUID" "$(hostname)" "$EXPERIMENT" \
   "${TRACER_MIP_NX:-protocol}" "${TRACER_MIP_NY:-protocol}" "${TRACER_MIP_STOP_HOURS:-protocol}" "${TRACER_MIP_PARENT:-era5}" \
   "${TRACER_MIP_CLOSURE:-tke}" "${TRACER_MIP_CFL:-0}" "${TRACER_MIP_RELAX_WIDTH:-5}" "${TRACER_MIP_SPONGE_DEPTH:-0}" \
-  "${TRACER_MIP_FAST_MINUTES:-2.5}" "${TRACER_MIP_CHECKPOINT_HOURS:-3}" "${TRACER_MIP_PICKUP:-none}" > "$RUN/COMMAND"
+  "${TRACER_MIP_FAST_MINUTES:-1}" "${TRACER_MIP_CHECKPOINT_HOURS:-3}" "${TRACER_MIP_PICKUP:-none}" > "$RUN/COMMAND"
 ( while true; do printf '%s,' "$(date -u +%FT%TZ)"; nvidia-smi -i "$GPU_UUID" --query-gpu=memory.used,memory.total,utilization.gpu --format=csv,noheader; sleep 30; done ) >> "$RUN/gpu_memory.csv" &
 MONITOR=$!
 trap 'kill $MONITOR 2>/dev/null || true' EXIT
