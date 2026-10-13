@@ -1,25 +1,38 @@
 # Animations of a TRACER-MIP outer-domain run (CairoMakie `record`, H.264 MP4 ≤ 12 MB, ≤ 1000 px wide)
-# plus 4-frame PNG montages (06, 12, 18, 00 UTC). Reads the run's 10-min output only:
+# plus 4-frame PNG montages (06, 12, 18, 00 UTC) and an inner-box movie of the 17–01 UTC sea-breeze/convection window.
+# Reads the run's fast output (every TRACER_MIP_FAST_MINUTES):
 #   outer_slices.jld2   T_sfc, u_sfc, v_sfc (lowest level), w_2km, qᶜˡ_2km            — whole 1500 km domain
 #   outer_surface.jld2  rain (surface rain flux, kg m⁻² s⁻¹), sea (1 at sea), T_land   — whole domain
 #   inner_region/inner_region_state.jld2  T p qᵛ qᶜˡ qʳ qⁱ u v w ρ (3-D, inner box + halo)
 #
 #   julia --project=cases/tracer_mip analysis/animate_tracer_mip.jl <run_dir> [<out_dir>]
 #
-# Environment: ANIMATION_FPS (8), ANIMATION_COMPRESSION (H.264 CRF-like, 28; raised automatically until each
-# MP4 is under ANIMATION_MAX_MB = 12), CASE_START ("2022-08-07T06:00:00"), LOCAL_UTC_OFFSET_HOURS (-5, CDT).
+# Playback speed is set in simulated minutes per second of video, not in fps; the encoded frame rate is derived from the
+# output frame spacing (frames are strided when output is finer than needed, repeated when it is coarser, so the encoded
+# rate stays within 8–15 fps and the speed never exceeds the target):
+#   ANIMATION_MIN_PER_S          (25)  domain and inner-box plan views        (standard: ≤ 30 sim-min/s)
+#   ANIMATION_SECTION_MIN_PER_S  (12.5) x–z section through the site          (standard: ≤ 15 sim-min/s)
+#   ANIMATION_WINDOW_MIN_PER_S   (12.5) inner-box sea-breeze/convection window (standard: ≤ 15 sim-min/s)
+#   ANIMATION_WINDOW_UTC         ("17-01") that window, UTC hours on the case day (end ≤ start: next day)
+#   ANIMATION_FPS                (unset) fixed fps for every movie (overrides the speeds; for checks only)
+# ANIMATION_COMPRESSION (H.264 CRF-like, 28; raised automatically until each MP4 is under ANIMATION_MAX_MB = 12),
+# CASE_START ("2022-08-07T06:00:00"), LOCAL_UTC_OFFSET_HOURS (-5, CDT).
 # Run on a CPU node from a *snapshot copy* of a running job's files, never on the files being written.
 
 using CairoMakie, Oceananigans, Oceananigans.Units, Breeze, Printf, Statistics
 using Oceananigans.Fields: interior
 using Oceananigans.Grids: λnodes, φnodes, znode, Center, Face
-using Dates: DateTime, Second, Hour, format
+using Dates: Dates, DateTime, Second, Hour, format
 using TOML: TOML
 
 run_dir = abspath(get(ARGS, 1, "."))
 out_dir = abspath(get(ARGS, 2, joinpath(run_dir, "animations")))
 mkpath(out_dir)
-framerate = parse(Int, get(ENV, "ANIMATION_FPS", "8"))
+fixed_fps = haskey(ENV, "ANIMATION_FPS") ? parse(Int, ENV["ANIMATION_FPS"]) : nothing
+speed_plan = parse(Float64, get(ENV, "ANIMATION_MIN_PER_S", "25"))
+speed_section = parse(Float64, get(ENV, "ANIMATION_SECTION_MIN_PER_S", "12.5"))
+speed_window = parse(Float64, get(ENV, "ANIMATION_WINDOW_MIN_PER_S", "12.5"))
+window_utc = parse.(Int, split(get(ENV, "ANIMATION_WINDOW_UTC", "17-01"), "-"))
 compression₀ = parse(Int, get(ENV, "ANIMATION_COMPRESSION", "28"))
 max_mb = parse(Float64, get(ENV, "ANIMATION_MAX_MB", "12"))
 case_start = DateTime(get(ENV, "CASE_START", "2022-08-07T06:00:00"))
@@ -92,11 +105,34 @@ function wind_arrows!(ax, xs, ys, u::Observable, v::Observable; step, lengthscal
     arrowfn!(ax, vec(pts), lift(vec, dirs); lengthscale, color = :black, arrow_style...)
 end
 
-function finish_record(fig, path, draw!, frames)
+"""
+    playback(cadence_s, target_min_per_s; fps_min = 8, fps_max = 15)
+
+Stride, repeat and encoded fps that play frames `cadence_s` apart at no more than `target_min_per_s` simulated minutes
+per video second: frames finer than needed are strided (keeps the encoded rate ≤ `fps_max`), coarser ones are repeated
+(keeps it ≥ `fps_min`). Returns `(; stride, repeat, fps, min_per_s)`.
+"""
+function playback(cadence_s, target_min_per_s; fps_min = 8, fps_max = 15)
+    if !isnothing(fixed_fps)
+        return (; stride = 1, repeat = 1, fps = fixed_fps, min_per_s = cadence_s * fixed_fps / 60)
+    end
+    raw = target_min_per_s * 60 / cadence_s                  # frames per second at exactly the target speed
+    stride = max(1, ceil(Int, raw / fps_max - 1e-9))
+    per_stride = raw / stride
+    repeat = per_stride < fps_min ? ceil(Int, fps_min / per_stride - 1e-9) : 1
+    fps = clamp(floor(Int, per_stride * repeat + 1e-9), 1, fps_max)
+    return (; stride, repeat, fps, min_per_s = cadence_s * stride * fps / (60 * repeat))
+end
+
+encoded_frames(frames, pb) = [n for n in frames[1:pb.stride:end] for _ in 1:pb.repeat]
+
+function finish_record(fig, path, draw!, frames; framerate)
     compression = compression₀
     while true
+        last_drawn = Ref(0)
         record(fig, path, frames; framerate, compression, px_per_unit = 1) do n
-            draw!(n)
+            n == last_drawn[] || draw!(n)   # repeated frames are not re-read or re-drawn
+            last_drawn[] = n
         end
         mb = filesize(path) / 1e6
         @info @sprintf("%s: %.1f MB (compression %d)", basename(path), mb, compression)
@@ -202,21 +238,42 @@ end
 ##### Render
 #####
 
-products = [("plan_view_domain", () -> plan_view(; zoom = false)),
-            ("plan_view_inner_box", () -> plan_view(; zoom = true)),
-            ("section_site", section_view)]
+cadence_s = n_common > 1 ? median(diff(Float64.(collect(times[1:n_common])))) : 0.0
+# The sea-breeze/convection window (UTC hours on the case day; an end at or before the start is on the next day)
+day0 = DateTime(format(case_start, "yyyy-mm-dd"))
+window_t = (Dates.value(day0 + Hour(window_utc[1]) - case_start) / 1000,
+            Dates.value(day0 + Hour(window_utc[2] + (window_utc[2] ≤ window_utc[1] ? 24 : 0)) - case_start) / 1000)
+window_frames = [n for n in frames if window_t[1] - 1 ≤ times[n] ≤ window_t[2] + 1]
+window_name = @sprintf("plan_view_inner_box_%02d-%02dUTC", window_utc...)
+
+# (name, figure constructor, frames, target sim-min per video second, montage?)
+products = Any[("plan_view_domain", () -> plan_view(; zoom = false), frames, speed_plan, true),
+            ("plan_view_inner_box", () -> plan_view(; zoom = true), frames, speed_plan, true),
+            ("section_site", section_view, frames, speed_section, true)]
+if length(window_frames) ≥ 2
+    push!(products, (window_name, () -> plan_view(; zoom = true), window_frames, speed_window, false))
+end
 report = Dict{String, Any}("run_dir" => run_dir, "n_frames" => n_common, "first" => stamp(times[1]), "last" => stamp(times[n_common]),
-                           "cadence_s" => length(times) > 1 ? times[2] - times[1] : 0.0, "framerate" => framerate)
+                           "cadence_s" => cadence_s,
+                           "window" => length(window_frames) ≥ 2 ? "$(stamp(times[window_frames[1]])) → $(stamp(times[window_frames[end]]))" :
+                                       "not rendered: the run has $(length(window_frames)) output frame(s) in $(window_utc[1])–$(window_utc[2]) UTC")
 picks, labels = montage_frames()
 @info "montage frames" picks labels Float64.(collect(times[1:min(3, n_common)]))
 report["montage_frames"] = picks
-for (name, make) in products
+for (name, make, movie_frames, target_speed, with_montage) in products
     fig, draw! = make()
+    pb = playback(cadence_s, target_speed)
+    encoded = encoded_frames(movie_frames, pb)
+    report[name * "_playback"] = Dict("target_sim_min_per_s" => target_speed, "sim_min_per_s" => round(pb.min_per_s; digits = 2),
+                                      "fps" => pb.fps, "stride" => pb.stride, "repeat" => pb.repeat,
+                                      "encoded_frames" => length(encoded), "duration_s" => round(length(encoded) / pb.fps; digits = 1))
+    @info @sprintf("%s: %d output frames, every %d, each shown %d×, at %d fps → %.2f sim-min/s (target ≤ %.1f), %.1f s",
+                   name, length(movie_frames), pb.stride, pb.repeat, pb.fps, pb.min_per_s, target_speed, length(encoded) / pb.fps)
     mp4 = joinpath(out_dir, "tracer_mip_aug07_$(name).mp4")
     # Frame-change diagnostic: fraction of pixels that differ between the first and last frames.
-    draw!(1); first_img = copy(colorbuffer(fig)); draw!(n_common); last_img = copy(colorbuffer(fig))   # copy: the buffer is reused
+    draw!(first(movie_frames)); first_img = copy(colorbuffer(fig)); draw!(last(movie_frames)); last_img = copy(colorbuffer(fig))   # copy: the buffer is reused
     report[name * "_changed_pixel_fraction"] = round(count(first_img .!= last_img) / length(first_img); digits = 4)
-    mb = finish_record(fig, mp4, draw!, frames)
+    mb = finish_record(fig, mp4, draw!, encoded; framerate = pb.fps)
     report[name * "_mp4_MB"] = round(mb; digits = 2)
     # Independent check of the written file: decoded frame count and the last frame as PNG.
     ffmpeg = CairoMakie.Makie.FFMPEG_jll.ffmpeg()
@@ -228,7 +285,7 @@ for (name, make) in products
     end
     nframes = try decoded_frame_count(mp4) catch; -1 end
     report[name * "_mp4_decoded_frames"] = nframes
-    nframes == length(frames) || @warn "$(basename(mp4)): decoded $nframes frames, expected $(length(frames))"
+    nframes == length(encoded) || @warn "$(basename(mp4)): decoded $nframes frames, expected $(length(encoded))"
     last_png = joinpath(out_dir, "tracer_mip_aug07_$(name)_last_frame.png")
     rm(last_png; force = true)   # never leave a stale frame from an earlier render
     if nframes > 0
@@ -236,6 +293,7 @@ for (name, make) in products
         try run(pipeline(`$ffmpeg -nostdin -y -v error -i $mp4 -vf $vf -fps_mode passthrough -frames:v 1 $last_png`; stderr = devnull)) catch end
     end
     isfile(last_png) || @warn "last frame of $(basename(mp4)) was not extracted"
+    with_montage || continue
     # 4-frame montage: one full figure per pick, rendered to PNG then composed
     panels = map(enumerate(picks)) do (k, n)
         draw!(n)

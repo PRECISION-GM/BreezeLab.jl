@@ -30,7 +30,10 @@ step "surface wind vs ERA5"        $J analysis/tracer_mip_surface_wind_check.jl 
 step "site comparison vs AMF1"     $J analysis/tracer_mip_site_comparison.jl "$RUN" "$ARM" "$RUN/analysis"
 step "extremes timeline"           $J analysis/tracer_mip_blowup_diagnosis.jl "$RUN" "$RUN/analysis"
 step "multi-run comparison"        $J analysis/tracer_mip_control_comparison.jl "$RUN/analysis/comparison" "$ERA5" "$ARM" "$LABEL=$RUN" ${REFERENCE:-}
-step "animations"                  env ANIMATION_FPS=${ANIMATION_FPS:-16} $J analysis/animate_tracer_mip.jl "$RUN" "$RUN/animations"
+# Playback speed in sim-min per video second (fps follows from the frame spacing); see analysis/animate_tracer_mip.jl
+step "animations"                  env ANIMATION_MIN_PER_S=${ANIMATION_MIN_PER_S:-25} ANIMATION_SECTION_MIN_PER_S=${ANIMATION_SECTION_MIN_PER_S:-12.5} \
+                                       ANIMATION_WINDOW_MIN_PER_S=${ANIMATION_WINDOW_MIN_PER_S:-12.5} ANIMATION_WINDOW_UTC=${ANIMATION_WINDOW_UTC:-17-01} \
+                                       $J analysis/animate_tracer_mip.jl "$RUN" "$RUN/animations"
 FIG=/shared/home/greg/breezelab-work/campaign-figures/tracer_mip_$(basename "$RUN"); mkdir -p "$FIG"
 cp "$RUN"/animations/*.mp4 "$RUN"/animations/*.png "$RUN"/animations/animations.toml "$FIG"/ 2>/dev/null
 cp "$RUN"/analysis/*.png "$RUN"/analysis/*.toml "$RUN"/analysis/comparison/* "$RUN"/diagnostics/* "$FIG"/ 2>/dev/null
