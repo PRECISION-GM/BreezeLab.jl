@@ -71,6 +71,13 @@ e_t, e_u10_mean, e_u10_site = era5_series("10m_u_component_of_wind")
 _, e_v10_mean, e_v10_site = era5_series("10m_v_component_of_wind")
 _, e_t2_mean, e_t2_site = era5_series("2m_temperature")
 era5_speed_site = hypot.(e_u10_site, e_v10_site); era5_c_site = onshore.(e_u10_site, e_v10_site)
+# Domain-mean 10 m wind SPEED (mean of |U|, comparable to the model's domain-mean lowest-level speed)
+era5_mean_speed = map(e_t) do d
+    stamp = Dates.format(d, "yyyy-mm-ddTHH"); box = "_-102.8_-87.3_22.7_36.2.nc"
+    u = NCDataset(ds -> Array(ds["u10"]), joinpath(era5_dir, "10m_u_component_of_wind_ERA5HourlySingleLevel_" * stamp * box))
+    v = NCDataset(ds -> Array(ds["v10"]), joinpath(era5_dir, "10m_v_component_of_wind_ERA5HourlySingleLevel_" * stamp * box))
+    mean(hypot.(u, v))
+end
 era5_onset = onset(e_t, era5_c_site; window = Minute(60))
 
 #####
@@ -143,7 +150,7 @@ function skill(s::RunSeries)
                 "rain_at_site_mm" => sum(s.rain[1:end-1] .* diff(hrs(s.time))),
                 "max_w_2km" => maximum(s.w2km), "max_w_2km_interior" => maximum(s.w2km_interior),
                 "domain_mean_lowest_wind_hourly" => [hourly(s.dom_time, s.dom_U, h) for h in hs],
-                "era5_domain_mean_10m_wind_hourly" => [mean(hypot.(e_u10_mean[k], e_v10_mean[k])) for k in eachindex(e_t) if hrs([e_t[k]])[1] in hs])
+                "era5_domain_mean_10m_wind_hourly" => [era5_mean_speed[k] for k in eachindex(e_t) if hrs([e_t[k]])[1] in hs])
 end
 obs_daytime_Tmax = maximum(met["temp_mean"][[t0 + Hour(4) ≤ t ≤ t0 + Hour(16) for t in met["time"]]]) + 273.15
 report = Dict("observations" => Dict("seabreeze_onset" => string(obs_onset), "daytime_T2m_max_K" => obs_daytime_Tmax,
@@ -205,7 +212,7 @@ for (k, s) in enumerate(series)
     lines!(ax1, hrs(s.dom_time), max.(s.w2km_interior, 1e-2); color = colors[k], linestyle = :dash)
     lines!(ax2, hrs(s.dom_time), s.dom_U; color = colors[k], label = s.label)
 end
-scatterlines!(ax2, hrs(e_t), hypot.(e_u10_mean, e_v10_mean); color = :grey, marker = :diamond, label = "ERA5 10 m (mean speed of mean wind)")
+scatterlines!(ax2, hrs(e_t), era5_mean_speed; color = :grey, marker = :diamond, label = "ERA5 10 m, domain-mean speed")
 axislegend(ax1; position = :lt); axislegend(ax2; position = :rt, labelsize = 9)
 save(joinpath(out_dir, "stability_and_domain_wind.png"), fig3; px_per_unit = 1)
 @info "written" out_dir report["observations"] report["era5"] Dict(k => (v["seabreeze_onset"], v["T_rmse_K"], v["wind_rmse_m_s"]) for (k, v) in report["runs"])
