@@ -230,14 +230,22 @@ function cloud_evaporation_rate_field(model)
 end
 
 """
-    EvaporationRegeneration(evaporation_rate; minimum_mass_mixing_ratio=1e-14)
+    EvaporationRegeneration(evaporation_rate; minimum_mass_mixing_ratio=1e-14, maximum_fractional_rate=0.1)
 
 Forcing pair returning aerosol to the reservoir as droplets evaporate. With `E` the
 cloud-water evaporation rate [kg/kg/s] (a `Field` refreshed by
 [`EvaporationRateUpdater`](@ref) once per time step) the droplet number is removed in
 proportion to the evaporated mass and the same number is regenerated:
 
-    R = nᶜˡ E / max(qᶜˡ, q_min)      F_nᶜˡ = -R,   F_nᵃ = +R
+    R = nᶜˡ min(E / max(qᶜˡ, q_min), r_max)      F_nᶜˡ = -R,   F_nᵃ = +R
+
+The fractional rate is bounded by `r_max = maximum_fractional_rate` [s⁻¹], by default P3's own
+sink-limiting bound 1/(10 s) on cloud-water sinks. Without the bound the one-step lag of `E` can
+pair a large evaporation rate with a cloud-water mass that has since collapsed: `E/qᶜˡ` then
+explodes, `nᶜˡ` is driven negative and clamped to zero, and `nᵃ` gains number from nothing
+(seen in the SEA STARR CTRL/N100 runs as isolated columns with 10²–10³ × the smoke-layer aerosol,
++3–11 % of the domain aerosol in one minute). With the bound at most 10 % of the droplets are
+regenerated per second, so the transfer can never exceed the droplets present.
 
 Supply `regeneration.nᶜˡ` under `nᶜˡ` and `regeneration.nᵃ` under `nᵃ` (specific keys).
 **Labelled departure:** P3 itself leaves `nᶜˡ` unchanged while cloud water evaporates and
@@ -248,15 +256,18 @@ struct EvaporationRegeneration{S, E, FT}
     sign :: S
     evaporation_rate :: E
     minimum_mass_mixing_ratio :: FT
+    maximum_fractional_rate :: FT
 end
 
-EvaporationRegeneration(evaporation_rate; minimum_mass_mixing_ratio=1e-14) =
-    (; nᶜˡ = EvaporationRegeneration(Val(-1), evaporation_rate, minimum_mass_mixing_ratio),
-       nᵃ = EvaporationRegeneration(Val(+1), evaporation_rate, minimum_mass_mixing_ratio))
+function EvaporationRegeneration(evaporation_rate; minimum_mass_mixing_ratio=1e-14, maximum_fractional_rate=0.1)
+    q_min, r_max = promote(minimum_mass_mixing_ratio, maximum_fractional_rate)
+    return (; nᶜˡ = EvaporationRegeneration(Val(-1), evaporation_rate, q_min, r_max),
+              nᵃ = EvaporationRegeneration(Val(+1), evaporation_rate, q_min, r_max))
+end
 
 Adapt.adapt_structure(to, f::EvaporationRegeneration) =
-    EvaporationRegeneration(f.sign, adapt(to, f.evaporation_rate), f.minimum_mass_mixing_ratio)
-Base.summary(f::EvaporationRegeneration{Val{s}}) where s = string("EvaporationRegeneration(", s > 0 ? "+" : "-", "nᶜˡ E/qᶜˡ)")
+    EvaporationRegeneration(f.sign, adapt(to, f.evaporation_rate), f.minimum_mass_mixing_ratio, f.maximum_fractional_rate)
+Base.summary(f::EvaporationRegeneration{Val{s}}) where s = string("EvaporationRegeneration(", s > 0 ? "+" : "-", "nᶜˡ min(E/qᶜˡ, ", f.maximum_fractional_rate, " s⁻¹))")
 Base.show(io::IO, f::EvaporationRegeneration) = print(io, summary(f))
 
 @inline function (f::EvaporationRegeneration{Val{s}})(i, j, k, grid, clock, fields) where s
@@ -265,7 +276,8 @@ Base.show(io::IO, f::EvaporationRegeneration) = print(io, summary(f))
         nᶜˡ = fields.nᶜˡ[i, j, k]
         qᶜˡ = fields.qᶜˡ[i, j, k]
     end
-    R = max(zero(nᶜˡ), nᶜˡ) * E / max(qᶜˡ, f.minimum_mass_mixing_ratio)
+    fractional_rate = min(max(zero(E), E) / max(qᶜˡ, f.minimum_mass_mixing_ratio), f.maximum_fractional_rate)
+    R = max(zero(nᶜˡ), nᶜˡ) * fractional_rate
     return s * R
 end
 
@@ -274,7 +286,8 @@ function AtmosphereModels.materialize_atmosphere_model_forcing(f::EvaporationReg
     expected = s > 0 ? :nᵃ : :nᶜˡ
     name === expected || throw(ArgumentError("this EvaporationRegeneration must be supplied under `$expected`, got $name"))
     FT = eltype(field.grid)
-    return EvaporationRegeneration(f.sign, f.evaporation_rate, convert(FT, f.minimum_mass_mixing_ratio))
+    return EvaporationRegeneration(f.sign, f.evaporation_rate, convert(FT, f.minimum_mass_mixing_ratio),
+                                   convert(FT, f.maximum_fractional_rate))
 end
 
 """
