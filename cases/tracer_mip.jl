@@ -51,9 +51,10 @@ damping_depth = (d = parse(Float64, get(ENV, "TRACER_MIP_SPONGE_DEPTH", "0")); d
 era5_dir = get(ENV, "TRACER_MIP_ERA5_DIR", joinpath(pkgdir(BreezeLab), "data", "era5"))
 output_dir = get(ENV, "TRACER_MIP_OUTPUT_DIR", joinpath(pkgdir(BreezeLab), "output", "tracer_mip_outer_$(case)" * (parent === :era5 ? "" : "_EXPLORATORY_$(parent)")))
 output_interval = 1hour             # Grid-1: 60-min full 3-D output and process accumulators (protocol)
-# Fields used for animations are saved at ≥ 4× finer resolution than the 10-min protocol cadence
-# (surface fields, 2-km slices, inner-region state); the storage budget is in docs/cases/tracer_mip.md.
-fast_interval = parse(Float64, get(ENV, "TRACER_MIP_FAST_MINUTES", "2.5")) * 60
+# Fields used for animations (surface fields, 2-km slices, inner-region state) are saved every TRACER_MIP_FAST_MINUTES
+# (default 1 min, 10× the 10-min protocol cadence, so movies play at ≤ 30 sim-min/s at 10–15 fps without repeated
+# frames); ≈ 62 MB per output time, ≈ 90 GB per 24 h. The storage budget is in docs/cases/tracer_mip.md.
+fast_interval = parse(Float64, get(ENV, "TRACER_MIP_FAST_MINUTES", "1")) * 60
 # Checkpoints (restart after an outage): every TRACER_MIP_CHECKPOINT_HOURS simulated hours into a directory shared by
 # all segments of a run; TRACER_MIP_PICKUP = latest | <file> resumes from it. Each segment writes its outputs into its
 # own output_dir (writers overwrite their files), so a restart never clobbers an earlier segment.
@@ -99,7 +100,7 @@ simulation.output_writers[:surface] = JLD2Writer(child, merge(surface_2d, radiat
 # Inner-region prognostic state for the offline one-way 500 m nest: the raw thermodynamic/wind state
 # (what a `PrescribedAtmosphere` parent needs) over the inner extent plus a halo of `inner_halo`
 # outer cells (relaxation zone + interpolation stencil), every `inner_interval` (≥ 10 min).
-inner_interval = fast_interval      # ≤ 2.5 min (≥ 4× the 10-min nest/animation cadence)
+inner_interval = fast_interval      # 1 min by default (10× the 10-min nest cadence)
 inner_halo = 10
 inner_extent = BreezeLab.tracer_mip_horizontal_extent(tracer_mip_protocol(), :inner)
 λc = Array(Oceananigans.Grids.λnodes(child.grid, Center()))

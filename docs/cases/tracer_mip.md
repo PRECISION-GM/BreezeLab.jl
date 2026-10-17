@@ -88,12 +88,22 @@ Missing or mismatched for this protocol:
 
 ## Output cadence and storage (per 24-h outer control)
 
-Animated fields are written every 2.5 min (`TRACER_MIP_FAST_MINUTES`, ≥ 4× finer than the 10-min protocol cadence):
-surface fields (land T, saturation, sea mask, rain flux, surface SW/LW down — surface values only, 6 × 2.25 MB ≈ 13.5 MB
-per write → 7.8 GB), 2-km/lowest-level slices (8.5 MB → 4.9 GB) and the inner-region 3-D state for the offline nest
-(52 MB → 30 GB). Hourly 3-D state (1.75 GB × 25 = 44 GB) and process accumulators (0.19 GB × 25 = 4.8 GB) are the
-protocol's. Total ≈ 92 GB per 24 h (job 233 at the 10-min cadence with the 3-D radiation fields in the surface writer
-would have reached ≈ 115 GB).
+Animated fields are written every **1 min** by default (`TRACER_MIP_FAST_MINUTES`, 10× finer than the 10-min protocol
+cadence). At that spacing the movies play at ≤ 30 simulated min per second of video (domain and inner box) and ≤ 15 min/s
+(sections, the 17–01 UTC window) at 10–15 fps, without repeating frames; `analysis/animate_tracer_mip.jl` takes the
+playback speed, not the fps, as its knob. Measured on job 501 (2.5-min cadence, first 7 h), per output time:
+
+| Writer | Content | Per output time | 24 h at 1 min (1441) | 24 h at 2.5 min (577) |
+| --- | --- | --- | --- | --- |
+| `inner_region/inner_region_state.jld2` | 3-D T p qᵛ qᶜˡ qʳ qⁱ u v w ρ, inner box + halo | 49 MB | 71 GB | 28 GB |
+| `outer_slices.jld2` | lowest-level T, u, v; w and qᶜˡ at 2 km | 8.1 MB | 12 GB | 4.7 GB |
+| `outer_surface.jld2` | surface fields, rain flux, radiation at the surface | 5.3 MB | 7.7 GB | 3.1 GB |
+| **fast output** | | **62 MB** | **≈ 90 GB** | **≈ 36 GB** |
+
+The protocol output adds the hourly 3-D state (1.5 GB × 25 ≈ 38 GB) and the process accumulators (≈ 2.4 GB). A 24-h
+control therefore writes ≈ 131 GB at 1 min (≈ 77 GB at 2.5 min). Checkpoints add up to two transient 26 GB files
+(`cleanup = true` keeps the latest). The extra write time at 1 min (1441 writes of 62 MB) has not been measured yet;
+it is expected to be a few per cent of the ≈ 24 h wall on an H100.
 
 ## Runs so far (all on wpcluster; see the status file for job IDs)
 
