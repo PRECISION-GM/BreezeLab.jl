@@ -49,10 +49,11 @@ Nx = Ny = parse(Int, get(ENV, "TRACER_DP_SCREAM_NX", "256"))
 Δx = parse(Float64, get(ENV, "TRACER_DP_SCREAM_DX", "200"))
 # Fields used for animation (the xy maps at the slice height, the xz section, LWP and rain
 # maps) are saved at least four times finer than the 30-min profile means: every
-# `TRACER_DP_SCREAM_SLICE_MINUTES` (default 5) at `TRACER_DP_SCREAM_SLICE_HEIGHT` m (default
+# `TRACER_DP_SCREAM_SLICE_MINUTES` (default 1, so that cloud-scale movies can play at ≤ 15 simulated
+# minutes per second at 10–15 fps) at `TRACER_DP_SCREAM_SLICE_HEIGHT` m (default
 # 3000, near the afternoon cloud base of this case; 1500 m sat below it in the 200 m baseline).
 # Profiles (30 min) and time series (60 s) are unchanged.
-slice_minutes = parse(Float64, get(ENV, "TRACER_DP_SCREAM_SLICE_MINUTES", "5"))
+slice_minutes = parse(Float64, get(ENV, "TRACER_DP_SCREAM_SLICE_MINUTES", "1"))
 slice_height = parse(Float64, get(ENV, "TRACER_DP_SCREAM_SLICE_HEIGHT", "3000"))
 slice_interval = slice_minutes * 60
 
@@ -66,11 +67,12 @@ case = tracer_dp_scream(; iop_path = joinpath(data_dir, "TRACER_iopfile_4scam.nc
 simulation = case.simulation;
 
 # Storage estimate for the slice file: three xz sections (Nx × Nz) and four xy maps (Nx × Ny)
-# in Float32 per save; job 202 (256² × 160, 30-min cadence) measured 0.76 of that interior
-# size per save (1.175 MB), which calibrates the estimate recorded in the provenance.
+# in Float32 per save; jobs 202 (256² × 160) and 416 (512² × 160) measured 0.70 and 0.68 of that
+# interior size per save (1.09 and 3.51 MB), which calibrates the estimate recorded in the provenance
+# (14 days at 1 min: ≈ 22 GB at 256², ≈ 71 GB at 512²).
 Nz = case.config.Nz
 slice_saves = floor(Int, stop_time / slice_interval) + 1
-slice_bytes_per_save = 0.76 * 4 * (3 * Nx * Nz + 4 * Nx * Ny)
+slice_bytes_per_save = 0.69 * 4 * (3 * Nx * Nz + 4 * Nx * Ny)
 slice_file_estimate_GB = slice_saves * slice_bytes_per_save / 1e9
 @info @sprintf("slice file estimate: %d saves every %.0f min at %.0f m ≈ %.1f GB (%.2f MB per save)",
                slice_saves, slice_minutes, slice_height, slice_file_estimate_GB, slice_bytes_per_save / 1e6)
@@ -87,7 +89,7 @@ mkpath(output_dir)
 write_provenance(joinpath(output_dir, "provenance.toml"), case;
                  extra = (; stop_time, checkpoint_interval, pickup_from,
                             slice_minutes, slice_height, slice_saves, slice_bytes_per_save, slice_file_estimate_GB,
-                            slice_estimate_basis = "0.76 × Float32 interior bytes of 3 xz + 4 xy fields per save, calibrated on job 202",
+                            slice_estimate_basis = "0.69 × Float32 interior bytes of 3 xz + 4 xy fields per save, calibrated on jobs 202 and 416",
                             dp_scream_reference = "Zenodo 10.5281/zenodo.15271730 (3 km August run, case scream_dp_TRACER_AUGUST_decr; 0.5 km 5–15 August run)",
                             scmlib_script = "DPxx_SCREAM_SCRIPTS/run_dpxx_scream_TRACER.csh @ 2dc3f1073a5d03b5f32617e79d68fb20a63cfb43"))
 pickup = false
