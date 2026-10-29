@@ -30,18 +30,17 @@ NumericalEarth = "904d977b-046a-4731-8b86-9235c0d1ef02"
 BreezeLabNumericalEarthExt = "NumericalEarth"
 
 [sources]
-Breeze = {url = "https://github.com/NumericalEarth/Breeze.jl", rev = "5264d3c"}
-Oceananigans = {url = "https://github.com/CliMA/Oceananigans.jl", rev = "847e125"}
+Breeze = {path = "../Breeze-ena-runs"}
 
 [compat]
-Breeze = "0.11"
+Breeze = "0.13"
 CUDA = "5.9, 6"
 CairoMakie = "0.15, 0.16"
-CloudMicrophysics = "0.41"
+CloudMicrophysics = "0.46"
 JLD2 = "0.5, 0.6"
 NCDatasets = "0.14"
 NumericalEarth = "0.8"
-Oceananigans = "0.113"
+Oceananigans = "0.116"
 RRTMGP = "0.22, 0.23, 1"
 SpecialFunctions = "2"
 julia = "1.11"
