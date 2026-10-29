@@ -204,6 +204,12 @@ end
     fc = covert_public_bin_vertical_faces()
     @test length(fc) == 193 && fc[1] == 0 && fc[end] == 20000 && issorted(fc)
     @test all(diff(fc[1:151]) .≈ 10)
+    # the resolution ladder keeps the design: uniform to 1500 m, 7/32 of the levels stretched to 20 km
+    for (Nz, Δz, N_uniform) in ((128, 15, 100), (256, 7.5, 200))
+        f = covert_public_bin_vertical_faces(; Nz)
+        @test length(f) == Nz + 1 && f[end] == 20000 && all(>(0), diff(f))
+        @test all(diff(f[1:N_uniform+1]) .≈ Δz) && f[N_uniform+1] ≈ 1500
+    end
     # inversion-refined variant: 10 m to 800 m, 5 m over 800–1400 m, 10 m to 1500 m, the same 42 stretched cells
     fr = covert_inversion_refined_vertical_faces()
     @test length(fr) == 253 && fr[1] == 0 && fr[end] == 20000 && issorted(fr) && all(>(0), diff(fr))

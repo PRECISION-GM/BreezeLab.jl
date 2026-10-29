@@ -2,8 +2,27 @@
 ##### Standard output writers of the SAM-forced cases (ENA, TRACER–DP-SCREAM).
 #####
 
+"""
+    add_output_writers!(simulation; output_dir, output_prefix, profile_interval, timeseries_interval,
+                        slice_interval, slice_height, extra_slice_heights = (;), y_averaged_sections = false,
+                        section_fields = (;), energy_budget_series = false, in_cloud_threshold = 1e-5)
+
+Hourly-averaged profiles, domain-mean time series and the `_slices.jld2` snapshots, which always
+hold `qᶜˡ_xz`, `qʳ_xz`, `w_xz`, `θ_xz` (at y = Ly/2), `qᶜˡ_xy`, `w_xy` (at `slice_height`), and the
+`lwp` and surface `rain` maps. Optional visualization slices:
+
+- `extra_slice_heights`: more xy slices, e.g. `(; w = (500, 750), qᶜˡ = (1100,))` writes
+  `w_xy_500m`, `w_xy_750m` and `qᶜˡ_xy_1100m` (the nearest cell center at or above each height).
+- `y_averaged_sections = true`: y-averaged xz sections `qᶜˡ_xz_yavg`, `qʳ_xz_yavg`, `w_xz_yavg`.
+- `section_fields`: a `NamedTuple` of further 3D fields or operations (process rates, for example),
+  each written like `qᶜˡ`: `name_xz`, `name_xz_yavg` (with `y_averaged_sections`) and the xy slices
+  listed under its name in `extra_slice_heights`.
+"""
 function add_output_writers!(simulation; output_dir, output_prefix, profile_interval,
                              timeseries_interval, slice_interval, slice_height,
+                             extra_slice_heights = (;),
+                             y_averaged_sections = false,
+                             section_fields = (;),
                              energy_budget_series = false,
                              in_cloud_threshold = 1e-5)
     model = simulation.model
@@ -76,16 +95,42 @@ function add_output_writers!(simulation; output_dir, output_prefix, profile_inte
                    schedule = TimeInterval(timeseries_interval), overwrite_files = true)
 
     z = Array(znodes(grid, Center()))
-    k = searchsortedfirst(z, slice_height)
+    level(height) = min(searchsortedfirst(z, height), length(z))
+    k = level(slice_height)
     j = max(1, size(grid, 2) ÷ 2)
     slices = (; qᶜˡ_xz = view(qᶜˡ, :, j, :), qʳ_xz = view(qʳ, :, j, :), w_xz = view(w, :, j, :),
+                θ_xz = section_slice(θ, (:, j, :)),
                 qᶜˡ_xy = view(qᶜˡ, :, :, k), w_xy = view(w, :, :, k), lwp, rain)
+
+    # Visualization extras: more xy heights, y-averaged sections, and the `section_fields` hook
+    sectioned = merge((; qᶜˡ, qʳ, w, θ), section_fields)
+    for (name, f) in pairs(section_fields)
+        slices = merge(slices, NamedTuple{(Symbol(name, :_xz),)}((section_slice(f, (:, j, :)),)))
+    end
+    if y_averaged_sections
+        for name in (:qᶜˡ, :qʳ, :w, keys(section_fields)...)
+            slices = merge(slices, NamedTuple{(Symbol(name, :_xz_yavg),)}((Average(sectioned[name], dims=2),)))
+        end
+    end
+    for (name, heights) in pairs(extra_slice_heights)
+        haskey(sectioned, name) ||
+            throw(ArgumentError("extra_slice_heights names $name; available: $(join(keys(sectioned), ", "))"))
+        for height in heights
+            label = Symbol(name, :_xy_, round(Int, height), :m)
+            slices = merge(slices, NamedTuple{(label,)}((section_slice(sectioned[name], (:, :, level(height))),)))
+        end
+    end
 
     simulation.output_writers[:slices] =
         JLD2Writer(model, slices; filename = joinpath(output_dir, output_prefix * "_slices.jld2"),
                    schedule = TimeInterval(slice_interval), overwrite_files = true)
     return nothing
 end
+
+# A slice of a Field is a view; any other operation (a diagnostic KernelFunctionOperation, say)
+# becomes a Field computed on the slice only.
+section_slice(f::Oceananigans.Fields.Field, indices) = view(f, indices...)
+section_slice(f, indices) = Field(f; indices)
 
 horizontally_reduced(f) = (loc = Oceananigans.Fields.location(f); loc[1] === Nothing && loc[2] === Nothing)
 

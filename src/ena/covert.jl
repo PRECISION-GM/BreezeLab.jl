@@ -11,13 +11,20 @@
 #####
 
 """
-    covert_public_bin_vertical_faces(; Nz=192, top=20000, Δz=10, uniform_top=1500)
+    covert_public_bin_vertical_faces(; Nz=192, top=20000, uniform_top=1500,
+                                       Δz=uniform_top / (Nz - round(Int, 7Nz / 32)))
 
 A labelled **reconstruction** of the 192-level, 20-km-top vertical grid of the Covert et al.
 (2022) SAM runs (the public repository advertises but does not ship its `grd`/`domain.f90`):
 uniform `Δz` to `uniform_top`, then a constant-ratio stretch to `top`.
+
+With the default `Nz = 192` this is 150 cells of 10 m to 1.5 km and 42 stretched cells to 20 km.
+Other `Nz` keep the design (the boundary layer and inversion uniformly resolved, the same 7/32
+of the levels stretched above `uniform_top`): `Nz = 128` gives 100 cells of 15 m and 28 stretched
+cells, `Nz = 256` gives 200 cells of 7.5 m and 56 stretched cells.
 """
-function covert_public_bin_vertical_faces(; Nz=192, top=20000.0, Δz=10.0, uniform_top=1500.0)
+function covert_public_bin_vertical_faces(; Nz=192, top=20000.0, uniform_top=1500.0,
+                                            Δz=uniform_top / (Nz - round(Int, 7Nz / 32)))
     faces = uniform_then_stretched_faces(; Nz, top, Δz, uniform_top)
     faces[end] = top
     length(faces) == Nz + 1 || error("vertical grid construction produced $(length(faces) - 1) cells, expected $Nz")
@@ -66,6 +73,18 @@ function ena_vertical_faces(name)
     throw(ArgumentError("unknown vertical grid $name (covert, covert_inversion_5m, lasso)"))
 end
 
+"""
+    COVERT_RESOLUTIONS
+
+The resolution ladder of the Covert case at the fixed 8.96 km domain: `r128` (128² × 128, 70 m,
+Δz = 15 m), `r256` (256² × 192, 35 m, Δz = 10 m: the public `caseid` grid) and `r512` (512² × 256,
+17.5 m, Δz = 7.5 m), each with its time step (the protocol's 0.5 s at 35 m, scaled with Δx).
+Pass `COVERT_RESOLUTIONS.r512...` to [`ena_covert`](@ref).
+"""
+const COVERT_RESOLUTIONS = (r128 = (Nx = 128, Ny = 128, Nz = 128, Δt = 1.0),
+                            r256 = (Nx = 256, Ny = 256, Nz = 192, Δt = 0.5),
+                            r512 = (Nx = 512, Ny = 512, Nz = 256, Δt = 0.25))
+
 # The namelist switches of the Covert protocol: the constructor implements exactly these.
 const COVERT_NAMELIST = (sfc_flx_fxd = true, sfc_tau_fxd = true, doradsimple = true, dolongwave = true,
                          doshortwave = false, donudging_uv = false, dolargescale = true, dosfcforcing = true,
@@ -107,8 +126,8 @@ caller replaces is listed in `config.overrides` and appended to the label):
   or `lasso_aerosol(...)`, converting with [`first_level_reference_density`](@ref).
 - `diagnostic_ccn`: apply the SBM-style `DiagnosticCCNProjection` to the aerosol reservoir;
   on by default when `microphysics` carries one.
-- `Nx`, `Ny` (namelist `caseid`), `Lx = Nx dx`, `Ly = Ny dy`,
-  `z_faces` (`covert_public_bin_vertical_faces` with the `caseid` level count)
+- `Nx`, `Ny`, `Nz` (namelist `caseid`), `Lx = Nx dx`, `Ly = Ny dy`,
+  `z_faces` (`covert_public_bin_vertical_faces(; Nz)`; give `Nz` or `z_faces`, not both)
 - `stop_time` (`nstop × dt`), `Δt` (`dt`), `max_Δt = Δt` (fixed step), `cfl = 0.7`
 - `translation_velocity` (namelist `ug`, `vg`): SAM's translating frame
 - `sponge = SAMSponge()`, `closure = SmagorinskyLilly()`, `advection_order = 5`
@@ -120,7 +139,11 @@ caller replaces is listed in `config.overrides` and appended to the label):
 - `initialization = :condensate_free` or `:equilibrium` (P3 only), `initial_droplet_number`
 - output: `write_output`, `output_dir`, `output_prefix`, `profile_interval = 1hour`,
   `timeseries_interval = 60`, `slice_interval = 1minute` (the movie standard: ≤ 15 simulated minutes per
-  second of video at 10–15 fps; ≈ 1.3 MB per frame on the 256² × 192 grid), `slice_height = 900`,
+  second of video at 10–15 fps), `slice_height = 900` (the `qᶜˡ_xy` and `w_xy` level),
+  `extra_slice_heights = (; w = (500, 750), qᶜˡ = (1100,))` (mid-boundary layer, near cloud base and
+  near cloud top), `y_averaged_sections = true`, `section_fields = model -> (;)` (a function of the model
+  returning further 3D fields or operations, such as process rates, written as xz sections, y-averaged
+  sections and the xy slices named in `extra_slice_heights`; see `add_output_writers!`),
   `progress_interval = 10minutes`, `checkpoint_interval = nothing`, `checkpoint_cleanup = true`
 """
 function ena_covert(; arch = GPU(),
@@ -129,6 +152,7 @@ function ena_covert(; arch = GPU(),
                       diagnostic_ccn = has_aerosol_reservoir(microphysics),
                       Nx = nothing,
                       Ny = nothing,
+                      Nz = nothing,
                       Lx = nothing,
                       Ly = nothing,
                       z_faces = nothing,
@@ -152,6 +176,9 @@ function ena_covert(; arch = GPU(),
                       timeseries_interval = 60,
                       slice_interval = 1minute,
                       slice_height = 900,
+                      extra_slice_heights = (; w = (500, 750), qᶜˡ = (1100,)),
+                      y_averaged_sections = true,
+                      section_fields = model -> (;),
                       progress_interval = 10minutes,
                       checkpoint_interval = nothing,
                       checkpoint_cleanup = true)
@@ -171,11 +198,12 @@ function ena_covert(; arch = GPU(),
     lsf = read_sam_large_scale_forcing(paths.lsf)
     sfc = read_sam_surface_forcing(paths.sfc)
 
-    overrides = [name for (name, value) in pairs((; Nx, Ny, Lx, Ly, z_faces, stop_time, Δt, translation_velocity))
+    overrides = [name for (name, value) in pairs((; Nx, Ny, Nz, Lx, Ly, z_faces, stop_time, Δt, translation_velocity))
                  if !isnothing(value)]
     radiation === :simple_longwave || push!(overrides, :radiation)
     nx, ny, nz = parse_caseid(namelist["caseid"])
-    z_faces = isnothing(z_faces) ? covert_public_bin_vertical_faces(; Nz = nz) : z_faces
+    isnothing(Nz) || isnothing(z_faces) || throw(ArgumentError("give Nz or z_faces, not both"))
+    z_faces = isnothing(z_faces) ? covert_public_bin_vertical_faces(; Nz = something(Nz, nz)) : z_faces
     Nx = something(Nx, nx)
     Ny = something(Ny, ny)
     Lx = something(Lx, Nx * namelist["dx"])
@@ -321,6 +349,8 @@ function ena_covert(; arch = GPU(),
         mkpath(output_dir)
         add_output_writers!(simulation; output_dir, output_prefix, profile_interval,
                             timeseries_interval, slice_interval, slice_height,
+                            extra_slice_heights, y_averaged_sections,
+                            section_fields = section_fields(model),
                             energy_budget_series = true)
         if !isnothing(checkpoint_interval)
             simulation.output_writers[:checkpointer] =
@@ -348,7 +378,8 @@ function ena_covert(; arch = GPU(),
                                 "adaptive (initial Δt = $Δt s, cfl = $cfl, max_Δt = $max_Δt s); SAM used fixed dt",
                 perturbation = string(perturbation),
                 write_output, output_dir = abspath(output_dir), output_prefix, profile_interval, timeseries_interval,
-                slice_interval, slice_height, progress_interval,
+                slice_interval, slice_height, extra_slice_heights,
+                y_averaged_sections, progress_interval,
                 checkpoint_interval = something(checkpoint_interval, 0), checkpoint_cleanup)
 
     return (; simulation, model, grid, config, inputs = paths,

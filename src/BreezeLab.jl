@@ -20,7 +20,7 @@ export
     # case constructors
     ena_covert, ena_lasso, tracer_dp_scream, sea_starr, tracer_mip_outer_simulation, tracer_mip_inner_simulation,
     # constructor inputs: vertical grids, perturbation, sponge, aerosol
-    covert_public_bin_vertical_faces, covert_inversion_refined_vertical_faces, ena_vertical_faces,
+    covert_public_bin_vertical_faces, covert_inversion_refined_vertical_faces, ena_vertical_faces, COVERT_RESOLUTIONS,
     lasso_ena_vertical_faces, uniform_then_stretched_faces,
     tracer_dp_scream_vertical_faces, sea_starr_vertical_faces, acpc_vertical_faces,
     InitialPerturbation, SAMSponge, neutral_drag_coefficient,

@@ -2,6 +2,8 @@
 #
 #   julia --project cases/cli/run_case.jl --protocol covert_public_bin --data data/covert2022_bin \
 #         --microphysics p3_n75 --arch gpu --Nx 256 --Ny 256 --hours 6 --output output/p3_n75
+#   julia --project cases/cli/run_case.jl --protocol covert_public_bin --data data/covert2022_bin \
+#         --resolution r512 --arch gpu --hours 6 --checkpoint_interval 1800 --output output/r512
 #   julia --project cases/cli/run_case.jl --protocol lasso_ena_official --data data/lasso/<member> \
 #         --member <member> --epoch 2017-07-18T00:00:00 --arch gpu --output output/lasso
 #
@@ -29,7 +31,7 @@ end
 opts = parse_args(ARGS)
 getopt(k, default) = get(opts, k, default)
 allowed = Set(["data", "protocol", "arch", "float", "seed", "epoch", "member", "dimensions", "microphysics", "aerosol_ss_cap",
-               "Nx", "Ny", "Lx", "Ly", "hours", "cfl", "dt", "max_dt", "lasso_grid", "grid", "initialization", "closure",
+               "resolution", "Nx", "Ny", "Nz", "Lx", "Ly", "hours", "checkpoint_interval", "cfl", "dt", "max_dt", "lasso_grid", "grid", "initialization", "closure",
                "profile_interval", "slice_interval", "liquid_reff", "radiation", "nudging", "surface_flux_law", "output"])
 unknown = setdiff(Set(keys(opts)), allowed)
 isempty(unknown) || error("unknown options: $(join(sort!(collect(unknown)), ", "))")
@@ -65,8 +67,17 @@ function microphysics_member(name; data, z_faces, cap)
 end
 
 kw = Dict{Symbol, Any}()
+# --resolution r128|r256|r512 (Covert only): Nx, Ny, Nz and Δt of COVERT_RESOLUTIONS; --Nx/--Ny/--Nz/--dt override
+if haskey(opts, "resolution")
+    protocol === :covert_public_bin || error("--resolution applies to --protocol covert_public_bin only")
+    haskey(COVERT_RESOLUTIONS, Symbol(opts["resolution"])) ||
+        error("--resolution must be one of $(join(keys(COVERT_RESOLUTIONS), ", "))")
+    merge!(kw, Dict(pairs(COVERT_RESOLUTIONS[Symbol(opts["resolution"])])))
+end
 haskey(opts, "Nx") && (kw[:Nx] = parse(Int, opts["Nx"]))
 haskey(opts, "Ny") && (kw[:Ny] = parse(Int, opts["Ny"]))
+haskey(opts, "Nz") && (kw[:Nz] = parse(Int, opts["Nz"]))
+haskey(opts, "checkpoint_interval") && (kw[:checkpoint_interval] = parse(Float64, opts["checkpoint_interval"]))
 haskey(opts, "Lx") && (kw[:Lx] = parse(Float64, opts["Lx"]))
 haskey(opts, "Ly") && (kw[:Ly] = parse(Float64, opts["Ly"]))
 haskey(opts, "hours") && (kw[:stop_time] = parse(Float64, opts["hours"]) * 3600)
@@ -80,7 +91,10 @@ if haskey(opts, "closure")
     opts["closure"] in ("none", "smagorinsky_lilly") || throw(ArgumentError("--closure must be none or smagorinsky_lilly"))
     kw[:closure] = opts["closure"] == "none" ? nothing : SmagorinskyLilly()
 end
-isnothing(z_faces) || (kw[:z_faces] = z_faces)
+if !isnothing(z_faces)
+    haskey(kw, :Nz) && error("--grid and --Nz/--resolution are exclusive")
+    kw[:z_faces] = z_faces
+end
 # Output files keep the campaign prefix that the analysis scripts read (`lasso_ena_profiles.jld2`, ...).
 output_prefix = "lasso_ena"
 cap = getopt("aerosol_ss_cap", "nothing") == "nothing" ? nothing : parse(Float64, opts["aerosol_ss_cap"])
@@ -90,7 +104,7 @@ if protocol === :covert_public_bin
         haskey(opts, option) && error("--$option applies to --protocol lasso_ena_official only")
     end
     member_name = getopt("microphysics", "p3_n75")
-    faces = something(z_faces, covert_public_bin_vertical_faces())
+    faces = something(z_faces, covert_public_bin_vertical_faces(; Nz = get(kw, :Nz, 192)))
     microphysics = microphysics_member(member_name; data, z_faces = faces, cap)
     output_dir = getopt("output", "output/covert_public_bin_$(getopt("microphysics", "p3_n75"))")
     @info "Building the Covert case on $(typeof(arch)) with $(Oceananigans.defaults.FloatType)" opts

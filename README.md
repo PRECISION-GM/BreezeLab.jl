@@ -44,6 +44,9 @@ julia --project cases/ena_covert.jl
 ```
 
 The default case is 256×256×192 for six simulated hours and is a substantial run.
+`COVERT_RESOLUTIONS` holds the resolution ladder on the fixed 8.96 km domain (`r128`: 128²×128,
+`r256`: 256²×192, `r512`: 512²×256, with Δt = 1, 0.5 and 0.25 s); the CLI selects one with
+`--resolution r512`.
 The example builds the case, runs it, and plots saved cloud-water and rain diagnostics.
 Edit the settings in [the readable case file](cases/ena_covert.jl), or use
 [the CLI](cases/cli/run_case.jl) for parameter sweeps and protocol/input selection.
