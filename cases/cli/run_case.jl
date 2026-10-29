@@ -67,7 +67,7 @@ function microphysics_member(name; data, z_faces, cap)
 end
 
 kw = Dict{Symbol, Any}()
-# --resolution r128|r256|r512 (Covert only): Nx, Ny, Nz and Δt of COVERT_RESOLUTIONS; --Nx/--Ny/--Nz/--dt override
+# --resolution r128|r256|r512 (Covert only): Nx, Ny, Nz, Lx, Ly and Δt of COVERT_RESOLUTIONS; explicit options override
 if haskey(opts, "resolution")
     protocol === :covert_public_bin || error("--resolution applies to --protocol covert_public_bin only")
     haskey(COVERT_RESOLUTIONS, Symbol(opts["resolution"])) ||

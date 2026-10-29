@@ -27,7 +27,7 @@ using CairoMakie
 Oceananigans.defaults.FloatType = Float32
 arch = GPU()
 resolution = COVERT_RESOLUTIONS.r256    # r128, r256 (the public 256² × 192 grid) or r512, all on the 8.96 km domain
-(; Nx, Ny, Nz, Δt) = resolution
+(; Nx, Ny, Nz, Lx, Ly, Δt) = resolution
 stop_time = 6hours
 timeseries_interval = 60seconds
 profile_interval = 1hour
@@ -36,7 +36,7 @@ slice_interval = 1minute    # movie standard: ≤ 15 sim-min per video second at
 microphysics = P3Microphysics(; cloud = CloudDroplets(; number_concentration = 75e6))
 
 output_dir = joinpath(pkgdir(BreezeLab), "output", "ena_covert")
-case = ena_covert(; arch, Nx, Ny, Nz, Δt, stop_time, microphysics,
+case = ena_covert(; arch, Nx, Ny, Nz, Lx, Ly, Δt, stop_time, microphysics,
                     output_dir, output_prefix = "ena",
                     timeseries_interval, profile_interval, slice_interval)
 simulation = case.simulation;

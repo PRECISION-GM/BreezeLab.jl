@@ -79,11 +79,13 @@ end
 The resolution ladder of the Covert case at the fixed 8.96 km domain: `r128` (128² × 128, 70 m,
 Δz = 15 m), `r256` (256² × 192, 35 m, Δz = 10 m: the public `caseid` grid) and `r512` (512² × 256,
 17.5 m, Δz = 7.5 m), each with its time step (the protocol's 0.5 s at 35 m, scaled with Δx).
+`Lx` and `Ly` are given explicitly: the default `Lx = Nx dx` would keep the namelist's 35 m
+spacing and change the domain instead.
 Pass `COVERT_RESOLUTIONS.r512...` to [`ena_covert`](@ref).
 """
-const COVERT_RESOLUTIONS = (r128 = (Nx = 128, Ny = 128, Nz = 128, Δt = 1.0),
-                            r256 = (Nx = 256, Ny = 256, Nz = 192, Δt = 0.5),
-                            r512 = (Nx = 512, Ny = 512, Nz = 256, Δt = 0.25))
+const COVERT_RESOLUTIONS = (r128 = (Nx = 128, Ny = 128, Nz = 128, Lx = 8960.0, Ly = 8960.0, Δt = 1.0),
+                            r256 = (Nx = 256, Ny = 256, Nz = 192, Lx = 8960.0, Ly = 8960.0, Δt = 0.5),
+                            r512 = (Nx = 512, Ny = 512, Nz = 256, Lx = 8960.0, Ly = 8960.0, Δt = 0.25))
 
 # The namelist switches of the Covert protocol: the constructor implements exactly these.
 const COVERT_NAMELIST = (sfc_flx_fxd = true, sfc_tau_fxd = true, doradsimple = true, dolongwave = true,

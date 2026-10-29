@@ -210,6 +210,7 @@ end
         @test length(f) == Nz + 1 && f[end] == 20000 && all(>(0), diff(f))
         @test all(diff(f[1:N_uniform+1]) .≈ Δz) && f[N_uniform+1] ≈ 1500
     end
+    @test all(r -> r.Lx == r.Ly == 8960, COVERT_RESOLUTIONS)          # one domain for the whole ladder
     # inversion-refined variant: 10 m to 800 m, 5 m over 800–1400 m, 10 m to 1500 m, the same 42 stretched cells
     fr = covert_inversion_refined_vertical_faces()
     @test length(fr) == 253 && fr[1] == 0 && fr[end] == 20000 && issorted(fr) && all(>(0), diff(fr))
