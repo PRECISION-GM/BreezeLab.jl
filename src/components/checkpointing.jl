@@ -15,3 +15,8 @@ Oceananigans.prognostic_state(::PrescribedStressUpdater) = nothing
 Oceananigans.prognostic_state(::SeaSurfaceTemperatureUpdater) = nothing
 Oceananigans.prognostic_state(::DiagnosticCCNProjection) = nothing
 Oceananigans.prognostic_state(::ProgressMessenger) = nothing   # wall-clock reference only
+
+# SAM's rad_simple longwave is recomputed from the state every step: nothing to save, and a
+# checkpoint written before this method existed (holding the struct itself) restores as well.
+Oceananigans.prognostic_state(::SimpleLongwaveRadiation) = nothing
+Oceananigans.restore_prognostic_state!(radiation::SimpleLongwaveRadiation, from) = radiation
