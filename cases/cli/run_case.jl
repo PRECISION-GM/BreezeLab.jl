@@ -99,10 +99,14 @@ haskey(opts, "profile_interval") && (kw[:profile_interval] = parse(Float64, opts
 haskey(opts, "slice_interval") && (kw[:slice_interval] = parse(Float64, opts["slice_interval"]))
 if haskey(opts, "closure") || haskey(opts, "prandtl")
     closure_name = getopt("closure", "smagorinsky_lilly")
-    closure_name in ("none", "smagorinsky_lilly") || throw(ArgumentError("--closure must be none or smagorinsky_lilly"))
-    closure_name == "none" && haskey(opts, "prandtl") && error("--prandtl needs --closure smagorinsky_lilly")
-    # --prandtl: the turbulent Prandtl number of Smagorinsky–Lilly (Oceananigans' default 1; SAM uses 1/3)
-    kw[:closure] = closure_name == "none" ? nothing : SmagorinskyLilly(; Pr = parse(Float64, getopt("prandtl", "1")))
+    closure_name in ("none", "smagorinsky_lilly", "moist_smagorinsky_lilly") ||
+        throw(ArgumentError("--closure must be none, smagorinsky_lilly or moist_smagorinsky_lilly"))
+    closure_name == "none" && haskey(opts, "prandtl") && error("--prandtl needs a Smagorinsky–Lilly --closure")
+    # --prandtl: the turbulent Prandtl number of Smagorinsky–Lilly (Oceananigans' default 1; SAM uses 1/3).
+    # moist_smagorinsky_lilly: Breeze's MoistSmagorinskyLilly, the Lilly stability reduction with the saturated N² in cloud
+    Pr = parse(Float64, getopt("prandtl", "1"))
+    kw[:closure] = closure_name == "none" ? nothing :
+                   closure_name == "smagorinsky_lilly" ? SmagorinskyLilly(; Pr) : MoistSmagorinskyLilly(; Pr)
 end
 # --scalar_advection_order: WENO order of the scalars (default: that of momentum, 5)
 haskey(opts, "scalar_advection_order") && (kw[:scalar_advection_order] = parse(Int, opts["scalar_advection_order"]))

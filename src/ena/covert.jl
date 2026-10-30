@@ -63,7 +63,8 @@ end
 
 Named vertical grids of the ENA cases: `:covert` ([`covert_public_bin_vertical_faces`](@ref)),
 `:covert_inversion_5m` ([`covert_inversion_refined_vertical_faces`](@ref)), `:covert_r128_inversion_5m`
-(the `r128` levels, 15 m, with 5 m over 990–1395 m: 182 cells) and `:lasso`
+(the `r128` levels, 15 m, with 5 m over 990–1395 m: 182 cells), `:covert_r256_inversion_5m` (the `r256`
+levels, 10 m, with 5 m over 990–1400 m: 233 cells) and `:lasso`
 ([`lasso_ena_vertical_faces`](@ref)). The name is what run scripts record in provenance.
 """
 function ena_vertical_faces(name)
@@ -72,8 +73,10 @@ function ena_vertical_faces(name)
     name === :covert_inversion_5m && return covert_inversion_refined_vertical_faces()
     name === :covert_r128_inversion_5m &&
         return covert_inversion_refined_vertical_faces(; Δz = 15.0, fine_bottom = 990.0, fine_top = 1395.0, N_stretch = 28)
+    name === :covert_r256_inversion_5m &&
+        return covert_inversion_refined_vertical_faces(; Δz = 10.0, fine_bottom = 990.0, fine_top = 1400.0, N_stretch = 42)
     name === :lasso && return lasso_ena_vertical_faces()
-    throw(ArgumentError("unknown vertical grid $name (covert, covert_inversion_5m, covert_r128_inversion_5m, lasso)"))
+    throw(ArgumentError("unknown vertical grid $name (covert, covert_inversion_5m, covert_r128_inversion_5m, covert_r256_inversion_5m, lasso)"))
 end
 
 """
