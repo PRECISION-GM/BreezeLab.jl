@@ -142,6 +142,8 @@ caller replaces is listed in `config.overrides` and appended to the label):
   and, by default, `scalar_advection_order` of the scalars)
 - `reference_extension = nothing`: `(z₁, z₂)` extends the anelastic reference profile's `z₁` values up
   to `z₂` (see `sounding_reference_state`; a sensitivity test, recorded as an override)
+- `simple_longwave = (;)`: keyword overrides of `SimpleLongwaveRadiation` (e.g. `(; F₀ = 70)`, the SAM/DYCOMS-II
+  default, instead of the LASSO-ENA 113 W m⁻²; a sensitivity, recorded as an override)
 - `radiation = :simple_longwave` (the protocol's SAM `rad_simple`, every step) or `:rrtmgp_longwave`
   (a sensitivity, recorded as an override: RRTMGP all-sky optics with the solar constant set to 0 so
   only longwave acts, every 60 s, over the sfc SST with emissivity 0.95, 10 μm / 30 μm liquid/ice
@@ -178,6 +180,7 @@ function ena_covert(; arch = GPU(),
                       sponge = SAMSponge(),
                       closure = SmagorinskyLilly(),
                       radiation = :simple_longwave,
+                      simple_longwave = (;),
                       advection_order = 5,
                       scalar_advection_order = advection_order,
                       reference_extension = nothing,
@@ -222,6 +225,7 @@ function ena_covert(; arch = GPU(),
                  if !isnothing(value)]
     radiation === :simple_longwave || push!(overrides, :radiation)
     isnothing(reference_extension) || push!(overrides, :reference_extension)
+    isempty(simple_longwave) || push!(overrides, :simple_longwave)
     nx, ny, nz = parse_caseid(namelist["caseid"])
     isnothing(Nz) || isnothing(z_faces) || throw(ArgumentError("give Nz or z_faces, not both"))
     z_faces = isnothing(z_faces) ? covert_public_bin_vertical_faces(; Nz = something(Nz, nz)) : z_faces
@@ -323,7 +327,7 @@ function ena_covert(; arch = GPU(),
     radiation_scheme = radiation
     sst_updater = nothing
     radiation = if radiation_scheme === :simple_longwave
-        SimpleLongwaveRadiation(grid; schedule = IterationInterval(1))
+        SimpleLongwaveRadiation(grid; schedule = IterationInterval(1), simple_longwave...)
     else
         surface_series = surface_time_series(grid, sfc, day0)
         Tₛ = Field{Center, Center, Nothing}(grid)
@@ -396,7 +400,7 @@ function ena_covert(; arch = GPU(),
                 microphysics_record(microphysics; reference_density = ρᵣ[1])...,
                 diagnostic_ccn, initialization = string(initialization),
                 initial_droplet_number = something(initial_droplet_number, 0),
-                radiation = radiation_scheme === :simple_longwave ? "SAM rad_simple longwave (every step)" :
+                radiation = radiation_scheme === :simple_longwave ? "SAM rad_simple longwave (every step): " * summary(radiation) :
                             "RRTMGP all-sky longwave only (solar constant 0), every 60 s, SST surface, emissivity 0.95, r_eff 10/30 μm",
                 surface = "prescribed H, LE and wind-aligned τ (SFC_FLX_FXD, SFC_TAU_FXD)",
                 wind_nudging = "none (donudging_uv = .false.)",
