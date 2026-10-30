@@ -33,7 +33,7 @@ opts = parse_args(ARGS)
 getopt(k, default) = get(opts, k, default)
 allowed = Set(["data", "protocol", "arch", "float", "seed", "epoch", "member", "dimensions", "microphysics", "aerosol_ss_cap",
                "resolution", "Nx", "Ny", "Nz", "Lx", "Ly", "hours", "checkpoint_interval", "pickup",
-               "process_rates", "process_rate_interval", "cfl", "dt", "max_dt", "lasso_grid", "grid", "initialization", "closure",
+               "process_rates", "process_rate_interval", "prandtl", "scalar_advection_order", "reference_extension", "cfl", "dt", "max_dt", "lasso_grid", "grid", "initialization", "closure",
                "profile_interval", "slice_interval", "liquid_reff", "radiation", "nudging", "surface_flux_law", "output"])
 unknown = setdiff(Set(keys(opts)), allowed)
 isempty(unknown) || error("unknown options: $(join(sort!(collect(unknown)), ", "))")
@@ -97,12 +97,20 @@ haskey(opts, "max_dt") && (kw[:max_Δt] = parse(Float64, opts["max_dt"]))
 haskey(opts, "initialization") && (kw[:initialization] = Symbol(opts["initialization"]))
 haskey(opts, "profile_interval") && (kw[:profile_interval] = parse(Float64, opts["profile_interval"]))
 haskey(opts, "slice_interval") && (kw[:slice_interval] = parse(Float64, opts["slice_interval"]))
-if haskey(opts, "closure")
-    opts["closure"] in ("none", "smagorinsky_lilly") || throw(ArgumentError("--closure must be none or smagorinsky_lilly"))
-    kw[:closure] = opts["closure"] == "none" ? nothing : SmagorinskyLilly()
+if haskey(opts, "closure") || haskey(opts, "prandtl")
+    closure_name = getopt("closure", "smagorinsky_lilly")
+    closure_name in ("none", "smagorinsky_lilly") || throw(ArgumentError("--closure must be none or smagorinsky_lilly"))
+    closure_name == "none" && haskey(opts, "prandtl") && error("--prandtl needs --closure smagorinsky_lilly")
+    # --prandtl: the turbulent Prandtl number of Smagorinsky–Lilly (Oceananigans' default 1; SAM uses 1/3)
+    kw[:closure] = closure_name == "none" ? nothing : SmagorinskyLilly(; Pr = parse(Float64, getopt("prandtl", "1")))
 end
+# --scalar_advection_order: WENO order of the scalars (default: that of momentum, 5)
+haskey(opts, "scalar_advection_order") && (kw[:scalar_advection_order] = parse(Int, opts["scalar_advection_order"]))
+# --reference_extension z₁,z₂: hold the anelastic reference profile at its z₁ values up to z₂ (Covert only)
+haskey(opts, "reference_extension") && (kw[:reference_extension] = Tuple(parse.(Float64, split(opts["reference_extension"], ','))))
 if !isnothing(z_faces)
-    haskey(kw, :Nz) && error("--grid and --Nz/--resolution are exclusive")
+    haskey(opts, "Nz") && error("--grid and --Nz are exclusive")
+    pop!(kw, :Nz, nothing)          # --grid replaces the vertical grid of --resolution
     kw[:z_faces] = z_faces
 end
 # Output files keep the campaign prefix that the analysis scripts read (`lasso_ena_profiles.jld2`, ...).
@@ -127,7 +135,7 @@ if protocol === :covert_public_bin
     case = ena_covert(; arch, data_dir = data, microphysics, output_dir, output_prefix,
                         perturbation = InitialPerturbation(; seed), kw...)
 else
-    for option in ("process_rates", "process_rate_interval", "pickup")
+    for option in ("process_rates", "process_rate_interval", "prandtl", "scalar_advection_order", "reference_extension", "pickup")
         haskey(opts, option) && error("--$option applies to --protocol covert_public_bin only")
     end
     haskey(opts, "member") || error("--member <LASSO run ID> is required with --protocol lasso_ena_official")

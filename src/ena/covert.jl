@@ -62,15 +62,18 @@ end
     ena_vertical_faces(name)
 
 Named vertical grids of the ENA cases: `:covert` ([`covert_public_bin_vertical_faces`](@ref)),
-`:covert_inversion_5m` ([`covert_inversion_refined_vertical_faces`](@ref)) and `:lasso`
+`:covert_inversion_5m` ([`covert_inversion_refined_vertical_faces`](@ref)), `:covert_r128_inversion_5m`
+(the `r128` levels, 15 m, with 5 m over 990–1395 m: 182 cells) and `:lasso`
 ([`lasso_ena_vertical_faces`](@ref)). The name is what run scripts record in provenance.
 """
 function ena_vertical_faces(name)
     name = Symbol(name)
     name === :covert && return covert_public_bin_vertical_faces()
     name === :covert_inversion_5m && return covert_inversion_refined_vertical_faces()
+    name === :covert_r128_inversion_5m &&
+        return covert_inversion_refined_vertical_faces(; Δz = 15.0, fine_bottom = 990.0, fine_top = 1395.0, N_stretch = 28)
     name === :lasso && return lasso_ena_vertical_faces()
-    throw(ArgumentError("unknown vertical grid $name (covert, covert_inversion_5m, lasso)"))
+    throw(ArgumentError("unknown vertical grid $name (covert, covert_inversion_5m, covert_r128_inversion_5m, lasso)"))
 end
 
 """
@@ -132,7 +135,10 @@ caller replaces is listed in `config.overrides` and appended to the label):
   `z_faces` (`covert_public_bin_vertical_faces(; Nz)`; give `Nz` or `z_faces`, not both)
 - `stop_time` (`nstop × dt`), `Δt` (`dt`), `max_Δt = Δt` (fixed step), `cfl = 0.7`
 - `translation_velocity` (namelist `ug`, `vg`): SAM's translating frame
-- `sponge = SAMSponge()`, `closure = SmagorinskyLilly()`, `advection_order = 5`
+- `sponge = SAMSponge()`, `closure = SmagorinskyLilly()`, `advection_order = 5` (WENO order of momentum
+  and, by default, `scalar_advection_order` of the scalars)
+- `reference_extension = nothing`: `(z₁, z₂)` extends the anelastic reference profile's `z₁` values up
+  to `z₂` (see `sounding_reference_state`; a sensitivity test, recorded as an override)
 - `radiation = :simple_longwave` (the protocol's SAM `rad_simple`, every step) or `:rrtmgp_longwave`
   (a sensitivity, recorded as an override: RRTMGP all-sky optics with the solar constant set to 0 so
   only longwave acts, every 60 s, over the sfc SST with emissivity 0.95, 10 μm / 30 μm liquid/ice
@@ -170,6 +176,8 @@ function ena_covert(; arch = GPU(),
                       closure = SmagorinskyLilly(),
                       radiation = :simple_longwave,
                       advection_order = 5,
+                      scalar_advection_order = advection_order,
+                      reference_extension = nothing,
                       perturbation = InitialPerturbation(),
                       initialization = :condensate_free,
                       initial_droplet_number = nothing,
@@ -210,6 +218,7 @@ function ena_covert(; arch = GPU(),
     overrides = [name for (name, value) in pairs((; Nx, Ny, Nz, Lx, Ly, z_faces, stop_time, Δt, translation_velocity))
                  if !isnothing(value)]
     radiation === :simple_longwave || push!(overrides, :radiation)
+    isnothing(reference_extension) || push!(overrides, :reference_extension)
     nx, ny, nz = parse_caseid(namelist["caseid"])
     isnothing(Nz) || isnothing(z_faces) || throw(ArgumentError("give Nz or z_faces, not both"))
     z_faces = isnothing(z_faces) ? covert_public_bin_vertical_faces(; Nz = something(Nz, nz)) : z_faces
@@ -240,7 +249,7 @@ function ena_covert(; arch = GPU(),
                            halo = (5, 5, 5), topology = (Periodic, Periodic, Bounded))
     FT = eltype(grid)
     constants = ThermodynamicConstants()
-    reference_state = sounding_reference_state(grid, profiles, constants)
+    reference_state = sounding_reference_state(grid, profiles, constants; extension = reference_extension)
     dynamics = AnelasticDynamics(reference_state)
     coriolis = FPlane(; latitude)
 
@@ -257,7 +266,7 @@ function ena_covert(; arch = GPU(),
         throw(ArgumentError("diagnostic_ccn = true needs P3 with a prognostic aerosol reservoir"))
     moisture_name = Breeze.AtmosphereModels.moisture_specific_name(microphysics)
     momentum_advection = WENO(order = advection_order)
-    scalar_advection = scalar_advection_schemes(advection_order, microphysics, moisture_name; energy_name = :ρθ)
+    scalar_advection = scalar_advection_schemes(scalar_advection_order, microphysics, moisture_name; energy_name = :ρθ)
 
     #####
     ##### Large-scale forcing (SAM forcing.f90, subsidence.f90, upperbound.f90, damping.f90)
@@ -387,7 +396,8 @@ function ena_covert(; arch = GPU(),
                 surface = "prescribed H, LE and wind-aligned τ (SFC_FLX_FXD, SFC_TAU_FXD)",
                 wind_nudging = "none (donudging_uv = .false.)",
                 sponge = isnothing(sponge) ? "nothing" : summary(sponge),
-                closure = isnothing(closure) ? "nothing" : summary(closure), advection_order,
+                closure = isnothing(closure) ? "nothing" : string(closure), advection_order, scalar_advection_order,
+                reference_extension = isnothing(reference_extension) ? "none" : collect(reference_extension),
                 stop_time, Δt, max_Δt, cfl,
                 time_stepping = max_Δt == Δt ? "fixed Δt = $Δt s" :
                                 "adaptive (initial Δt = $Δt s, cfl = $cfl, max_Δt = $max_Δt s); SAM used fixed dt",

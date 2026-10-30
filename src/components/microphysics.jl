@@ -119,16 +119,20 @@ function first_level_reference_density(data_dir, z_faces; moisture_basis = :mixi
 end
 
 """
-    sounding_reference_state(grid, profiles, constants)
+    sounding_reference_state(grid, profiles, constants; extension = nothing)
 
 Breeze `ReferenceState` of a SAM sounding: base pressure at the sea surface (z = 0) and the
-sounding's potential temperature and total water.
+sounding's potential temperature and total water. `extension = (z₁, z₂)` holds the reference
+at its `z₁` values from `z₁` up to `z₂`, which moves a sounding inversion jump just above `z₁`
+up to `z₂` (a sensitivity test of the reference profile; the initial state still follows the sounding).
 """
-sounding_reference_state(grid, profiles::SoundingProfiles, constants) =
-    ReferenceState(grid, constants;
-                   base_pressure = profiles.surface_pressure,
-                   potential_temperature = z -> profiles(:θ, z),
-                   vapor_mass_fraction = z -> profiles(:qᵗ, z))
+function sounding_reference_state(grid, profiles::SoundingProfiles, constants; extension = nothing)
+    ζ(z) = isnothing(extension) || !(extension[1] ≤ z < extension[2]) ? z : extension[1]
+    return ReferenceState(grid, constants;
+                          base_pressure = profiles.surface_pressure,
+                          potential_temperature = z -> profiles(:θ, ζ(z)),
+                          vapor_mass_fraction = z -> profiles(:qᵗ, ζ(z)))
+end
 
 is_p3(microphysics) = microphysics isa PredictedParticlePropertiesMicrophysics
 
