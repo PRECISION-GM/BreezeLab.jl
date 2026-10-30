@@ -1,11 +1,12 @@
 # The three microphysics members side by side through the whole six hours.
-#   julia --project analysis/animate_microphysics.jl [ANIMATION_FPS=12 ANIMATION_COMPRESSION=30]
+#   julia --project analysis/animate_microphysics.jl [ANIMATION_SPEED=15 ANIMATION_COMPRESSION=30]
+# The frame rate follows the movie standard from the frame spacing (analysis/animation_playback.jl).
 # The still version of this figure is analysis/microphysics_snapshot.jl. Colour ranges are fixed
 # over the run and shared down each row, so the columns can be read against each other and the
 # evolution read within a column.
 using CairoMakie, JLD2, Oceananigans, Statistics, Printf
 
-fps = parse(Int, get(ENV, "ANIMATION_FPS", "12"))
+include(joinpath(@__DIR__, "animation_playback.jl"))
 compression = parse(Int, get(ENV, "ANIMATION_COMPRESSION", "30"))
 runs = ("one-moment" => "covert_public_bin_one_moment_posmom_s60_theta",
         "P3, Nᶜˡ = 75 cm⁻³" => "covert_public_bin_p3_n75_posmom_s60_theta",
@@ -25,6 +26,9 @@ x = collect(xnodes(series[1].qcl.grid, Center())) ./ 1e3
 z = collect(znodes(series[1].qcl.grid, Center()))
 y = collect(ynodes(series[1].lwp.grid, Center())) ./ 1e3
 @info "microphysics animation" frames = length(t) hours = round(t[end]/3600, digits=2)
+playback = playback_framerate(t)
+fps = playback.framerate
+@info playback_note(playback)
 
 fig = Figure(size = (1500, 1200), fontsize = 13)
 ttl = Observable("")

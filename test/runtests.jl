@@ -632,6 +632,7 @@ if HAVE_COVERT
         @test case.model.radiation isa SimpleLongwaveRadiation
         @test !any(f -> f isa MeanProfileNudging, case.forcing.u)            # no wind nudging in the Covert protocol
         @test case.simulation.stop_time == 4.0
+        @test case.config.slice_interval == 60                    # movie standard: 1-min slices by default
         run!(case.simulation)
         @test all(f -> all(isfinite, interior(f)), values(Oceananigans.prognostic_fields(case.model)))
         # a Covert directory is never accepted as a LASSO bundle
