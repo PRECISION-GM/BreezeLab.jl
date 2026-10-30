@@ -41,7 +41,7 @@ stop_time = parse(Float64, get(ENV, "SEA_STARR_HOURS", "66")) * hours
 data_dir = get(ENV, "SEA_STARR_DATA", joinpath(pkgdir(BreezeLab), "data", "seastarr_22241697"))
 output_dir = get(ENV, "SEA_STARR_OUTPUT", joinpath(pkgdir(BreezeLab), "output", "sea_starr_$(lowercase(string(member)))"))
 checkpoint_interval = parse(Float64, get(ENV, "SEA_STARR_CHECKPOINT_HOURS", "3")) * hours
-fields_2d_interval = parse(Float64, get(ENV, "SEA_STARR_TWOD_MINUTES", "3")) * minutes   # animation cadence (plan views, lowest level, x–z slices)
+fields_2d_interval = parse(Float64, get(ENV, "SEA_STARR_TWOD_MINUTES", "1")) * minutes   # animation cadence (plan views, lowest level, x–z slices): 1 min for ≤ 15 sim-min/s playback at ≥ 10 fps
 
 case = sea_starr(; member, arch, Nx, Ny, stop_time, data_dir, output_dir, checkpoint_interval, fields_2d_interval,
                    output_prefix = "sea_starr_$(lowercase(string(member)))")
@@ -51,8 +51,8 @@ simulation = case.simulation;
 #
 # Provenance (driver path and checksum, configuration, departures, software revisions) is
 # written next to the output before the run starts; `case.config.output_storage_estimate_GB`
-# records the storage budget of the writers (at 192² × 288 and the 3-min animation cadence:
-# ≈ 14 GB hourly 3D, ≈ 3.4 GB 2-D/slices, 2.9 GB for the retained checkpoint).
+# records the storage budget of the writers (at 192² × 288 and the 1-min animation cadence, 66 h:
+# ≈ 28 GB hourly 3D, ≈ 11 GB 2-D/slices, ≈ 7 GB for the retained checkpoint; Float32 upper bounds).
 
 pickup = get(ENV, "SEA_STARR_PICKUP", "false") == "true"
 mkpath(output_dir)
