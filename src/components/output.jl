@@ -5,7 +5,8 @@
 """
     add_output_writers!(simulation; output_dir, output_prefix, profile_interval, timeseries_interval,
                         slice_interval, slice_height, extra_slice_heights = (;), y_averaged_sections = false,
-                        section_fields = (;), energy_budget_series = false, in_cloud_threshold = 1e-5)
+                        section_fields = (;), energy_budget_series = false, in_cloud_threshold = 1e-5,
+                        overwrite_files = true)
 
 Hourly-averaged profiles, domain-mean time series and the `_slices.jld2` snapshots, which always
 hold `qᶜˡ_xz`, `qʳ_xz`, `w_xz`, `θ_xz` (at y = Ly/2), `qᶜˡ_xy`, `w_xy` (at `slice_height`), and the
@@ -17,6 +18,8 @@ hold `qᶜˡ_xz`, `qʳ_xz`, `w_xz`, `θ_xz` (at y = Ly/2), `qᶜˡ_xy`, `w_xy` (
 - `section_fields`: a `NamedTuple` of further 3D fields or operations (process rates, for example),
   each written like `qᶜˡ`: `name_xz`, `name_xz_yavg` (with `y_averaged_sections`) and the xy slices
   listed under its name in `extra_slice_heights`.
+
+`overwrite_files = false` appends to existing files (a run picked up from a checkpoint).
 """
 function add_output_writers!(simulation; output_dir, output_prefix, profile_interval,
                              timeseries_interval, slice_interval, slice_height,
@@ -24,7 +27,8 @@ function add_output_writers!(simulation; output_dir, output_prefix, profile_inte
                              y_averaged_sections = false,
                              section_fields = (;),
                              energy_budget_series = false,
-                             in_cloud_threshold = 1e-5)
+                             in_cloud_threshold = 1e-5,
+                             overwrite_files = true)
     model = simulation.model
     grid = model.grid
     u, v, w = model.velocities
@@ -58,7 +62,7 @@ function add_output_writers!(simulation; output_dir, output_prefix, profile_inte
 
     simulation.output_writers[:profiles] =
         JLD2Writer(model, profiles; filename = joinpath(output_dir, output_prefix * "_profiles.jld2"),
-                   schedule = AveragedTimeInterval(profile_interval), overwrite_files = true)
+                   schedule = AveragedTimeInterval(profile_interval), overwrite_files)
 
     lwp = liquid_water_path(model; species=:cloud)
     rwp = liquid_water_path(model; species=:rain)
@@ -92,7 +96,7 @@ function add_output_writers!(simulation; output_dir, output_prefix, profile_inte
 
     simulation.output_writers[:timeseries] =
         JLD2Writer(model, timeseries; filename = joinpath(output_dir, output_prefix * "_timeseries.jld2"),
-                   schedule = TimeInterval(timeseries_interval), overwrite_files = true)
+                   schedule = TimeInterval(timeseries_interval), overwrite_files)
 
     z = Array(znodes(grid, Center()))
     level(height) = min(searchsortedfirst(z, height), length(z))
@@ -123,7 +127,7 @@ function add_output_writers!(simulation; output_dir, output_prefix, profile_inte
 
     simulation.output_writers[:slices] =
         JLD2Writer(model, slices; filename = joinpath(output_dir, output_prefix * "_slices.jld2"),
-                   schedule = TimeInterval(slice_interval), overwrite_files = true)
+                   schedule = TimeInterval(slice_interval), overwrite_files)
     return nothing
 end
 
@@ -131,6 +135,76 @@ end
 # becomes a Field computed on the slice only.
 section_slice(f::Oceananigans.Fields.Field, indices) = view(f, indices...)
 section_slice(f, indices) = Field(f; indices)
+
+# The index of the first node at or above `height` in the vertical location of `f`
+function vertical_level(f, height)
+    z = Array(znodes(f.grid, Oceananigans.Fields.location(f)[3]()))
+    return min(searchsortedfirst(z, height), length(z))
+end
+
+#####
+##### Microphysical process rates (Breeze's MicrophysicalProcessRate and precipitation_flux)
+#####
+
+const PROCESS_RATE_SLICE_HEIGHTS = (condensation = (750, 950, 1050), autoconversion = (950, 1050),
+                                    accretion = (950, 1050), rain_evaporation = (500, 950, 1050),
+                                    rain_precipitation_flux = (0, 750))
+
+"""
+    process_rate_outputs(model; rates = (:condensation, :autoconversion, :accretion, :rain_evaporation),
+                         heights = PROCESS_RATE_SLICE_HEIGHTS)
+
+Visualization outputs of the microphysical process rates (kg kg⁻¹ s⁻¹, per unit mass of moist air,
+from `MicrophysicalProcessRate`) and of the downward rain mass flux `rain_precipitation_flux`
+(kg m⁻² s⁻¹ at the z-faces, from `precipitation_flux(model; condensates = (:ρqʳ,))`). For each `name`:
+
+- `name_xz`: the xz section at y = Ly/2 [rate: kg kg⁻¹ s⁻¹; flux: kg m⁻² s⁻¹]
+- `name_xz_yavg`: the y-average [same units]
+- `name_xz_yint`: the y-integral of the mass rate per unit volume, `∫ ρᵣ rate dy` [kg m⁻² s⁻¹],
+  and of the flux, `∫ flux dy` [kg m⁻¹ s⁻¹]
+- `name_xy_<h>m`: xy slices at the levels in `heights` (`0` is the surface face of the flux)
+- `name_column`: the column integral `∫ ρᵣ rate dz` [kg m⁻² s⁻¹] (rates only)
+
+plus `condensation_column_positive` and `condensation_column_negative`, the column integrals of
+the condensing and (as a negative number) evaporating parts of the net cloud condensation.
+`ρᵣ` is the anelastic reference density.
+"""
+function process_rate_outputs(model; rates = (:condensation, :autoconversion, :accretion, :rain_evaporation),
+                              heights = PROCESS_RATE_SLICE_HEIGHTS)
+    grid = model.grid
+    ρ = reference_density(model)
+    j = max(1, size(grid, 2) ÷ 2)
+    outputs = (;)
+    add(name, output) = (outputs = merge(outputs, NamedTuple{(name,)}((output,))))
+
+    fields = NamedTuple(name => Breeze.MicrophysicalProcessRate(model, name) for name in rates)
+    flux = Breeze.precipitation_flux(model; condensates = (:ρqʳ,))
+    fields = merge(fields, (; rain_precipitation_flux = flux))
+
+    for (name, f) in pairs(fields)
+        is_rate = name !== :rain_precipitation_flux
+        add(Symbol(name, :_xz), section_slice(f, (:, j, :)))
+        add(Symbol(name, :_xz_yavg), Average(f, dims=2))
+        add(Symbol(name, :_xz_yint), Integral(is_rate ? ρ * f : f, dims=2))
+        for height in get(heights, name, ())
+            add(Symbol(name, :_xy_, round(Int, height), :m), section_slice(f, (:, :, vertical_level(f, height))))
+        end
+        is_rate && add(Symbol(name, :_column), Integral(ρ * f, dims=3))
+    end
+
+    if :condensation in rates
+        condensation = fields.condensation
+        positive = KernelFunctionOperation{Center, Center, Center}(positive_part, grid, condensation)
+        negative = KernelFunctionOperation{Center, Center, Center}(negative_part, grid, condensation)
+        add(:condensation_column_positive, Integral(ρ * positive, dims=3))
+        add(:condensation_column_negative, Integral(ρ * negative, dims=3))
+    end
+
+    return outputs
+end
+
+@inline positive_part(i, j, k, grid, f) = max(0, @inbounds f[i, j, k])
+@inline negative_part(i, j, k, grid, f) = min(0, @inbounds f[i, j, k])
 
 horizontally_reduced(f) = (loc = Oceananigans.Fields.location(f); loc[1] === Nothing && loc[2] === Nothing)
 

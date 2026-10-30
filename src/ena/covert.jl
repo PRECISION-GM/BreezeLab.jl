@@ -146,6 +146,9 @@ caller replaces is listed in `config.overrides` and appended to the label):
   near cloud top), `y_averaged_sections = true`, `section_fields = model -> (;)` (a function of the model
   returning further 3D fields or operations, such as process rates, written as xz sections, y-averaged
   sections and the xy slices named in `extra_slice_heights`; see `add_output_writers!`),
+  `process_rates` (on for P3: the `process_rate_outputs` in `<prefix>_process_rates.jld2` every
+  `process_rate_interval = slice_interval`, xy slices at `process_rate_heights`),
+  `overwrite_output = true` (`false` appends to existing output files, for a run picked up from a checkpoint),
   `progress_interval = 10minutes`, `checkpoint_interval = nothing`, `checkpoint_cleanup = true`
 """
 function ena_covert(; arch = GPU(),
@@ -181,6 +184,10 @@ function ena_covert(; arch = GPU(),
                       extra_slice_heights = (; w = (500, 750), qᶜˡ = (1100,)),
                       y_averaged_sections = true,
                       section_fields = model -> (;),
+                      process_rates = microphysics isa PredictedParticlePropertiesMicrophysics,
+                      process_rate_interval = slice_interval,
+                      process_rate_heights = PROCESS_RATE_SLICE_HEIGHTS,
+                      overwrite_output = true,
                       progress_interval = 10minutes,
                       checkpoint_interval = nothing,
                       checkpoint_cleanup = true)
@@ -353,7 +360,13 @@ function ena_covert(; arch = GPU(),
                             timeseries_interval, slice_interval, slice_height,
                             extra_slice_heights, y_averaged_sections,
                             section_fields = section_fields(model),
-                            energy_budget_series = true)
+                            energy_budget_series = true, overwrite_files = overwrite_output)
+        if process_rates
+            simulation.output_writers[:process_rates] =
+                JLD2Writer(model, process_rate_outputs(model; heights = process_rate_heights);
+                           filename = joinpath(output_dir, output_prefix * "_process_rates.jld2"),
+                           schedule = TimeInterval(process_rate_interval), overwrite_files = overwrite_output)
+        end
         if !isnothing(checkpoint_interval)
             simulation.output_writers[:checkpointer] =
                 Checkpointer(model; schedule = TimeInterval(checkpoint_interval), dir = output_dir,
@@ -381,7 +394,7 @@ function ena_covert(; arch = GPU(),
                 perturbation = string(perturbation),
                 write_output, output_dir = abspath(output_dir), output_prefix, profile_interval, timeseries_interval,
                 slice_interval, slice_height, extra_slice_heights,
-                y_averaged_sections, progress_interval,
+                y_averaged_sections, process_rates, process_rate_interval, overwrite_output, progress_interval,
                 checkpoint_interval = something(checkpoint_interval, 0), checkpoint_cleanup)
 
     return (; simulation, model, grid, config, inputs = paths,

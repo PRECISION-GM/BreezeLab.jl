@@ -37,7 +37,7 @@ export
     # diagnostics
     cloud_liquid, rain_mass_fraction, liquid_water_path, ice_water_path, precipitable_water, total_condensate,
     cloud_fraction, cloud_fraction_profile, total_cloud_fraction_profile,
-    surface_rain_flux, surface_ice_flux, cloud_boundaries, ProgressMessenger,
+    surface_rain_flux, surface_ice_flux, cloud_boundaries, ProgressMessenger, process_rate_outputs,
     ProcessRateAccumulators, process_rate_output_callback, PROCESS_RATE_NAMES, PROCESS_RATE_UNITS,
     # provenance
     write_provenance

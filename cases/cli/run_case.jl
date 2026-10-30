@@ -4,6 +4,7 @@
 #         --microphysics p3_n75 --arch gpu --Nx 256 --Ny 256 --hours 6 --output output/p3_n75
 #   julia --project cases/cli/run_case.jl --protocol covert_public_bin --data data/covert2022_bin \
 #         --resolution r512 --arch gpu --hours 6 --checkpoint_interval 1800 --output output/r512
+#   (add --pickup true to resume from the latest checkpoint in --output, appending to its output files)
 #   julia --project cases/cli/run_case.jl --protocol lasso_ena_official --data data/lasso/<member> \
 #         --member <member> --epoch 2017-07-18T00:00:00 --arch gpu --output output/lasso
 #
@@ -31,7 +32,8 @@ end
 opts = parse_args(ARGS)
 getopt(k, default) = get(opts, k, default)
 allowed = Set(["data", "protocol", "arch", "float", "seed", "epoch", "member", "dimensions", "microphysics", "aerosol_ss_cap",
-               "resolution", "Nx", "Ny", "Nz", "Lx", "Ly", "hours", "checkpoint_interval", "cfl", "dt", "max_dt", "lasso_grid", "grid", "initialization", "closure",
+               "resolution", "Nx", "Ny", "Nz", "Lx", "Ly", "hours", "checkpoint_interval", "pickup",
+               "process_rates", "process_rate_interval", "cfl", "dt", "max_dt", "lasso_grid", "grid", "initialization", "closure",
                "profile_interval", "slice_interval", "liquid_reff", "radiation", "nudging", "surface_flux_law", "output"])
 unknown = setdiff(Set(keys(opts)), allowed)
 isempty(unknown) || error("unknown options: $(join(sort!(collect(unknown)), ", "))")
@@ -78,6 +80,14 @@ haskey(opts, "Nx") && (kw[:Nx] = parse(Int, opts["Nx"]))
 haskey(opts, "Ny") && (kw[:Ny] = parse(Int, opts["Ny"]))
 haskey(opts, "Nz") && (kw[:Nz] = parse(Int, opts["Nz"]))
 haskey(opts, "checkpoint_interval") && (kw[:checkpoint_interval] = parse(Float64, opts["checkpoint_interval"]))
+# --pickup true: resume from the latest checkpoint (needs --checkpoint_interval) and append to the output files
+getopt("pickup", "false") in ("true", "false") || error("--pickup must be true or false")
+pickup = getopt("pickup", "false") == "true"
+pickup && !haskey(kw, :checkpoint_interval) && error("--pickup needs --checkpoint_interval")
+pickup && (kw[:overwrite_output] = false)
+# --process_rates true|false (Covert only; default: on for P3) and --process_rate_interval in seconds
+haskey(opts, "process_rates") && (kw[:process_rates] = parse(Bool, opts["process_rates"]))
+haskey(opts, "process_rate_interval") && (kw[:process_rate_interval] = parse(Float64, opts["process_rate_interval"]))
 haskey(opts, "Lx") && (kw[:Lx] = parse(Float64, opts["Lx"]))
 haskey(opts, "Ly") && (kw[:Ly] = parse(Float64, opts["Ly"]))
 haskey(opts, "hours") && (kw[:stop_time] = parse(Float64, opts["hours"]) * 3600)
@@ -117,6 +127,9 @@ if protocol === :covert_public_bin
     case = ena_covert(; arch, data_dir = data, microphysics, output_dir, output_prefix,
                         perturbation = InitialPerturbation(; seed), kw...)
 else
+    for option in ("process_rates", "process_rate_interval", "pickup")
+        haskey(opts, option) && error("--$option applies to --protocol covert_public_bin only")
+    end
     haskey(opts, "member") || error("--member <LASSO run ID> is required with --protocol lasso_ena_official")
     haskey(opts, "epoch") || error("--epoch <UTC DateTime> is required with --protocol lasso_ena_official")
     haskey(opts, "seed") && error("--seed applies to the Covert protocol; LASSO uses the namelist perturbation")
@@ -151,7 +164,8 @@ else
 end
 
 mkpath(output_dir)
-provenance = write_provenance(joinpath(output_dir, "provenance.toml"), case;
+provenance_file = pickup ? "provenance_pickup_$(Dates.format(Dates.now(), "yyyymmddTHHMMSS")).toml" : "provenance.toml"
+provenance = write_provenance(joinpath(output_dir, provenance_file), case;
                               extra = (; command = join(ARGS, " "), hostname = gethostname(), vertical_grid,
                                          microphysics_member = member_name, aerosol_supersaturation_cap = something(cap, 0.0),
                                          gpu = CUDA.functional() ? CUDA.name(CUDA.device()) : "none"))
@@ -160,5 +174,5 @@ provenance = write_provenance(joinpath(output_dir, "provenance.toml"), case;
 println(case.model)
 
 wall = time()
-run!(case.simulation)
+run!(case.simulation; pickup)
 @info "Finished in $(round((time() - wall) / 60, digits=1)) minutes; output in $output_dir"
