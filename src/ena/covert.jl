@@ -245,8 +245,10 @@ function ena_covert(; arch = GPU(),
     #####
 
     Nz = length(z_faces) - 1
+    # WENO orders above 7 need a sixth horizontal halo point
+    halo = max(advection_order, scalar_advection_order) > 7 ? (6, 6, 5) : (5, 5, 5)
     grid = RectilinearGrid(arch; size = (Nx, Ny, Nz), x = (0, Lx), y = (0, Ly), z = z_faces,
-                           halo = (5, 5, 5), topology = (Periodic, Periodic, Bounded))
+                           halo, topology = (Periodic, Periodic, Bounded))
     FT = eltype(grid)
     constants = ThermodynamicConstants()
     reference_state = sounding_reference_state(grid, profiles, constants; extension = reference_extension)
