@@ -155,7 +155,7 @@ version = "1.21.7+0"
 
 [[deps.Breeze]]
 deps = ["Adapt", "Artifacts", "Dates", "DocStringExtensions", "GPUArraysCore", "InteractiveUtils", "JLD2", "KernelAbstractions", "LazyArtifacts", "Oceananigans", "OffsetArrays", "Printf", "ReactantCore", "SpecialFunctions", "Statistics"]
-path = "../Breeze-ena-runs"
+path = "../Breeze-ena-noforce"
 uuid = "660aa2fb-d4c8-4359-a52c-9c057bc511da"
 version = "0.13.0"
 

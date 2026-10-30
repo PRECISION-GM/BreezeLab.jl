@@ -30,7 +30,7 @@ NumericalEarth = "904d977b-046a-4731-8b86-9235c0d1ef02"
 BreezeLabNumericalEarthExt = "NumericalEarth"
 
 [sources]
-Breeze = {path = "../Breeze-ena-runs"}
+Breeze = {path = "../Breeze-ena-noforce"}
 
 [compat]
 Breeze = "0.13"
