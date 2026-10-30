@@ -20,3 +20,5 @@ Oceananigans.prognostic_state(::ProgressMessenger) = nothing   # wall-clock refe
 # checkpoint written before this method existed (holding the struct itself) restores as well.
 Oceananigans.prognostic_state(::SimpleLongwaveRadiation) = nothing
 Oceananigans.restore_prognostic_state!(radiation::SimpleLongwaveRadiation, from) = radiation
+# (and disambiguated from Oceananigans' `restore_prognostic_state!(obj, ::Nothing)`)
+Oceananigans.restore_prognostic_state!(radiation::SimpleLongwaveRadiation, ::Nothing) = radiation
