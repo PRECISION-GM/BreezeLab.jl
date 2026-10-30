@@ -33,7 +33,7 @@ opts = parse_args(ARGS)
 getopt(k, default) = get(opts, k, default)
 allowed = Set(["data", "protocol", "arch", "float", "seed", "epoch", "member", "dimensions", "microphysics", "aerosol_ss_cap",
                "resolution", "Nx", "Ny", "Nz", "Lx", "Ly", "hours", "checkpoint_interval", "pickup",
-               "process_rates", "process_rate_interval", "prandtl", "scalar_advection_order", "reference_extension", "lw_F0", "cfl", "dt", "max_dt", "lasso_grid", "grid", "initialization", "closure",
+               "process_rates", "process_rate_interval", "prandtl", "scalar_advection_order", "reference_extension", "lw_F0", "dynamic_averaging", "cfl", "dt", "max_dt", "lasso_grid", "grid", "initialization", "closure",
                "profile_interval", "slice_interval", "liquid_reff", "radiation", "nudging", "surface_flux_law", "output"])
 unknown = setdiff(Set(keys(opts)), allowed)
 isempty(unknown) || error("unknown options: $(join(sort!(collect(unknown)), ", "))")
@@ -99,14 +99,21 @@ haskey(opts, "profile_interval") && (kw[:profile_interval] = parse(Float64, opts
 haskey(opts, "slice_interval") && (kw[:slice_interval] = parse(Float64, opts["slice_interval"]))
 if haskey(opts, "closure") || haskey(opts, "prandtl")
     closure_name = getopt("closure", "smagorinsky_lilly")
-    closure_name in ("none", "smagorinsky_lilly", "moist_smagorinsky_lilly") ||
-        throw(ArgumentError("--closure must be none, smagorinsky_lilly or moist_smagorinsky_lilly"))
+    closure_name in ("none", "smagorinsky_lilly", "moist_smagorinsky_lilly", "dynamic_smagorinsky") ||
+        throw(ArgumentError("--closure must be none, smagorinsky_lilly, moist_smagorinsky_lilly or dynamic_smagorinsky"))
+    closure_name == "dynamic_smagorinsky" && haskey(opts, "prandtl") && error("--prandtl applies to the Smagorinsky–Lilly closures")
     closure_name == "none" && haskey(opts, "prandtl") && error("--prandtl needs a Smagorinsky–Lilly --closure")
     # --prandtl: the turbulent Prandtl number of Smagorinsky–Lilly (Oceananigans' default 1; SAM uses 1/3).
     # moist_smagorinsky_lilly: Breeze's MoistSmagorinskyLilly, the Lilly stability reduction with the saturated N² in cloud
     Pr = parse(Float64, getopt("prandtl", "1"))
+    # dynamic_smagorinsky: Oceananigans' DynamicSmagorinsky, Lagrangian averaging by default;
+    # --dynamic_averaging xy averages the coefficient over horizontal planes instead
+    averaging = getopt("dynamic_averaging", "lagrangian")
+    averaging in ("lagrangian", "xy") || error("--dynamic_averaging must be lagrangian or xy")
     kw[:closure] = closure_name == "none" ? nothing :
-                   closure_name == "smagorinsky_lilly" ? SmagorinskyLilly(; Pr) : MoistSmagorinskyLilly(; Pr)
+                   closure_name == "smagorinsky_lilly" ? SmagorinskyLilly(; Pr) :
+                   closure_name == "moist_smagorinsky_lilly" ? MoistSmagorinskyLilly(; Pr) :
+                   averaging == "xy" ? DynamicSmagorinsky(; averaging = (1, 2)) : DynamicSmagorinsky()
 end
 # --lw_F0: the cloud-top longwave flux parameter F₀ of SAM rad_simple [W m⁻²] (Covert default: LASSO's 113; SAM/DYCOMS 70)
 haskey(opts, "lw_F0") && (kw[:simple_longwave] = (; F₀ = parse(Float64, opts["lw_F0"])))
@@ -141,7 +148,7 @@ if protocol === :covert_public_bin
     case = ena_covert(; arch, data_dir = data, microphysics, output_dir, output_prefix,
                         perturbation = InitialPerturbation(; seed), kw...)
 else
-    for option in ("process_rates", "process_rate_interval", "prandtl", "scalar_advection_order", "reference_extension", "lw_F0", "pickup")
+    for option in ("process_rates", "process_rate_interval", "prandtl", "scalar_advection_order", "reference_extension", "lw_F0", "dynamic_averaging", "pickup")
         haskey(opts, option) && error("--$option applies to --protocol covert_public_bin only")
     end
     haskey(opts, "member") || error("--member <LASSO run ID> is required with --protocol lasso_ena_official")
