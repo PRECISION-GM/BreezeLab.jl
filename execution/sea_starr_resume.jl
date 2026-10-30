@@ -4,7 +4,8 @@
 #   julia --project=<worktree> execution/sea_starr_resume.jl
 # Environment (as cases/sea_starr.jl, plus the resume settings):
 #   SEA_STARR_MEMBER, SEA_STARR_NX, SEA_STARR_HOURS, SEA_STARR_DATA, SEA_STARR_CHECKPOINT_HOURS,
-#   SEA_STARR_TWOD_MINUTES (only if the original run set it), SEA_STARR_OUTPUT (the new segment directory),
+#   SEA_STARR_TWOD_MINUTES (if the original run set it; the constructor default is 1 min from 2026-10-13, 3 min before —
+#   the same-commit worktree keeps the original default), SEA_STARR_OUTPUT (the new segment directory),
 #   SEA_STARR_RESUME_CHECKPOINT  checkpoint file to restore,
 #   SEA_STARR_RESUME_FROM        the original run directory (read only: run.log for Δt, time series for continuity),
 #   SEA_STARR_ARCH = gpu | cpu,  SEA_STARR_RESUME_STEPS (optional; stop after this many steps — CPU pre-check).

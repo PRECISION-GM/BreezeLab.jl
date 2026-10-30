@@ -71,7 +71,8 @@ Keyword arguments (protocol defaults):
 - `sponge = SAMSponge(damping_depth_fraction=0.15)`: numerical damping of the top 15 % (not in the protocol)
 - `closure = SmagorinskyLilly()`, `advection_order = 5`, `perturbation = InitialPerturbation()`
 - output: `output_dir`, `output_prefix`, `statistics_interval = 15minutes`, `timeseries_interval = 60`,
-  `fields_2d_interval = 3minutes` (plan-view fields, lowest-level fields and x–z slices for animations; ≥ 4× finer than the 15-min statistics),
+  `fields_2d_interval = 1minute` (plan-view fields, lowest-level fields and x–z slices for animations: 1 min supports ≤ 15 simulated
+  minutes per second of video at ≥ 10 fps; ≥ 4× finer than the 15-min statistics),
   `fields_3d_interval = 1hour`, `checkpoint_interval = 3hours` (or `nothing`),
   `write_output = true`, `progress_interval = 10minutes`
 """
@@ -119,7 +120,7 @@ function sea_starr(; member = :CTRL,
                      output_prefix = "sea_starr_$(lowercase(string(member)))",
                      statistics_interval = 15minutes,
                      timeseries_interval = 60,
-                     fields_2d_interval = 3minutes,
+                     fields_2d_interval = 1minute,
                      fields_3d_interval = 1hour,
                      checkpoint_interval = 3hours,
                      write_output = true,
@@ -460,7 +461,7 @@ function add_sea_starr_output_writers!(simulation; output_dir, output_prefix, st
                    schedule = TimeInterval(timeseries_interval), overwrite_files = true)
 
     # Plan-view fields, lowest-level fields and x–z slices through the domain centre at the animation
-    # cadence (`fields_2d_interval`, 3 min by default: ≥ 4× finer than the 15-min statistics so that
+    # cadence (`fields_2d_interval`, 1 min by default: ≥ 4× finer than the 15-min statistics so that
     # animations are smooth); the 15-min statistics, 1-min time series and hourly 3D follow the protocol.
     j = max(1, size(grid, 2) ÷ 2)
     fields_2d = (; cwp, rwp, rain, zi, nᵃ_column = columns.nᵃ, n_total_column = columns.total,

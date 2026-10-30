@@ -15,7 +15,14 @@
 #
 #   julia --project analysis/animate_sea_starr.jl \
 #       --ctrl runs/ctrl_full_66h_job211 --n100 runs/n100_full_66h_job214 --n030 runs/n030_full_66h_job218 \
-#       --copy-to /shared/home/greg/breezelab-work/campaign-figures/animations [--max-frames N] [--framerate 12]
+#       --copy-to /shared/home/greg/breezelab-work/campaign-figures/animations [--max-frames N]
+#       [--playback-minutes 15] [--overview-hours 1] [--fps-min 10] [--fps-max 15] [--framerate F]
+#
+# Playback: every saved frame is used (full cadence). The frame rate follows from the frame spacing Δ and a target playback
+# speed — at most `--playback-minutes` simulated minutes per second of video for the plan views and cross-section (default 15)
+# and about `--overview-hours` simulated hours per second for the time–height overview (default 1): fps = target / Δ, capped at
+# `--fps-max` (which only slows playback). When the frames are too coarse for `--fps-min`, each frame is repeated so that the
+# video is encoded at 10–15 fps while still playing at the target speed. `--framerate F` overrides this (no repetition).
 #
 # Outputs go to <run>/animations/ (the comparison under the CTRL run) and are copied to
 # --copy-to with a README listing fields, units, cadence and the source commit.
@@ -55,7 +62,11 @@ n030_dirs = segment_dirs(get(opts, "n030", "runs/n030_full_66h_job218"))
 ctrl_dir = first(ctrl_dirs); n100_dir = first(n100_dirs); n030_dir = first(n030_dirs)
 copy_to = get(opts, "copy-to", "/shared/home/greg/breezelab-work/campaign-figures/animations")
 max_frames = parse(Int, get(opts, "max-frames", "100000"))
-framerate = parse(Int, get(opts, "framerate", "12"))
+framerate_override = haskey(opts, "framerate") ? parse(Float64, opts["framerate"]) : nothing
+playback_minutes = parse(Float64, get(opts, "playback-minutes", "15"))   # cloud-scale movies: ≤ this many simulated minutes per video second
+overview_hours = parse(Float64, get(opts, "overview-hours", "1"))        # time–height overview: ≈ this many simulated hours per video second
+fps_min = parse(Float64, get(opts, "fps-min", "10"))
+fps_max = parse(Float64, get(opts, "fps-max", "15"))
 trajectories = get(opts, "trajectories", "/shared/home/greg/breezelab-runs/20261006/inputs/mip_sources/seastarr_22241697/SEA_STARR_Raw_Trajectories.nc")
 compression = parse(Int, get(opts, "compression", "24"))
 members = [(:CTRL, ctrl_dirs, "sea_starr_ctrl"), (:N100, n100_dirs, "sea_starr_n100"), (:N030, n030_dirs, "sea_starr_n030")]
@@ -69,7 +80,7 @@ if haskey(opts, "planview")
 end
 tag = get(opts, "tag", "ctrl_n100_n030")
 ctrl_tag = get(opts, "ctrl-tag", "ctrl")
-commit = try strip(read(`git rev-parse --short HEAD`, String)) catch; "unknown" end
+commit = try strip(read(`git -C $(@__DIR__) rev-parse --short HEAD`, String)) catch; "unknown" end   # the commit of this script, not of the working directory
 
 epoch = DateTime(2017, 8, 15, 21)     # driver start (seconds since 2017-08-15 21:00:00 UTC)
 width = 1000                          # px, the maximum requested width
@@ -122,10 +133,34 @@ function montage(frames, path; frame_titles=nothing)
     return path
 end
 
-function record_with_montage(fig, update!, frames, mp4_path, png_path; montage_frames)
+"""
+    playback_timing(times, frames, target)
+
+Frame rate and per-frame repetition for frames at `times[frames]` (s) to play at `target` simulated seconds per video second:
+`(; fps, repeat, spacing, playback)` with `playback` the achieved simulated seconds per video second (≤ target).
+"""
+function playback_timing(times, frames, target)
+    spacing = length(frames) > 1 ? median(diff(Float64.(times[frames]))) : target
+    if !isnothing(framerate_override)
+        fps = max(1, round(Int, framerate_override))
+        return (; fps, repeat = 1, spacing, playback = fps * spacing)
+    end
+    natural = target / spacing                      # frames per second that play exactly at the target speed
+    repeat = natural ≥ fps_min ? 1 : ceil(Int, fps_min / natural)   # coarse frames: show each one `repeat` times
+    # integer encoding rate, rounded down and capped at fps_max: playback is never faster than the target
+    fps = max(1, floor(Int, min(fps_max, natural * repeat) + 1e-9))
+    return (; fps, repeat, spacing, playback = fps / repeat * spacing)
+end
+
+timing_label(timing) = @sprintf("%.0f s frame spacing, %d fps%s, %.1f simulated min per video second", timing.spacing, timing.fps,
+                                timing.repeat > 1 ? " (each frame shown $(timing.repeat)×)" : "", timing.playback / 60)
+
+function record_with_montage(fig, update!, frames, mp4_path, png_path; montage_frames, timing)
     # H.264 "high" profile with 4:2:0 pixels plays in browsers (Makie's default is high422)
-    record(fig, mp4_path, frames; framerate, compression, profile = "high", pixel_format = "yuv420p") do n
-        update!(n)
+    shown = Ref(-1)
+    sequence = repeat(collect(frames), inner = timing.repeat)
+    record(fig, mp4_path, sequence; framerate = timing.fps, compression, profile = "high", pixel_format = "yuv420p") do n
+        n == shown[] || (update!(n); shown[] = n)    # a repeated frame is rendered without re-reading the output
     end
     # `colorbuffer` returned the last recorded frame after `record`; saving re-renders the scene
     images = map(montage_frames) do n
@@ -205,9 +240,10 @@ function plan_view_animation()
     end
     mp4 = mkpath_for(joinpath(ctrl_dir, "animations", "seastarr_planview_lwp_rain_$(tag).mp4"))
     png = joinpath(ctrl_dir, "animations", "seastarr_planview_lwp_rain_$(tag)_montage.png")
-    record_with_montage(fig, update!, frames, mp4, png; montage_frames = montage_indices(frames))
-    @info "plan views: $(length(frames)) frames (15 min), t = $(common[first(frames)]/3600) – $(common[last(frames)]/3600) h; LWP range 0–$(round(lwp_max)) g m⁻², rain 0–$(round(rain_max; digits=2)) mm d⁻¹" mp4 fmt_mb(mp4) png
-    return (mp4, png, length(frames), common[last(frames)], lwp_max, rain_max)
+    timing = playback_timing(common, frames, 60 * playback_minutes)
+    record_with_montage(fig, update!, frames, mp4, png; montage_frames = montage_indices(frames), timing)
+    @info "plan views: $(length(frames)) frames ($(timing_label(timing))), t = $(common[first(frames)]/3600) – $(common[last(frames)]/3600) h; LWP range 0–$(round(lwp_max)) g m⁻², rain 0–$(round(rain_max; digits=2)) mm d⁻¹" mp4 fmt_mb(mp4) png
+    return (mp4, png, length(frames), common[last(frames)], lwp_max, rain_max, timing)
 end
 
 #####
@@ -260,9 +296,10 @@ function cross_section_animation()
     end
     mp4 = mkpath_for(joinpath(ctrl_dir, "animations", "seastarr_$(ctrl_tag)_xz_cloud_rain_aerosol.mp4"))
     png = joinpath(ctrl_dir, "animations", "seastarr_$(ctrl_tag)_xz_cloud_rain_aerosol_montage.png")
-    record_with_montage(fig, update!, frames, mp4, png; montage_frames = montage_indices(frames))
-    @info "cross-section: $(length(frames)) frames ($(cadence) min cadence, $(has_slices ? "saved slices" : "hourly 3D")) to t = $(qc.times[last(frames)]/3600) h" mp4 fmt_mb(mp4) png
-    return (mp4, png, length(frames), qc.times[last(frames)])
+    timing = playback_timing(qc.times, frames, 60 * playback_minutes)
+    record_with_montage(fig, update!, frames, mp4, png; montage_frames = montage_indices(frames), timing)
+    @info "cross-section: $(length(frames)) frames ($(has_slices ? "saved slices" : "hourly 3D"), $(timing_label(timing))) to t = $(qc.times[last(frames)]/3600) h" mp4 fmt_mb(mp4) png
+    return (mp4, png, length(frames), qc.times[last(frames)], timing, has_slices)
 end
 
 #####
@@ -315,9 +352,10 @@ function time_height_animation()
     end
     mp4 = mkpath_for(joinpath(ctrl_dir, "animations", "seastarr_$(ctrl_tag)_time_height_aerosol_droplets.mp4"))
     png = joinpath(ctrl_dir, "animations", "seastarr_$(ctrl_tag)_time_height_aerosol_droplets_montage.png")
-    record_with_montage(fig, update!, frames, mp4, png; montage_frames = montage_indices(frames))
-    @info "time–height: $(length(frames)) frames (15 min) to t = $(t[last(frames)]) h" mp4 fmt_mb(mp4) png
-    return (mp4, png, length(frames), na.times[last(frames)])
+    timing = playback_timing(na.times, frames, 3600 * overview_hours)
+    record_with_montage(fig, update!, frames, mp4, png; montage_frames = montage_indices(frames), timing)
+    @info "time–height: $(length(frames)) frames ($(timing_label(timing))) to t = $(t[last(frames)]) h" mp4 fmt_mb(mp4) png
+    return (mp4, png, length(frames), na.times[last(frames)], timing)
 end
 
 #####
@@ -341,20 +379,22 @@ open(joinpath(copy_to, readme), "w") do io
     println(io, "Rendered ", Dates.format(now(UTC), "yyyy-mm-dd HH:MM"), " UTC by `analysis/animate_sea_starr.jl` (BreezeLab commit ", commit, ") from the ",
             "JLD2 output of the 66 h runs on wpcluster: plan-view panels ", join(["$(m[1]) `$(segment_label(m[2]))`" for m in members], ", "),
             "; cross-section and time–height from `", segment_label(ctrl_dirs), "` (restart segments stitched at their restore times; runs may still be in progress ",
-            "when rendered; the frames stop at the last record available). MP4 = H.264, ", width, " px wide, ", framerate, " frames per second.\n")
+            "when rendered; the frames stop at the last record available). MP4 = H.264, ", width, " px wide; every saved frame is used and the frame rate follows ",
+            "from the frame spacing and the target playback speed (≤ ", playback_minutes, " simulated min per video second for the plan views and cross-section, ",
+            "≈ ", overview_hours, " simulated h per video second for the time–height overview, encoded at ", fps_min, "–", fps_max, " fps).\n")
     r = results["planview"]
     println(io, "- `", basename(r[1]), "` / `", basename(r[2]), "`: plan views of the liquid water path (cloud + rain water, g m⁻², top row, shared range 0–",
             round(Int, r[5]), ") and the surface rain rate (mm day⁻¹, bottom row, shared range 0–", round(r[6]; digits = 2),
-            ") for ", join(string.(first.(members)), ", "), " at the same times (each panel on its own domain); 15 min cadence, ", r[3], " frames to t = ", round(r[4] / 3600; digits = 2),
-            " h. Title: UTC and the local solar time at the composite trajectory's mean longitude (GEOS-5 raw trajectories).")
+            ") for ", join(string.(first.(members)), ", "), " at the same times (each panel on its own domain); ", r[3], " frames to t = ", round(r[4] / 3600; digits = 2),
+            " h (", timing_label(r[7]), "). Title: UTC and the local solar time at the composite trajectory's mean longitude (GEOS-5 raw trajectories).")
     r = results["xz"]
     println(io, "- `", basename(r[1]), "` / `", basename(r[2]), "`: x–z cross-section of `", segment_label(ctrl_dirs), "` through the domain centre below 3 km: cloud water qᶜˡ (g kg⁻¹), ",
-            "rain water qʳ (g kg⁻¹, log scale 10⁻⁴–10⁻¹) and interstitial aerosol number nᵃ (mg⁻¹ = 10⁶ kg⁻¹) with droplet-number contours (mg⁻¹); hourly 3D output, ",
-            r[3], " frames to t = ", round(r[4] / 3600; digits = 2), " h.")
+            "rain water qʳ (g kg⁻¹, log scale 10⁻⁴–10⁻¹) and interstitial aerosol number nᵃ (mg⁻¹ = 10⁶ kg⁻¹) with droplet-number contours (mg⁻¹); ",
+            r[6] ? "saved x–z slices" : "hourly 3D output", ", ", r[3], " frames to t = ", round(r[4] / 3600; digits = 2), " h (", timing_label(r[5]), ").")
     r = results["time_height"]
     println(io, "- `", basename(r[1]), "` / `", basename(r[2]), "`: time–height (", segment_label(ctrl_dirs), ") of the horizontal-mean interstitial aerosol nᵃ and droplet number nᶜˡ (mg⁻¹, 15 min averages) ",
             "below 3 km, revealed as time advances, with the domain-mean inversion height (white) and the ⟨qᶜˡ⟩ = 0.01 g kg⁻¹ contour; ", r[3], " frames to t = ",
-            round(r[4] / 3600; digits = 2), " h.")
+            round(r[4] / 3600; digits = 2), " h (", timing_label(r[5]), "; ", @sprintf("%.2f", r[5].playback / 3600), " simulated h per video second).")
     println(io, "\nTime axis: seconds since the driver start 2017-08-15 21:00 UTC. The runs carry the labelled protocol departures listed in docs/cases/sea_starr.md ",
             "(no aerosol optics, radiation column ending at 6.5 km, fixed solar coordinate, linear nudging ramp): these are exploratory CTRL/N100/N030 integrations, not validated results.")
 end
