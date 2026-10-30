@@ -33,7 +33,7 @@ opts = parse_args(ARGS)
 getopt(k, default) = get(opts, k, default)
 allowed = Set(["data", "protocol", "arch", "float", "seed", "epoch", "member", "dimensions", "microphysics", "aerosol_ss_cap",
                "resolution", "Nx", "Ny", "Nz", "Lx", "Ly", "hours", "checkpoint_interval", "pickup",
-               "process_rates", "process_rate_interval", "prandtl", "scalar_advection_order", "reference_extension", "lw_F0", "dynamic_averaging", "advection_order", "cfl", "dt", "max_dt", "lasso_grid", "grid", "initialization", "closure",
+               "process_rates", "process_rate_interval", "prandtl", "scalar_advection_order", "reference_extension", "lw_F0", "dynamic_averaging", "advection_order", "microphysics_advection_order", "cfl", "dt", "max_dt", "lasso_grid", "grid", "initialization", "closure",
                "profile_interval", "slice_interval", "liquid_reff", "radiation", "nudging", "surface_flux_law", "output"])
 unknown = setdiff(Set(keys(opts)), allowed)
 isempty(unknown) || error("unknown options: $(join(sort!(collect(unknown)), ", "))")
@@ -119,6 +119,8 @@ end
 haskey(opts, "lw_F0") && (kw[:simple_longwave] = (; F₀ = parse(Float64, opts["lw_F0"])))
 # --advection_order: WENO order of momentum (default 5; the scalars follow it unless --scalar_advection_order is given)
 haskey(opts, "advection_order") && (kw[:advection_order] = parse(Int, opts["advection_order"]))
+# --microphysics_advection_order: WENO order of the microphysical prognostics (default: the scalar order)
+haskey(opts, "microphysics_advection_order") && (kw[:microphysics_advection_order] = parse(Int, opts["microphysics_advection_order"]))
 # --scalar_advection_order: WENO order of the scalars (default: that of momentum, 5)
 haskey(opts, "scalar_advection_order") && (kw[:scalar_advection_order] = parse(Int, opts["scalar_advection_order"]))
 # --reference_extension z₁,z₂: hold the anelastic reference profile at its z₁ values up to z₂ (Covert only)
@@ -150,7 +152,8 @@ if protocol === :covert_public_bin
     case = ena_covert(; arch, data_dir = data, microphysics, output_dir, output_prefix,
                         perturbation = InitialPerturbation(; seed), kw...)
 else
-    for option in ("process_rates", "process_rate_interval", "prandtl", "scalar_advection_order", "reference_extension", "lw_F0", "dynamic_averaging", "advection_order", "pickup")
+    for option in ("process_rates", "process_rate_interval", "pickup", "scalar_advection_order",
+                   "microphysics_advection_order", "reference_extension", "lw_F0")
         haskey(opts, option) && error("--$option applies to --protocol covert_public_bin only")
     end
     haskey(opts, "member") || error("--member <LASSO run ID> is required with --protocol lasso_ena_official")

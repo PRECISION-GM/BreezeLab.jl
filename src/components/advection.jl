@@ -3,7 +3,8 @@
 #####
 
 """
-    scalar_advection_schemes(order, microphysics, moisture_name; bounded_condensates=true, positive_moments=true, energy_name=:ρθ)
+    scalar_advection_schemes(order, microphysics, moisture_name; bounded_condensates=true, positive_moments=true,
+                             energy_name=:ρθ, microphysics_order=order)
 
 Advection scheme per prognostic scalar, following Breeze's `examples/rico.jl`: the potential
 temperature (`energy_name`, `ρθ`) uses plain WENO; every microphysical *water-mass* tracer (the vapor / equilibrium
@@ -24,20 +25,25 @@ forcing-free rain-shaft budget in `test/diagnostics/mass_budget_probe.jl` record
 Oceananigans `main` (pinned since the `glw/weno-z-float32-overflow` revision) stores the limiter as a cell field and rescales every face
 reconstruction with its own cell's factor, which restores conservation (validated by
 `test/diagnostics/mass_budget_probe.jl` and the GPU smokes). `bounded_condensates = false` (plain WENO for the
-condensate masses) is retained as a diagnostic sensitivity only.
+condensate masses) is retained as a diagnostic sensitivity only. `microphysics_order` sets the WENO order of
+every microphysical prognostic (all names other than `energy_name` and the moisture variable).
 """
-function scalar_advection_schemes(order, microphysics, moisture_name; bounded_condensates=true, positive_moments=true, energy_name=:ρθ)
+function scalar_advection_schemes(order, microphysics, moisture_name; bounded_condensates=true, positive_moments=true,
+                                  energy_name=:ρθ, microphysics_order=order)
     weno = WENO(; order)
     bounded = WENO(; order, bounds=(0, 1))
+    # The microphysical prognostics (condensate masses and moments) may use their own order
+    micro_weno = WENO(; order = microphysics_order)
+    micro_bounded = WENO(; order = microphysics_order, bounds=(0, 1))
     # Number and volume moments are not bounded by one, so their limiter only enforces
     # positivity (an infinite upper bound disables the maximum side of the limiter).
-    moments = positive_moments ? WENO(; order, bounds=(0.0, Inf)) : weno
+    moments = positive_moments ? WENO(; order = microphysics_order, bounds=(0.0, Inf)) : micro_weno
     moisture = Symbol("ρ", moisture_name)
     names = (energy_name, moisture, Breeze.AtmosphereModels.prognostic_field_names(microphysics)...)
     schemes = map(names) do name
         name === energy_name ? weno :
         name === moisture ? bounded :
-        occursin("ρq", string(name)) ? (bounded_condensates ? bounded : weno) : moments
+        occursin("ρq", string(name)) ? (bounded_condensates ? micro_bounded : micro_weno) : moments
     end
     return NamedTuple{names}(schemes)
 end

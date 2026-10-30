@@ -139,7 +139,8 @@ caller replaces is listed in `config.overrides` and appended to the label):
 - `stop_time` (`nstop × dt`), `Δt` (`dt`), `max_Δt = Δt` (fixed step), `cfl = 0.7`
 - `translation_velocity` (namelist `ug`, `vg`): SAM's translating frame
 - `sponge = SAMSponge()`, `closure = SmagorinskyLilly()`, `advection_order = 5` (WENO order of momentum
-  and, by default, `scalar_advection_order` of the scalars)
+  and, by default, `scalar_advection_order` of the scalars, whose `microphysics_advection_order` applies to the
+  microphysical prognostics)
 - `reference_extension = nothing`: `(z₁, z₂)` extends the anelastic reference profile's `z₁` values up
   to `z₂` (see `sounding_reference_state`; a sensitivity test, recorded as an override)
 - `simple_longwave = (;)`: keyword overrides of `SimpleLongwaveRadiation` (e.g. `(; F₀ = 70)`, the SAM/DYCOMS-II
@@ -183,6 +184,7 @@ function ena_covert(; arch = GPU(),
                       simple_longwave = (;),
                       advection_order = 5,
                       scalar_advection_order = advection_order,
+                      microphysics_advection_order = scalar_advection_order,
                       reference_extension = nothing,
                       perturbation = InitialPerturbation(),
                       initialization = :condensate_free,
@@ -253,7 +255,7 @@ function ena_covert(; arch = GPU(),
 
     Nz = length(z_faces) - 1
     # WENO orders above 7 need a sixth horizontal halo point
-    halo = max(advection_order, scalar_advection_order) > 7 ? (6, 6, 5) : (5, 5, 5)
+    halo = max(advection_order, scalar_advection_order, microphysics_advection_order) > 7 ? (6, 6, 5) : (5, 5, 5)
     grid = RectilinearGrid(arch; size = (Nx, Ny, Nz), x = (0, Lx), y = (0, Ly), z = z_faces,
                            halo, topology = (Periodic, Periodic, Bounded))
     FT = eltype(grid)
@@ -275,7 +277,8 @@ function ena_covert(; arch = GPU(),
         throw(ArgumentError("diagnostic_ccn = true needs P3 with a prognostic aerosol reservoir"))
     moisture_name = Breeze.AtmosphereModels.moisture_specific_name(microphysics)
     momentum_advection = WENO(order = advection_order)
-    scalar_advection = scalar_advection_schemes(scalar_advection_order, microphysics, moisture_name; energy_name = :ρθ)
+    scalar_advection = scalar_advection_schemes(scalar_advection_order, microphysics, moisture_name; energy_name = :ρθ,
+                                                microphysics_order = microphysics_advection_order)
 
     #####
     ##### Large-scale forcing (SAM forcing.f90, subsidence.f90, upperbound.f90, damping.f90)
@@ -405,7 +408,7 @@ function ena_covert(; arch = GPU(),
                 surface = "prescribed H, LE and wind-aligned τ (SFC_FLX_FXD, SFC_TAU_FXD)",
                 wind_nudging = "none (donudging_uv = .false.)",
                 sponge = isnothing(sponge) ? "nothing" : summary(sponge),
-                closure = isnothing(closure) ? "nothing" : string(closure), advection_order, scalar_advection_order,
+                closure = isnothing(closure) ? "nothing" : string(closure), advection_order, scalar_advection_order, microphysics_advection_order,
                 reference_extension = isnothing(reference_extension) ? "none" : collect(reference_extension),
                 stop_time, Δt, max_Δt, cfl,
                 time_stepping = max_Δt == Δt ? "fixed Δt = $Δt s" :
