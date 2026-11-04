@@ -2,7 +2,7 @@
 
 julia_version = "1.12.7"
 manifest_format = "2.0"
-project_hash = "c5bfc80888f3caa7b4ba4980efdab3724a1fedcc"
+project_hash = "628fdb94b4182a90df275c632912c5d3e20f19f8"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -142,11 +142,9 @@ version = "1.21.7+0"
 
 [[deps.Breeze]]
 deps = ["Adapt", "Artifacts", "Dates", "DocStringExtensions", "GPUArraysCore", "InteractiveUtils", "JLD2", "KernelAbstractions", "LazyArtifacts", "Oceananigans", "OffsetArrays", "Printf", "ReactantCore", "SpecialFunctions", "Statistics"]
-git-tree-sha1 = "133f514deecf4f710a40370aa44d497dc24d0bca"
-repo-rev = "5264d3c"
-repo-url = "https://github.com/NumericalEarth/Breeze.jl"
+git-tree-sha1 = "2cfd0cdced06e375b8077e3580f96ce54f79af29"
 uuid = "660aa2fb-d4c8-4359-a52c-9c057bc511da"
-version = "0.11.3"
+version = "0.12.0"
 
     [deps.Breeze.extensions]
     BreezeCloudMicrophysicsExt = ["CloudMicrophysics", "SpecialFunctions"]
@@ -160,10 +158,16 @@ version = "0.11.3"
     Reactant = "3c362404-f566-11ee-1572-e11a4b42c853"
 
 [[deps.BreezeLab]]
-deps = ["Adapt", "Breeze", "CUDA", "CairoMakie", "ClimaComms", "CloudMicrophysics", "Dates", "JLD2", "KernelAbstractions", "NCDatasets", "Oceananigans", "Printf", "RRTMGP", "Random", "SHA", "Statistics", "TOML"]
+deps = ["Adapt", "Breeze", "CUDA", "CairoMakie", "ClimaComms", "CloudMicrophysics", "Dates", "JLD2", "KernelAbstractions", "NCDatasets", "Oceananigans", "Printf", "RRTMGP", "Random", "SHA", "SpecialFunctions", "Statistics", "TOML"]
 path = "."
 uuid = "95b707ca-5eb7-4d90-9406-35d7ad170877"
 version = "0.1.0"
+
+    [deps.BreezeLab.extensions]
+    BreezeLabNumericalEarthExt = "NumericalEarth"
+
+    [deps.BreezeLab.weakdeps]
+    NumericalEarth = "904d977b-046a-4731-8b86-9235c0d1ef02"
 
 [[deps.Bzip2_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]

@@ -185,6 +185,9 @@ the current pin (see *Dependency notes*).
   (`5264d3c`; relevant only to adaptive stepping). Both revisions are recorded in every
   provenance file. The runs in `results/` were made on Breeze `a7fa3c8` / `5fc404c` and
   Oceananigans `c78eeaa` / `877618e`, as their provenance records.
+- October 2026: the package environment moved to the registered Breeze 0.12.0 (Oceananigans pin
+  unchanged); three of the four ENA fixes above are not in 0.12.0, and `cases/tracer_mip` stays on
+  `5264d3c` because NumericalEarth requires Breeze 0.11. See `docs/breeze_0.12_upgrade.md`.
 - Interface changes followed from Breeze `main`: `ReferenceState(...; base_pressure)` (was
   `surface_pressure`), energy flux boundary conditions under `ρE` and energy forcings under `E`
   (the `ρs`/`s` alias of the potential-temperature model is gone; static energy keeps `s`), and

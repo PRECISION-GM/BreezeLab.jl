@@ -57,8 +57,11 @@ oceananigans_source_description() = package_source_description(Oceananigans)
 function package_source_description(package::Module)
     dir = Base.pkgdir(package)
     name = string(nameof(package))
-    # BreezeLab's own Manifest carries the `[sources]` pins; the active project's Manifest is
-    # the fallback (inside `Pkg.test` the active project is a sandbox).
+    loaded = Base.pkgversion(package)
+    # BreezeLab's own Manifest carries the package environment's pins; the active project's
+    # Manifest is the fallback (inside `Pkg.test` the active project is a sandbox) and the source
+    # of truth in a case sub-environment that pins another revision (cases/tracer_mip). An entry
+    # is used only if its version is the one loaded.
     manifests = (package_path("Manifest.toml"),
                  Base.active_project() === nothing ? "" : joinpath(dirname(Base.active_project()), "Manifest.toml"))
     rev = "unknown"
@@ -67,10 +70,19 @@ function package_source_description(package::Module)
         isfile(manifest) || continue
         block = match(block_pattern, read(manifest, String))
         isnothing(block) && continue
-        repo_rev = match(r"repo-rev = \"([^\"]+)\"", block.captures[1])
-        repo_url = match(r"repo-url = \"([^\"]+)\"", block.captures[1])
-        (isnothing(repo_rev) || isnothing(repo_url)) && continue
-        rev = string(repo_url.captures[1], "@", repo_rev.captures[1])
+        entry = "\n" * block.captures[1]
+        version = match(r"\nversion = \"([^\"]+)\"", entry)
+        isnothing(loaded) || isnothing(version) || VersionNumber(version.captures[1]) == loaded || continue
+        repo_rev = match(r"\nrepo-rev = \"([^\"]+)\"", entry)
+        repo_url = match(r"\nrepo-url = \"([^\"]+)\"", entry)
+        tree = match(r"\ngit-tree-sha1 = \"([^\"]+)\"", entry)
+        if !isnothing(repo_rev) && !isnothing(repo_url)                       # a `[sources]` revision
+            rev = string(repo_url.captures[1], "@", repo_rev.captures[1])
+        elseif !isnothing(tree) && !isnothing(version) && !occursin("\npath = ", entry)   # a registered release
+            rev = string("registered v", version.captures[1], " (git-tree-sha1 ", tree.captures[1], ")")
+        else
+            continue
+        end
         break
     end
     dirty = ""
