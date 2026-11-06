@@ -34,7 +34,8 @@ getopt(k, default) = get(opts, k, default)
 allowed = Set(["data", "protocol", "arch", "float", "seed", "epoch", "member", "dimensions", "microphysics", "aerosol_ss_cap",
                "resolution", "Nx", "Ny", "Nz", "Lx", "Ly", "hours", "checkpoint_interval", "pickup",
                "process_rates", "process_rate_interval", "prandtl", "scalar_advection_order", "reference_extension", "lw_F0", "dynamic_averaging", "advection_order", "microphysics_advection_order", "cfl", "dt", "max_dt", "lasso_grid", "grid", "initialization", "closure",
-               "profile_interval", "slice_interval", "liquid_reff", "radiation", "nudging", "surface_flux_law", "output"])
+               "profile_interval", "slice_interval", "liquid_reff", "radiation", "nudging", "surface_flux_law", "output",
+               "nudging_tq", "nudging_z", "nudging_uv"])
 unknown = setdiff(Set(keys(opts)), allowed)
 isempty(unknown) || error("unknown options: $(join(sort!(collect(unknown)), ", "))")
 
@@ -58,6 +59,9 @@ function microphysics_member(name; data, z_faces, cap)
     name == "one_moment" && return Base.get_extension(Breeze, :BreezeCloudMicrophysicsExt).OneMomentCloudMicrophysics(;
                                        cloud_formation = SaturationAdjustment(; equilibrium = WarmPhaseEquilibrium()))
     name == "p3_n75" && return P3Microphysics(; cloud)
+    # p3_n<N>: P3 with a prescribed droplet number of N cm⁻³ (p3_n50, p3_n100, ...), as p3_n75
+    m = match(r"^p3_n(\d+)$", name)
+    isnothing(m) || return P3Microphysics(; cloud = CloudDroplets(; number_concentration = parse(Int, m.captures[1]) * 1e6))
     reference_density = first_level_reference_density(data, z_faces)
     if name in ("p3_aer1", "p3_aer2", "p3_aer3")
         aerosol = lasso_aerosol(; setting = Symbol(name[4:end]), reference_density, maximum_supersaturation = cap)
@@ -65,7 +69,7 @@ function microphysics_member(name; data, z_faces, cap)
     elseif name == "p3_covert_n75"
         return P3Microphysics(; cloud, aerosol = covert_aerosol(; reference_density, maximum_supersaturation = something(cap, 0.003)))
     end
-    error("--microphysics must be one_moment, p3_n75, p3_aer1, p3_aer2, p3_aer3 or p3_covert_n75")
+    error("--microphysics must be one_moment, p3_n75 (or p3_n<N> for N cm⁻³), p3_aer1, p3_aer2, p3_aer3 or p3_covert_n75")
 end
 
 kw = Dict{Symbol, Any}()
@@ -144,16 +148,29 @@ if protocol === :covert_public_bin
     output_dir = getopt("output", "output/covert_public_bin_$(getopt("microphysics", "p3_n75"))")
     @info "Building the Covert case on $(typeof(arch)) with $(Oceananigans.defaults.FloatType)" opts
     # --radiation simple (protocol rad_simple, default) | rrtmgp_longwave (RRTMGP LW-only sensitivity)
+    #             | rrtmgp (RRTMGP LW+SW with the diurnal cycle of the apparent solar position)
     if haskey(opts, "radiation")
-        opts["radiation"] in ("simple", "rrtmgp_longwave") || error("--radiation must be simple or rrtmgp_longwave with the Covert protocol")
-        kw[:radiation] = opts["radiation"] == "simple" ? :simple_longwave : :rrtmgp_longwave
+        opts["radiation"] in ("simple", "rrtmgp_longwave", "rrtmgp") ||
+            error("--radiation must be simple, rrtmgp_longwave or rrtmgp with the Covert protocol")
+        kw[:radiation] = opts["radiation"] == "simple" ? :simple_longwave : Symbol(opts["radiation"])
+    end
+    # --nudging_tq τ: domain-mean θ and moisture nudged toward the snd records with timescale τ [s],
+    #   weighted by a sin² ramp between the heights of --nudging_z z₁,z₂ (default 1200,1800 m: free troposphere only)
+    # --nudging_uv τ: domain-mean u, v nudged toward the snd winds over the full column, timescale τ [s]
+    haskey(opts, "nudging_tq") && (kw[:nudging_tq] = parse(Float64, opts["nudging_tq"]))
+    haskey(opts, "nudging_uv") && (kw[:nudging_uv] = parse(Float64, opts["nudging_uv"]))
+    if haskey(opts, "nudging_z")
+        haskey(opts, "nudging_tq") || error("--nudging_z needs --nudging_tq")
+        heights = Tuple(parse.(Float64, split(opts["nudging_z"], ',')))
+        length(heights) == 2 || error("--nudging_z must be z₁,z₂")
+        kw[:nudging_heights] = heights
     end
     seed = parse(Int, getopt("seed", "1234"))
     case = ena_covert(; arch, data_dir = data, microphysics, output_dir, output_prefix,
                         perturbation = InitialPerturbation(; seed), kw...)
 else
     for option in ("process_rates", "process_rate_interval", "pickup", "scalar_advection_order",
-                   "microphysics_advection_order", "reference_extension", "lw_F0")
+                   "microphysics_advection_order", "reference_extension", "lw_F0", "nudging_tq", "nudging_z", "nudging_uv")
         haskey(opts, option) && error("--$option applies to --protocol covert_public_bin only")
     end
     haskey(opts, "member") || error("--member <LASSO run ID> is required with --protocol lasso_ena_official")

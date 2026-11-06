@@ -145,10 +145,20 @@ caller replaces is listed in `config.overrides` and appended to the label):
   to `z₂` (see `sounding_reference_state`; a sensitivity test, recorded as an override)
 - `simple_longwave = (;)`: keyword overrides of `SimpleLongwaveRadiation` (e.g. `(; F₀ = 70)`, the SAM/DYCOMS-II
   default, instead of the LASSO-ENA 113 W m⁻²; a sensitivity, recorded as an override)
-- `radiation = :simple_longwave` (the protocol's SAM `rad_simple`, every step) or `:rrtmgp_longwave`
+- `radiation = :simple_longwave` (the protocol's SAM `rad_simple`, every step), `:rrtmgp_longwave`
   (a sensitivity, recorded as an override: RRTMGP all-sky optics with the solar constant set to 0 so
   only longwave acts, every 60 s, over the sfc SST with emissivity 0.95, 10 μm / 30 μm liquid/ice
-  effective radii and 405 ppm CO₂; the column ends at the LES top)
+  effective radii and 405 ppm CO₂; the column ends at the LES top) or `:rrtmgp` (the same with
+  shortwave: solar constant 1361 W m⁻², surface albedo 0.07, the apparent solar position at the
+  namelist `latitude0`/`longitude0` and the epoch `day0`, so the run has a diurnal cycle)
+- `nudging_tq = nothing`: a timescale [s] relaxes the domain-mean liquid-ice potential temperature
+  `θ` and the moisture prognostic (vapour for P3) toward the `snd` records (θ and total water),
+  linear in time between records, with the vertical weight `nudging_height_ramp(nudging_heights...)`:
+  `nudging_heights = (1200, 1800)` leaves the boundary layer free and nudges the free troposphere.
+  The targets are interpolated in height as the initial state is (`sounding_nudging_targets`).
+- `nudging_uv = nothing`: a timescale [s] relaxes the domain-mean `u`, `v` toward the `snd` winds
+  over the full column (as LASSO's `donudging_uv`, in SAM's translating frame). Both nudgings are
+  sensitivities beyond the protocol (`donudging_uv = donudging_tq = .false.`), recorded as overrides.
 - `perturbation = InitialPerturbation()` (`setperturb.f90` case 5)
 - `initialization = :condensate_free` or `:equilibrium` (P3 only), `initial_droplet_number`
 - output: `write_output`, `output_dir`, `output_prefix`, `profile_interval = 1hour`,
@@ -182,6 +192,9 @@ function ena_covert(; arch = GPU(),
                       closure = SmagorinskyLilly(),
                       radiation = :simple_longwave,
                       simple_longwave = (;),
+                      nudging_tq = nothing,
+                      nudging_heights = (1200, 1800),
+                      nudging_uv = nothing,
                       advection_order = 5,
                       scalar_advection_order = advection_order,
                       microphysics_advection_order = scalar_advection_order,
@@ -228,6 +241,8 @@ function ena_covert(; arch = GPU(),
     radiation === :simple_longwave || push!(overrides, :radiation)
     isnothing(reference_extension) || push!(overrides, :reference_extension)
     isempty(simple_longwave) || push!(overrides, :simple_longwave)
+    isnothing(nudging_tq) || push!(overrides, :nudging_tq)
+    isnothing(nudging_uv) || push!(overrides, :nudging_uv)
     nx, ny, nz = parse_caseid(namelist["caseid"])
     isnothing(Nz) || isnothing(z_faces) || throw(ArgumentError("give Nz or z_faces, not both"))
     z_faces = isnothing(z_faces) ? covert_public_bin_vertical_faces(; Nz = something(Nz, nz)) : z_faces
@@ -244,6 +259,13 @@ function ena_covert(; arch = GPU(),
     latitude = Float64(namelist["latitude0"])
     longitude = Float64(namelist["longitude0"])
     moisture_basis = :mixing_ratio            # SAM files carry mixing ratios per kg of dry air
+
+    # Profile and surface time series hold their last record past its time (Clamp); say so
+    # whenever the run outlasts an input
+    end_day = day0 + stop_time / 86400
+    for (name, last_day) in (("lsf", lsf[end].day), ("sfc", sfc.day[end]), ("snd", soundings[end].day))
+        last_day < end_day && @warn "The $name records end at day $last_day, before the end of the run (day $end_day): the last record is held"
+    end
 
     # setdata.f90 interpolates the bracketing snd records to day0
     sounding = initial_sounding(soundings, day0)
@@ -300,16 +322,29 @@ function ena_covert(; arch = GPU(),
     upper = upper_boundary_relaxation_forcings(targets.T, targets.q; microphysics,
                                                thermodynamic_constants = constants, moisture_name)
 
+    # Domain-mean nudging toward the snd records (beyond the protocol): θ and moisture above
+    # the boundary layer, winds over the full column
+    nudging_targets = isnothing(nudging_tq) && isnothing(nudging_uv) ? nothing :
+                      sounding_nudging_targets(grid, soundings, z_centers; day0, moisture_basis,
+                                               frame_velocity = (uᶠ, vᶠ))
+    tq_weight = nudging_height_ramp(nudging_heights...)
+    nudging_θ = isnothing(nudging_tq) ? nothing :
+                MeanProfileNudging(nudging_targets.θ; timescale = nudging_tq, vertical_weight = tq_weight)
+    nudging_q = isnothing(nudging_tq) ? nothing :
+                MeanProfileNudging(nudging_targets.q; timescale = nudging_tq, vertical_weight = tq_weight)
+    nudging_u = isnothing(nudging_uv) ? nothing : MeanProfileNudging(nudging_targets.u; timescale = nudging_uv)
+    nudging_v = isnothing(nudging_uv) ? nothing : MeanProfileNudging(nudging_targets.v; timescale = nudging_uv)
+
     forcing = Dict{Symbol, Tuple}(
-        :u => (geostrophic.u, subsidence, sponge),
-        :v => (geostrophic.v, subsidence, sponge),
+        :u => (geostrophic.u, nudging_u, subsidence, sponge),
+        :v => (geostrophic.v, nudging_v, subsidence, sponge),
         :w => (sponge,),
         :E => (thermodynamic.E, upper.E),            # tls and the top relaxation, as energy tendencies
-        :θ => (subsidence,))
+        :θ => (subsidence, nudging_θ))
     for name in specific_prognostic_names(microphysics)
         forcing[name] = (subsidence,)                # subsidence.f90 advects every microphysical field
     end
-    forcing[moisture_name] = (thermodynamic[moisture_name], subsidence, upper[moisture_name])
+    forcing[moisture_name] = (thermodynamic[moisture_name], subsidence, upper[moisture_name], nudging_q)
     forcing = compact_forcing(forcing)
 
     #####
@@ -325,8 +360,8 @@ function ena_covert(; arch = GPU(),
     ##### Radiation: SAM rad_simple longwave, every step
     #####
 
-    radiation in (:simple_longwave, :rrtmgp_longwave) ||
-        throw(ArgumentError("radiation must be :simple_longwave (the protocol) or :rrtmgp_longwave, got $radiation"))
+    radiation in (:simple_longwave, :rrtmgp_longwave, :rrtmgp) ||
+        throw(ArgumentError("radiation must be :simple_longwave (the protocol), :rrtmgp_longwave or :rrtmgp, got $radiation"))
     radiation_scheme = radiation
     sst_updater = nothing
     radiation = if radiation_scheme === :simple_longwave
@@ -338,7 +373,7 @@ function ena_covert(; arch = GPU(),
         sst_updater = SeaSurfaceTemperatureUpdater(Tₛ, surface_series.times, FT.(sfc.sst))
         RadiativeTransferModel(grid, AllSkyOptics(), constants;
                                surface_temperature = Tₛ, surface_emissivity = 0.95, surface_albedo = 0.07,
-                               solar_constant = 0,
+                               solar_constant = radiation_scheme === :rrtmgp ? 1361 : 0,
                                background_atmosphere = BackgroundAtmosphere(CO₂ = 405e-6, CH₄ = 1.85e-6, N₂O = 330e-9),
                                solar_position = ApparentSolarPosition(; coordinate = (longitude, latitude), epoch),
                                schedule = TimeInterval(60),
@@ -404,9 +439,17 @@ function ena_covert(; arch = GPU(),
                 diagnostic_ccn, initialization = string(initialization),
                 initial_droplet_number = something(initial_droplet_number, 0),
                 radiation = radiation_scheme === :simple_longwave ? "SAM rad_simple longwave (every step): " * summary(radiation) :
-                            "RRTMGP all-sky longwave only (solar constant 0), every 60 s, SST surface, emissivity 0.95, r_eff 10/30 μm",
+                            radiation_scheme === :rrtmgp_longwave ?
+                            "RRTMGP all-sky longwave only (solar constant 0), every 60 s, SST surface, emissivity 0.95, r_eff 10/30 μm" :
+                            "RRTMGP all-sky LW+SW (solar constant 1361 W m⁻², apparent solar position at ($latitude, $longitude) from $epoch), every 60 s, SST surface, emissivity 0.95, albedo 0.07, r_eff 10/30 μm",
                 surface = "prescribed H, LE and wind-aligned τ (SFC_FLX_FXD, SFC_TAU_FXD)",
-                wind_nudging = "none (donudging_uv = .false.)",
+                wind_nudging = isnothing(nudging_uv) ? "none (donudging_uv = .false.)" :
+                               "domain-mean u, v toward the snd winds, full column, τ = $nudging_uv s",
+                tq_nudging = isnothing(nudging_tq) ? "none (donudging_tq = .false.)" :
+                             "domain-mean θ and $moisture_name toward the snd θ and total water, τ = $nudging_tq s, sin² ramp $(nudging_heights[1])–$(nudging_heights[2]) m",
+                snd_records = length(soundings), snd_last_day = soundings[end].day,
+                lsf_records = length(lsf), lsf_last_day = lsf[end].day, sfc_last_day = sfc.day[end],
+                forcing_beyond_last_record = "held at the last record (Clamp)",
                 sponge = isnothing(sponge) ? "nothing" : summary(sponge),
                 closure = isnothing(closure) ? "nothing" : string(closure), advection_order, scalar_advection_order, microphysics_advection_order,
                 reference_extension = isnothing(reference_extension) ? "none" : collect(reference_extension),
@@ -420,5 +463,5 @@ function ena_covert(; arch = GPU(),
                 checkpoint_interval = something(checkpoint_interval, 0), checkpoint_cleanup)
 
     return (; simulation, model, grid, config, inputs = paths,
-              namelist, soundings, sounding, lsf, sfc, profiles, columns, forcing_profiles, forcing)
+              namelist, soundings, sounding, lsf, sfc, profiles, columns, forcing_profiles, forcing, nudging_targets)
 end

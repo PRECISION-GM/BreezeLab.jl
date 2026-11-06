@@ -93,34 +93,72 @@ end
 #####
 
 """
-    MeanProfileNudging(target; timescale)
+    MeanProfileNudging(target; timescale, vertical_weight=nothing)
 
 Relax the *horizontal mean* of a prognostic variable toward the profile time series
 `target(z, t)` with rate `1 / timescale`, applying the same tendency to every column:
 
-    Fϕ(z, t) = -(⟨ϕ⟩(z, t) - target(z, t)) / timescale
+    Fϕ(z, t) = - 𝒲(z) (⟨ϕ⟩(z, t) - target(z, t)) / timescale
 
 This is the LASSO `n0` wind nudging (`nudging.f90`: `dudt -= (u0 - ul0) / tauls`), and
 deliberately not a pointwise `Relaxation`, which would damp resolved eddies.
+
+`vertical_weight` 𝒲(z) is `nothing` (𝒲 = 1, the full column), a vector of weights on the
+cell centers, or a function `𝒲(z)` evaluated at the cell centers when the forcing is
+materialized (see [`nudging_height_ramp`](@ref) for the free-troposphere-only nudging of the
+Covert sonde-forcing runs).
 """
-struct MeanProfileNudging{T, A, R}
+struct MeanProfileNudging{T, A, R, W}
     target :: T
     averaged_field :: A
     rate :: R
+    vertical_weight :: W
 end
 
-MeanProfileNudging(target; timescale) = MeanProfileNudging(target, nothing, 1 / timescale)
+MeanProfileNudging(target; timescale, vertical_weight=nothing) =
+    MeanProfileNudging(target, nothing, 1 / timescale, vertical_weight)
 
 Adapt.adapt_structure(to, f::MeanProfileNudging) =
-    MeanProfileNudging(adapt(to, f.target), adapt(to, f.averaged_field), adapt(to, f.rate))
+    MeanProfileNudging(adapt(to, f.target), adapt(to, f.averaged_field), adapt(to, f.rate), adapt(to, f.vertical_weight))
 
-Base.summary(f::MeanProfileNudging) = string("MeanProfileNudging(timescale=", prettysummary(1 / f.rate), " s)")
+Base.summary(f::MeanProfileNudging) = string("MeanProfileNudging(timescale=", prettysummary(1 / f.rate), " s",
+                                             isnothing(f.vertical_weight) ? "" : ", height-weighted", ")")
 Base.show(io::IO, f::MeanProfileNudging) = print(io, summary(f))
+
+@inline nudging_weight(::Nothing, k) = 1
+@inline nudging_weight(𝒲, k) = @inbounds 𝒲[1, 1, k]
 
 @inline function (f::MeanProfileNudging)(i, j, k, grid, clock, fields)
     ϕ̄ = @inbounds f.averaged_field[1, 1, k]
     ϕᵗ = profile_value(f.target, k, clock.time)
-    return - f.rate * (ϕ̄ - ϕᵗ)
+    𝒲 = nudging_weight(f.vertical_weight, k)
+    return - 𝒲 * f.rate * (ϕ̄ - ϕᵗ)
+end
+
+"""
+    nudging_height_ramp(z₁, z₂)
+
+The vertical weight `𝒲(z)` of a nudging confined to heights above `z₁`: 0 below `z₁`, 1 above
+`z₂`, and `sin²(π/2 (z - z₁)/(z₂ - z₁))` in between (continuous with a continuous derivative).
+"""
+function nudging_height_ramp(z₁, z₂)
+    z₂ > z₁ || throw(ArgumentError("nudging_height_ramp needs z₂ > z₁, got ($z₁, $z₂)"))
+    return z -> sin(π / 2 * clamp((z - z₁) / (z₂ - z₁), 0, 1))^2
+end
+
+materialize_vertical_weight(::Nothing, grid) = nothing
+
+function materialize_vertical_weight(𝒲::Function, grid)
+    z = Array(znodes(grid, Center()))
+    return materialize_vertical_weight(𝒲.(z), grid)
+end
+
+function materialize_vertical_weight(𝒲::AbstractVector, grid)
+    Nz = size(grid, 3)
+    length(𝒲) == Nz || throw(ArgumentError("vertical_weight has $(length(𝒲)) values, the grid has $Nz levels"))
+    weight = Field{Nothing, Nothing, Center}(grid)
+    set!(weight, reshape(eltype(grid).(𝒲), 1, 1, Nz))
+    return weight
 end
 
 function AtmosphereModels.materialize_atmosphere_model_forcing(f::MeanProfileNudging,
@@ -130,7 +168,8 @@ function AtmosphereModels.materialize_atmosphere_model_forcing(f::MeanProfileNud
     specific_field = context.specific_fields[name]
     averaged_field = Field(Average(specific_field, dims=(1, 2)))
     FT = eltype(field.grid)
-    return MeanProfileNudging(f.target, averaged_field, convert(FT, f.rate))
+    weight = materialize_vertical_weight(f.vertical_weight, field.grid)
+    return MeanProfileNudging(f.target, averaged_field, convert(FT, f.rate), weight)
 end
 
 function AtmosphereModels.compute_forcing!(f::MeanProfileNudging)

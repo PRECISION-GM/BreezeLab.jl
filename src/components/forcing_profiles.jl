@@ -198,3 +198,36 @@ function shifted_profile_time_series(fts, shift)
     end
     return out
 end
+
+"""
+    sounding_nudging_targets(grid, soundings, z_centers; day0, moisture_basis=:mixing_ratio, frame_velocity=(0, 0))
+
+The domain-mean nudging targets of a multi-record `snd` as profile time series on the model
+levels: `θ` (the file's potential temperature, which is the liquid-ice potential temperature
+of condensate-free air), `q` (the file's total water as a Breeze mass fraction) and `u`, `v`
+(minus `frame_velocity`, SAM's translating frame). Every record is interpolated *in height*
+exactly as the initial state is ([`SoundingProfiles`](@ref): pressure-level records are
+converted to heights with the `setdata.f90` recipe, height-coordinate records are used as they
+are), so the target of the record at `day0` equals the initial condition. Between records the
+targets are linear in time; before the first and after the last record they hold the end
+record (`FieldTimeSeries` `Clamp` indexing). A single record is held for all times.
+"""
+function sounding_nudging_targets(grid, soundings::Vector{<:SAMSounding}, z_centers;
+                                  day0, moisture_basis=:mixing_ratio, frame_velocity=(0, 0))
+    FT = eltype(grid)
+    times = FT[day_to_seconds(r.day, day0) for r in soundings]
+    issorted(times) && allunique(times) || throw(ArgumentError("snd record times must increase strictly"))
+    if length(soundings) == 1
+        times = FT[times[1], times[1] + 86400 * 1000]
+        soundings = [soundings[1], soundings[1]]
+    end
+    profiles = [SoundingProfiles(r; moisture_basis) for r in soundings]
+    column(p, name) = [p(name, z) for z in z_centers]
+    uᶠ, vᶠ = frame_velocity
+    make(f) = profile_time_series(grid, times, [f(p) for p in profiles])
+    return (; times,
+              θ = make(p -> column(p, :θ)),
+              q = make(p -> column(p, :qᵗ)),
+              u = make(p -> column(p, :u) .- uᶠ),
+              v = make(p -> column(p, :v) .- vᶠ))
+end
