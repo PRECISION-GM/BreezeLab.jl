@@ -370,7 +370,7 @@ end
     end
     case = with_float_type(Float32) do
         ena_lasso(; member=LASSO_MEMBER, epoch=LASSO_EPOCH, bundle_dir=LASSO_FIXTURE, dimensions=LASSO_DIMS, arch=CPU(),
-                    Nx=8, Ny=8, Lx=800, Ly=800, radiation=:none, nudging_tq=3600, nudging_heights=(400, 800),
+                    Nx=8, Ny=8, Lx=800, Ly=800, radiation=:none, nudging_tq=3600, nudging_heights=(400.0, 800.0),
                     p3_process_rates=scaled, write_output=false, progress_interval=100)
     end
     @test issubset(["nudging_tq", "p3_process_rates"], case.config.overrides)
