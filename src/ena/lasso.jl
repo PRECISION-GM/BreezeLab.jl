@@ -19,6 +19,10 @@ SST-flux member is this one. Changing it is an explicit decision, never a defaul
 """
 const DEFAULT_LASSO_MEMBER = "20170718era5d25x100_sbmwrm-aer2-flxsst"
 
+const RADIATION_DESCRIPTIONS = Dict(:rrtmgp => "RRTMGP all-sky LW+SW",
+                                    :ecckd => "ecCKD (NumericalRadiation) all-sky LW+SW",
+                                    :none => "none (software test)")
+
 """
     lasso_bundle_directory(member)
 
@@ -104,9 +108,19 @@ listed in `config.overrides` and appended to the label): `Nx`, `Ny`, `Lx`, `Ly` 
 `liquid_effective_radius` (14 μm, SAM's RRTMG ocean value, unless `compute_reffc`) and
 `perturbation` (the namelist `perturb_type`). The others are the protocol's:
 `surface_flux_law = :sam_oceflx`, `surface_emissivity = 0.95` (SAM RRTM), `surface_albedo = 0.07`,
-`ice_effective_radius = 30e-6`, `background_atmosphere`, `radiation = true` (RRTMGP LW+SW;
-`false` only for software tests), `closure = SmagorinskyLilly()`, `advection_order = 5`,
+`ice_effective_radius = 30e-6`, `background_atmosphere`, `radiation = :rrtmgp` (RRTMGP all-sky LW+SW;
+`:ecckd` for NumericalRadiation's all-sky ecCKD LW+SW with the same surface, sun and effective radii;
+`:none` only for software tests; `true`/`false` mean `:rrtmgp`/`:none`), `closure = SmagorinskyLilly()`, `advection_order = 5`,
 `cfl = 0.7`, `initialization = :condensate_free`, and the output keywords of [`ena_covert`](@ref).
+
+Sensitivities beyond the protocol (each recorded in `config.overrides`):
+- `nudging_tq = nothing`: a timescale [s] relaxes the domain-mean θ and moisture toward sounding
+  records (linear in time between records) with the vertical weight
+  `nudging_height_ramp(nudging_heights...)`; `nudging_heights = (1200, 1800)` leaves the boundary layer free.
+  The targets are the bundle's `snd` records, or the SAM-format file `nudging_sounding_file`
+  (for example the ARM radiosonde series) when given.
+- `p3_process_rates = nothing`: a P3 `ProcessRate` for the protocol P3 (warm-rain parameter sensitivities);
+  ignored, with an error, when `microphysics` is supplied by the caller.
 """
 function ena_lasso(; member = DEFAULT_LASSO_MEMBER,
                      epoch,
@@ -124,7 +138,7 @@ function ena_lasso(; member = DEFAULT_LASSO_MEMBER,
                      Δt = nothing,
                      max_Δt = Δt,
                      cfl = 0.7,
-                     radiation = true,
+                     radiation = :rrtmgp,
                      radiation_interval = nothing,
                      liquid_effective_radius = nothing,
                      ice_effective_radius = 30e-6,
@@ -139,6 +153,10 @@ function ena_lasso(; member = DEFAULT_LASSO_MEMBER,
                      perturbation = nothing,
                      initialization = :condensate_free,
                      initial_droplet_number = nothing,
+                     nudging_tq = nothing,
+                     nudging_heights = (1200, 1800),
+                     nudging_sounding_file = nothing,
+                     p3_process_rates = nothing,
                      write_output = true,
                      output_dir = nothing,
                      output_prefix = "ena_lasso",
@@ -146,6 +164,12 @@ function ena_lasso(; member = DEFAULT_LASSO_MEMBER,
                      timeseries_interval = 60,
                      slice_interval = 1minute,
                      slice_height = 900,
+                     extra_slice_heights = (; w = (500, 750), qᶜˡ = (1100,)),
+                     y_averaged_sections = true,
+                     process_rates = nothing,
+                     process_rate_interval = slice_interval,
+                     process_rate_heights = PROCESS_RATE_SLICE_HEIGHTS,
+                     overwrite_output = true,
                      progress_interval = 10minutes,
                      checkpoint_interval = nothing,
                      checkpoint_cleanup = true)
@@ -175,7 +199,16 @@ function ena_lasso(; member = DEFAULT_LASSO_MEMBER,
     overrides = [name for (name, value) in pairs((; Nx, Ny, Lx, Ly, z_faces, stop_time, Δt, radiation_interval,
                                                   wind_nudging_timescale, liquid_effective_radius, perturbation, microphysics))
                  if !isnothing(value)]
-    radiation || push!(overrides, :radiation)
+    radiation = radiation === true ? :rrtmgp : radiation === false ? :none : radiation
+    radiation in (:rrtmgp, :ecckd, :none) ||
+        throw(ArgumentError("radiation must be :rrtmgp, :ecckd or :none (got $(repr(radiation)))"))
+    radiation === :rrtmgp || push!(overrides, :radiation)
+    isnothing(nudging_tq) || push!(overrides, :nudging_tq)
+    isnothing(p3_process_rates) || push!(overrides, :p3_process_rates)
+    isnothing(nudging_sounding_file) || isnothing(nudging_tq) ||
+        push!(overrides, :nudging_sounding_file)
+    isnothing(nudging_sounding_file) || !isnothing(nudging_tq) ||
+        throw(ArgumentError("nudging_sounding_file needs nudging_tq"))
     wind_nudging || push!(overrides, :wind_nudging)
     (; domain, switches, location) = bundle
     timing = bundle.time
@@ -227,8 +260,12 @@ function ena_lasso(; member = DEFAULT_LASSO_MEMBER,
     if protocol_microphysics
         aerosol = lasso_aerosol(; setting = member.aerosol, reference_density = ρᵣ[1],
                                 maximum_supersaturation = 0.003)       # HUJI-SBM ss_max (microphysics.f90)
-        microphysics = P3Microphysics(; cloud = CloudDroplets(; number_concentration = 75e6), aerosol)
+        microphysics = P3Microphysics(; cloud = CloudDroplets(; number_concentration = 75e6), aerosol,
+                                        process_rates = p3_process_rates)
+    elseif !isnothing(p3_process_rates)
+        throw(ArgumentError("p3_process_rates applies to the protocol P3; build the caller's microphysics with them instead"))
     end
+    process_rates = something(process_rates, microphysics isa PredictedParticlePropertiesMicrophysics)
     check_precision(microphysics, FT)
     diagnostic_ccn = something(diagnostic_ccn, has_aerosol_reservoir(microphysics))
     diagnostic_ccn && !has_aerosol_reservoir(microphysics) &&
@@ -260,16 +297,26 @@ function ena_lasso(; member = DEFAULT_LASSO_MEMBER,
     end
     sponge = switches.dodamping ? SAMSponge() : nothing
 
+    # Domain-mean θ and moisture nudging toward sounding records (beyond the protocol, donudging_tq = .false.)
+    nudging_records = isnothing(nudging_sounding_file) ? soundings : read_sam_sounding(nudging_sounding_file)
+    nudging_targets = isnothing(nudging_tq) ? nothing :
+                      sounding_nudging_targets(grid, nudging_records, z_centers; day0, moisture_basis)
+    tq_weight = nudging_height_ramp(nudging_heights...)
+    nudging_θ = isnothing(nudging_tq) ? nothing :
+                MeanProfileNudging(nudging_targets.θ; timescale = nudging_tq, vertical_weight = tq_weight)
+    nudging_q = isnothing(nudging_tq) ? nothing :
+                MeanProfileNudging(nudging_targets.q; timescale = nudging_tq, vertical_weight = tq_weight)
+
     forcing = Dict{Symbol, Tuple}(
         :u => (geostrophic.u, nudging_u, subsidence, sponge),
         :v => (geostrophic.v, nudging_v, subsidence, sponge),
         :w => (sponge,),
         :E => (thermodynamic.E, upper.E),            # tls and the top relaxation, as energy tendencies
-        :θ => (subsidence,))
+        :θ => (subsidence, nudging_θ))
     for name in specific_prognostic_names(microphysics)
         forcing[name] = (subsidence,)                # subsidence.f90 advects every microphysical field
     end
-    forcing[moisture_name] = (thermodynamic[moisture_name], subsidence, upper[moisture_name])
+    forcing[moisture_name] = (thermodynamic[moisture_name], subsidence, upper[moisture_name], nudging_q)
     forcing = compact_forcing(forcing)
 
     #####
@@ -284,11 +331,12 @@ function ena_lasso(; member = DEFAULT_LASSO_MEMBER,
                                                                                law = surface_flux_law)
 
     #####
-    ##### Radiation: RRTMGP LW+SW every nrad × dt
+    ##### Radiation: RRTMGP or ecCKD (NumericalRadiation) all-sky LW+SW every nrad × dt
     #####
 
-    radiation_model = if radiation
-        RadiativeTransferModel(grid, AllSkyOptics(), constants;
+    radiation_model = if radiation !== :none
+        optics = radiation === :ecckd ? EcCKDOptics(; clouds = CloudScatteringTables()) : AllSkyOptics()
+        RadiativeTransferModel(grid, optics, constants;
                                surface_temperature = Tₛ,
                                surface_albedo, surface_emissivity, background_atmosphere,
                                solar_position = ApparentSolarPosition(; coordinate = (longitude, latitude), epoch),
@@ -328,7 +376,14 @@ function ena_lasso(; member = DEFAULT_LASSO_MEMBER,
         mkpath(output_dir)
         add_output_writers!(simulation; output_dir, output_prefix, profile_interval,
                             timeseries_interval, slice_interval, slice_height,
-                            energy_budget_series = true)
+                            extra_slice_heights, y_averaged_sections,
+                            energy_budget_series = true, overwrite_files = overwrite_output)
+        if process_rates
+            simulation.output_writers[:process_rates] =
+                JLD2Writer(model, process_rate_outputs(model; heights = process_rate_heights);
+                           filename = joinpath(output_dir, output_prefix * "_process_rates.jld2"),
+                           schedule = TimeInterval(process_rate_interval), overwrite_files = overwrite_output)
+        end
         if !isnothing(checkpoint_interval)
             simulation.output_writers[:checkpointer] =
                 Checkpointer(model; schedule = TimeInterval(checkpoint_interval), dir = output_dir,
@@ -347,12 +402,17 @@ function ena_lasso(; member = DEFAULT_LASSO_MEMBER,
                 aerosol_supersaturation_cap = protocol_microphysics ? 0.003 : "set by the caller's microphysics",
                 diagnostic_ccn, initialization = string(initialization),
                 initial_droplet_number = something(initial_droplet_number, 0),
-                radiation = radiation ? "RRTMGP all-sky LW+SW" : "none (software test)", radiation_interval,
+                radiation = RADIATION_DESCRIPTIONS[radiation], radiation_interval,
                 liquid_effective_radius, ice_effective_radius, surface_albedo, surface_emissivity,
                 background_CO₂ = background_atmosphere.CO₂, background_CH₄ = background_atmosphere.CH₄,
                 background_N₂O = background_atmosphere.N₂O, background_O₃ = string(background_atmosphere.O₃),
                 surface = "bulk fluxes from the SST series (flxsst)", surface_record...,
                 wind_nudging, wind_nudging_timescale, upper_boundary_relaxation = switches.doupperbound,
+                tq_nudging = isnothing(nudging_tq) ? "none (donudging_tq = .false.)" :
+                             "domain-mean θ and $moisture_name toward " *
+                             (isnothing(nudging_sounding_file) ? "the bundle snd records" : abspath(nudging_sounding_file)) *
+                             ", τ = $nudging_tq s, sin² ramp $(nudging_heights[1])–$(nudging_heights[2]) m",
+                p3_process_rates = isnothing(p3_process_rates) ? "protocol defaults" : "caller-supplied ProcessRate",
                 sponge = isnothing(sponge) ? "nothing" : summary(sponge),
                 closure = isnothing(closure) ? "nothing" : summary(closure), advection_order,
                 stop_time, Δt, max_Δt, cfl,
@@ -360,11 +420,12 @@ function ena_lasso(; member = DEFAULT_LASSO_MEMBER,
                                 "adaptive (initial Δt = $Δt s, cfl = $cfl, max_Δt = $max_Δt s); SAM used fixed dt",
                 perturbation = string(perturbation),
                 write_output, output_dir = abspath(output_dir), output_prefix, profile_interval, timeseries_interval,
-                slice_interval, slice_height, progress_interval,
+                slice_interval, slice_height, extra_slice_heights, y_averaged_sections,
+                process_rates, process_rate_interval, overwrite_output, progress_interval,
                 checkpoint_interval = something(checkpoint_interval, 0), checkpoint_cleanup,
                 bundle = lasso_bundle_record(bundle), staging)
 
     return (; simulation, model, grid, config, inputs = paths, bundle,
-              soundings, sounding, lsf, sfc, profiles, columns, forcing_profiles, forcing,
+              soundings, sounding, lsf, sfc, profiles, columns, forcing_profiles, forcing, nudging_targets,
               surface_series, surface_temperature = Tₛ)
 end

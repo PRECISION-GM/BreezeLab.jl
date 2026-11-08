@@ -2,7 +2,7 @@
 
 julia_version = "1.12.7"
 manifest_format = "2.0"
-project_hash = "460504cd9cef8f10515d8ee38fb45179325d05f5"
+project_hash = "109dcdaecee711821a43f2a1581e3e0ea89ee32a"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -173,7 +173,7 @@ version = "0.13.0"
     Reactant = "3c362404-f566-11ee-1572-e11a4b42c853"
 
 [[deps.BreezeLab]]
-deps = ["Adapt", "Breeze", "CUDA", "CairoMakie", "ClimaComms", "CloudMicrophysics", "Dates", "JLD2", "KernelAbstractions", "NCDatasets", "Oceananigans", "Printf", "RRTMGP", "Random", "SHA", "SpecialFunctions", "Statistics", "TOML"]
+deps = ["Adapt", "Breeze", "CUDA", "CairoMakie", "ClimaComms", "CloudMicrophysics", "Dates", "JLD2", "KernelAbstractions", "NCDatasets", "NumericalRadiation", "Oceananigans", "Printf", "RRTMGP", "Random", "SHA", "SpecialFunctions", "Statistics", "TOML"]
 path = "."
 uuid = "95b707ca-5eb7-4d90-9406-35d7ad170877"
 version = "0.1.0"
@@ -1511,6 +1511,17 @@ version = "1.1.1"
 [[deps.NetworkOptions]]
 uuid = "ca575930-c2e3-43a9-ace4-1e988b2c1908"
 version = "1.3.0"
+
+[[deps.NumericalRadiation]]
+deps = ["Adapt", "Artifacts", "Dates", "DocStringExtensions", "LazyArtifacts", "Printf"]
+git-tree-sha1 = "c98dbef017a999c5c98a80d35f94a2b987fd529d"
+uuid = "cd8119b0-1744-44d6-9ede-6ad1ad750b26"
+version = "0.1.3"
+weakdeps = ["ClimaComms", "NCDatasets", "RRTMGP"]
+
+    [deps.NumericalRadiation.extensions]
+    NumericalRadiationNCDatasetsExt = "NCDatasets"
+    NumericalRadiationRRTMGPExt = ["ClimaComms", "NCDatasets", "RRTMGP"]
 
 [[deps.Observables]]
 git-tree-sha1 = "7438a59546cf62428fc9d1bc94729146d37a7225"

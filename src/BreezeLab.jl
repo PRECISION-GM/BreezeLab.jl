@@ -56,6 +56,7 @@ using Breeze.Microphysics.PredictedParticleProperties: PredictedParticleProperti
                                                        activated_number
 using CloudMicrophysics: CloudMicrophysics   # loads Breeze's one-moment extension
 using RRTMGP: RRTMGP                         # loads Breeze's RRTMGP extension
+using NumericalRadiation: NumericalRadiation   # loads Breeze's ecCKD extension (needs NCDatasets)
 using NCDatasets: NCDatasets
 using ClimaComms: ClimaComms
 

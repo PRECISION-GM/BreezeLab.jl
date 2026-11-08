@@ -349,6 +349,43 @@ end
     @test all(isfinite, interior(case.model.radiation.flux_divergence))
 end
 
+@testset "LASSO with ecCKD (NumericalRadiation) radiation builds on the CPU" begin
+    # Same surface, sun, schedule and effective radii as the RRTMGP default; only the optics change.
+    case = with_float_type(Float32) do
+        ena_lasso(; member=LASSO_MEMBER, epoch=LASSO_EPOCH, bundle_dir=LASSO_FIXTURE, dimensions=LASSO_DIMS, arch=CPU(),
+                    Nx=8, Ny=8, Lx=800, Ly=800, radiation=:ecckd, write_output=false, progress_interval=100)
+    end
+    @test case.config.radiation == "ecCKD (NumericalRadiation) all-sky LW+SW" && case.config.radiation_interval == 60.0
+    @test "radiation" in case.config.overrides
+    @test case.model.radiation.solar_position.epoch == LASSO_EPOCH
+    Oceananigans.TimeSteppers.update_state!(case.model)
+    @test all(isfinite, interior(case.model.radiation.flux_divergence))
+    @test_throws ArgumentError ena_lasso(; member=LASSO_MEMBER, epoch=LASSO_EPOCH, bundle_dir=LASSO_FIXTURE,
+                                           dimensions=LASSO_DIMS, arch=CPU(), radiation=:rrtm)
+end
+
+@testset "LASSO sensitivities: θ/q nudging, P3 process rates, process-rate output" begin
+    scaled = with_float_type(Float32) do
+        Breeze.Microphysics.PredictedParticleProperties.ProcessRate(; autoconversion_coefficient = 3.0)
+    end
+    case = with_float_type(Float32) do
+        ena_lasso(; member=LASSO_MEMBER, epoch=LASSO_EPOCH, bundle_dir=LASSO_FIXTURE, dimensions=LASSO_DIMS, arch=CPU(),
+                    Nx=8, Ny=8, Lx=800, Ly=800, radiation=:none, nudging_tq=3600, nudging_heights=(400, 800),
+                    p3_process_rates=scaled, write_output=false, progress_interval=100)
+    end
+    @test issubset(["nudging_tq", "p3_process_rates"], case.config.overrides)
+    @test occursin("τ = 3600", case.config.tq_nudging) && occursin("400.0–800.0 m", case.config.tq_nudging)
+    @test case.model.microphysics.process_rates.autoconversion_coefficient == 3.0f0
+    @test case.config.process_rates                        # P3 → process-rate output on by default
+    @test !isnothing(case.nudging_targets)
+    Oceananigans.TimeSteppers.update_state!(case.model)
+    time_step!(case.simulation, 1)
+    @test all(isfinite, interior(case.model.temperature))
+    @test_throws ArgumentError ena_lasso(; member=LASSO_MEMBER, epoch=LASSO_EPOCH, bundle_dir=LASSO_FIXTURE,
+                                           dimensions=LASSO_DIMS, arch=CPU(), radiation=:none,
+                                           nudging_sounding_file=joinpath(LASSO_FIXTURE, "snd"))
+end
+
 @testset "SAM oceflx surface law" begin
     laws = sam_oceflx_neutral_polynomials()
     cdn(U) = 0.0027 / U + 0.000142 + 0.0000764 * U

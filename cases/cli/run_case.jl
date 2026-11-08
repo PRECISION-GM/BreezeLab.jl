@@ -35,7 +35,7 @@ allowed = Set(["data", "protocol", "arch", "float", "seed", "epoch", "member", "
                "resolution", "Nx", "Ny", "Nz", "Lx", "Ly", "hours", "checkpoint_interval", "pickup",
                "process_rates", "process_rate_interval", "prandtl", "scalar_advection_order", "reference_extension", "lw_F0", "dynamic_averaging", "advection_order", "microphysics_advection_order", "cfl", "dt", "max_dt", "lasso_grid", "grid", "initialization", "closure",
                "profile_interval", "slice_interval", "liquid_reff", "radiation", "nudging", "surface_flux_law", "output",
-               "nudging_tq", "nudging_z", "nudging_uv", "p3_scale"])
+               "nudging_tq", "nudging_z", "nudging_uv", "nudging_snd", "p3_scale"])
 unknown = setdiff(Set(keys(opts)), allowed)
 isempty(unknown) || error("unknown options: $(join(sort!(collect(unknown)), ", "))")
 
@@ -90,6 +90,18 @@ function microphysics_member(name; data, z_faces, cap, process_rates = nothing)
         return P3Microphysics(; cloud, aerosol = covert_aerosol(; reference_density, maximum_supersaturation = something(cap, 0.003)), process_rates)
     end
     error("--microphysics must be one_moment, p3_n75 (or p3_n<N> for N cm⁻³), p3_aer1, p3_aer2, p3_aer3 or p3_covert_n75")
+end
+
+# --nudging_tq τ and --nudging_z z₁,z₂ (both protocols): domain-mean θ and moisture nudging
+function tq_nudging_keywords!(kw, opts)
+    haskey(opts, "nudging_tq") && (kw[:nudging_tq] = parse(Float64, opts["nudging_tq"]))
+    if haskey(opts, "nudging_z")
+        haskey(opts, "nudging_tq") || error("--nudging_z needs --nudging_tq")
+        heights = Tuple(parse.(Float64, split(opts["nudging_z"], ',')))
+        length(heights) == 2 || error("--nudging_z must be z₁,z₂")
+        kw[:nudging_heights] = heights
+    end
+    return kw
 end
 
 kw = Dict{Symbol, Any}()
@@ -159,7 +171,7 @@ output_prefix = "lasso_ena"
 cap = getopt("aerosol_ss_cap", "nothing") == "nothing" ? nothing : parse(Float64, opts["aerosol_ss_cap"])
 
 if protocol === :covert_public_bin
-    for option in ("member", "epoch", "dimensions", "nudging", "surface_flux_law", "liquid_reff")
+    for option in ("member", "epoch", "dimensions", "nudging", "surface_flux_law", "liquid_reff", "nudging_snd")
         haskey(opts, option) && error("--$option applies to --protocol lasso_ena_official only")
     end
     member_name = getopt("microphysics", "p3_n75")
@@ -178,20 +190,13 @@ if protocol === :covert_public_bin
     # --nudging_tq τ: domain-mean θ and moisture nudged toward the snd records with timescale τ [s],
     #   weighted by a sin² ramp between the heights of --nudging_z z₁,z₂ (default 1200,1800 m: free troposphere only)
     # --nudging_uv τ: domain-mean u, v nudged toward the snd winds over the full column, timescale τ [s]
-    haskey(opts, "nudging_tq") && (kw[:nudging_tq] = parse(Float64, opts["nudging_tq"]))
+    tq_nudging_keywords!(kw, opts)
     haskey(opts, "nudging_uv") && (kw[:nudging_uv] = parse(Float64, opts["nudging_uv"]))
-    if haskey(opts, "nudging_z")
-        haskey(opts, "nudging_tq") || error("--nudging_z needs --nudging_tq")
-        heights = Tuple(parse.(Float64, split(opts["nudging_z"], ',')))
-        length(heights) == 2 || error("--nudging_z must be z₁,z₂")
-        kw[:nudging_heights] = heights
-    end
     seed = parse(Int, getopt("seed", "1234"))
     case = ena_covert(; arch, data_dir = data, microphysics, output_dir, output_prefix,
                         perturbation = InitialPerturbation(; seed), kw...)
 else
-    for option in ("process_rates", "process_rate_interval", "pickup", "scalar_advection_order",
-                   "microphysics_advection_order", "reference_extension", "lw_F0", "nudging_tq", "nudging_z", "nudging_uv", "p3_scale")
+    for option in ("scalar_advection_order", "microphysics_advection_order", "reference_extension", "lw_F0", "nudging_uv")
         haskey(opts, option) && error("--$option applies to --protocol covert_public_bin only")
     end
     haskey(opts, "member") || error("--member <LASSO run ID> is required with --protocol lasso_ena_official")
@@ -203,8 +208,8 @@ else
                  BreezeLab.lasso_documented_dimensions(member)
     length(dimensions) == 3 || error("--dimensions must be Nx,Ny,Nz from the bundle domain configuration")
     if haskey(opts, "radiation")
-        opts["radiation"] in ("rrtmgp", "none", "nothing") || error("--radiation must be rrtmgp or none")
-        kw[:radiation] = opts["radiation"] == "rrtmgp"
+        opts["radiation"] in ("rrtmgp", "ecckd", "none", "nothing") || error("--radiation must be rrtmgp, ecckd or none")
+        kw[:radiation] = opts["radiation"] == "nothing" ? :none : Symbol(opts["radiation"])
     end
     if haskey(opts, "nudging")      # a timescale in seconds, or none/nothing to switch the wind nudging off
         opts["nudging"] in ("none", "nothing") ? (kw[:wind_nudging] = false) :
@@ -216,11 +221,18 @@ else
     haskey(opts, "liquid_reff") && (kw[:liquid_effective_radius] = parse(Float64, opts["liquid_reff"]))
     # Without --microphysics the member's protocol P3 is built by ena_lasso (capped at 0.3 %). A
     # LASSO aerosol member from the CLI is capped at the SBM ss_max as well unless --aerosol_ss_cap says otherwise.
+    # --nudging_tq τ, --nudging_z z₁,z₂ as for Covert; --nudging_snd <SAM snd file> replaces the bundle snd
+    # records as the targets (e.g. the ARM radiosonde series)
+    tq_nudging_keywords!(kw, opts)
+    haskey(opts, "nudging_snd") && (kw[:nudging_sounding_file] = opts["nudging_snd"])
     member_name = get(opts, "microphysics", haskey(opts, "aerosol_ss_cap") ? "p3_" * string(parse_lasso_member(member).aerosol) : "protocol")
     cap = haskey(opts, "aerosol_ss_cap") ? cap : 0.003
+    process_rates = p3_process_rates(get(opts, "p3_scale", nothing))
     if member_name != "protocol"
         faces = isnothing(z_faces) ? validate_lasso_bundle(data; member, dimensions, epoch).grid.faces : z_faces
-        kw[:microphysics] = microphysics_member(member_name; data, z_faces = faces, cap)
+        kw[:microphysics] = microphysics_member(member_name; data, z_faces = faces, cap, process_rates)
+    else
+        kw[:p3_process_rates] = process_rates
     end
     output_dir = getopt("output", "output/lasso_ena_official_$(getopt("microphysics", "protocol"))")
     @info "Building LASSO member $member on $(typeof(arch)) with $(Oceananigans.defaults.FloatType)" opts
