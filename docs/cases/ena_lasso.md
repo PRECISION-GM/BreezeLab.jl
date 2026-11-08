@@ -35,7 +35,7 @@ revision), `stagesam_ena 8404ad7`. Facts read from the files:
 | `grd` | 260 scalar levels 12.5 … 8087.5 m (25 m to 6012.5 m, then stretched); Breeze centres differ from SAM levels by ≤ 4 m in the stretched part |
 | dimensions | `caseid` is a name → `dimensions = (256, 256, 260)` passed explicitly (`lasso_documented_dimensions`) |
 | `&SGS_TKE dosmagor = .false.` | prognostic 1.5-order TKE in SAM; Breeze Smagorinsky–Lilly (recorded) |
-| `UNIFORM_SFC_FLX = .false.` | per-column `oceflx` in SAM → adapter `surface_flux_law = :sam_oceflx` (Large & Pond drag exactly; Stanton `0.0327√cdn` and Dalton `0.0346√cdn` fitted to Breeze's `a₀ + a₁U + a₂/U` within 0.4 % over 2–15 m s⁻¹; `umin = 1` m s⁻¹; residual: Breeze's log-profile height shift and Li et al. stability vs SAM's two Monin–Obukhov iterations and the stable-branch Stanton `0.018√cdn`) |
+| `UNIFORM_SFC_FLX = .false.` | per-column `oceflx` in SAM → adapter `surface_flux_law = :sam_oceflx`: `oceflx.f90` transcribed and evaluated per column with SAM's inputs (`t` as θ, `t − gz/cp` as T, `qv`, `pres(1)`, `z(1)`, ground-relative wind, `umin = 1` m s⁻¹, two Monin–Obukhov iterations, stable Stanton branch) and `surface.f90` staggering; matches the gfortran-compiled routine to round-off ([sam_oceflx_parity.md](sam_oceflx_parity.md)). The earlier polynomial fit is `:sam_oceflx_fitted` |
 | `fcor = 9.19626e-5` | used directly as the f-plane parameter (SAM does so); it equals `2Ω sin φ` with the sidereal Ω, 0.27 % above SAM's own `4π/86400 sin φ` |
 | `compute_reffc = .true.` | SAM diagnoses the liquid effective radius from the SBM spectrum; Breeze prescribes 10 μm (recorded departure) |
 | `perturb_type = 5`, `timelargescale = 0`, `ug = vg = 0`, `nxco2 = 1`, `doseasons = .false.` | supported as is |

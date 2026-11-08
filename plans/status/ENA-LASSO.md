@@ -192,3 +192,15 @@ mismatch. Reference outputs samstat/sam2d: `ARM_MAX_BYTES=4000000000 $JULIA data
 ## Data order (coordinator, 2026-10-08 ~03:30 UTC)
 - ARM LASSO-ENA order **284988** placed for member `20170718era5d25x100_sbmwrm-aer2-flxsst`: samin tar (53.74 MB), samstat .nc (94.43 MB), sam2d .nc (991.97 MB); FTP delivery, email link to follow. Coordinator polls the `armlive/saveData` route for HTTP 200 and will run the staging sequence above, then the short A100 integration and the full configured duration.
 - 05:25 UTC (coordinator): order 284988 delivered (anonymous FTP, per-datastream subdirs, `.v0` suffix stripped). Files in data/lasso/archives/ with SHA256SUMS: samin 53 739 520 B b7594c2d…, samstat 94 426 591 B f5cb2bed…, sam2d 991 972 348 B 4a4c6682… (sizes match the order). README: SAM v6.10.3 + LASSO mods, model_source_git_hash f83adf58 (lasso_ena_noice), stagesam_ena 8404ad7. Staged with `stage_lasso_bundle.jl` → data/lasso/20170718era5d25x100_sbmwrm-aer2-flxsst/. `inspect_lasso_bundle`: day0 199.0, dt 1 s, nstop 86400, nrad 30, tauls 7200 s; **rejections to resolve before any run:** `uniform_sfc_flx = false` (per-column SAM fluxes, adapter implements uniform branch) and `fcor = 9.19626e-5` detached from latitude. Handed to the ENA-LASSO agent with the launch; no GPU idle at 05:30 UTC.
+
+## SAM oceflx parity (2026-11-08)
+- `surface_flux_law = :sam_oceflx` (the `ena_lasso` default) now evaluates SAM's `oceflx.f90` itself, per column with
+  `surface.f90`'s inputs and staggering (`src/components/sam_ocean_surface_fluxes.jl`, algorithm in
+  `docs/cases/sam_oceflx_parity.md`); the earlier polynomial fit is kept as `:sam_oceflx_fitted`.
+- Parity (`~/ena-les/lasso/oceflx_parity`, gfortran-compiled unchanged `oceflx.f90` + `sat.f90`, 8736 inputs: U 0.5–25 m/s,
+  ΔT −5…+3 K, RH 60–100 %, z₁ 10–40 m, SST 285/292/269.5 K): max relative difference Float64 vs `-fdefault-real-8`
+  shf 5.8e-16, lhf 6.8e-16, τˣ 1.1e-15, τʸ 9.2e-16, ssq 0; Float32 vs SAM's default single precision ≤ 2.1e-7. Job 10230.
+- SAM model hash `f83adf58` (bundle README) is in `~/lasso_sam_sbm` history; `oceflx.f90`, `surface.f90`, diffusion,
+  `setdata.f90` and the `params.f90` constants are identical to HEAD `12d0244`.
+- Tests (job 10230, LASSO-only driver): 293 pass, 1 fail; the failure (test/ena_lasso.jl:377, `tq_nudging` string expects
+  "400.0–800.0 m", gets integer heights) belongs to the b487cf7 nudging work, not to the surface law.

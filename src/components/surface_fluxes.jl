@@ -8,9 +8,9 @@
 #####     τ(t) from the `sfc` file; the stress is aligned with the local near-surface wind
 #####     (`surface.f90`: `taux = -(u/|U|) τ₀ ρ`, `|U| = max(1, |U|)`).
 #####   * `BulkSurfaceFluxes` — `SFC_FLX_FXD = .false.` over `OCEAN` (LASSO `flxsst`): bulk
-#####     fluxes from the prescribed SST(t) with wind- and stability-dependent coefficients.
-#####     SAM's `oceflx.f90` neutral drag law cdn = 0.0027/U + 0.000142 + 0.0000764 U is the
-#####     Large & Yeager polynomial that Breeze's `PolynomialCoefficient` uses by default.
+#####     fluxes from the prescribed SST(t). `law = :sam_oceflx` evaluates SAM's `oceflx.f90`
+#####     itself per column (`sam_ocean_surface_fluxes.jl`); `law = :breeze` uses Breeze's
+#####     `PolynomialCoefficient` bulk formulae.
 #####
 ##### Energy convention. BreezeLab uses Breeze's liquid-ice potential-temperature formulation,
 ##### which converts a `ρE` energy flux F as cᵖᵐ dT = F and adds vapor at fixed θ without
@@ -21,7 +21,7 @@
 using Oceananigans: FieldTimeSeries, Field, Center, Face, set!
 using Oceananigans.Fields: interior
 using Statistics: mean
-using Oceananigans.BoundaryConditions: FluxBoundaryCondition, FieldBoundaryConditions
+using Oceananigans.BoundaryConditions: FluxBoundaryCondition, FieldBoundaryConditions, fill_halo_regions!
 using Oceananigans.Units: Time
 using Breeze: BulkDrag, BulkSensibleHeatFlux, BulkVaporFlux, PolynomialCoefficient
 
@@ -189,44 +189,55 @@ end
 
 """
     bulk_surface_flux_boundary_conditions(grid, surface_temperature; moisture_name,
-                                          law=:breeze, roughness_length=1.5e-4, gustiness=0.1)
+                                          law=:breeze, roughness_length=1.5e-4, gustiness=0.1,
+                                          microphysics=nothing, thermodynamic_constants=nothing,
+                                          surface_density=nothing)
 
 Bottom boundary conditions computed online, per column, from the shared
-`surface_temperature` field with Breeze's wind- and stability-dependent
-`PolynomialCoefficient`. Two laws:
+`surface_temperature` field. Three laws:
 
-- `law = :breeze`: Large & Yeager (2009) neutral polynomials for drag, sensible and latent
-  heat, Li et al. (2010) stability mapping, `gustiness` added in quadrature to the wind.
-- `law = :sam_oceflx`: SAM's `oceflx.f90` neutral laws ([`sam_oceflx_neutral_polynomials`](@ref):
-  Large & Pond drag exactly, fitted Stanton/Dalton numbers), SAM's 1 m s⁻¹ minimum wind
-  (`minimum_wind_speed = 1`, no gustiness). This is the per-column form SAM uses with
-  `UNIFORM_SFC_FLX = .false.` (`surface.f90`, one `oceflx` call per column with the local
-  wind, temperature, vapor and SST). **Residual differences, recorded in provenance:**
-  SAM shifts its 10-m neutral coefficients to the lowest level with two Monin–Obukhov
-  iterations (Businger–Dyer functions) and uses the stable-branch Stanton number
-  `0.0180 √cdn` when `θ₁ > SST`; Breeze shifts with the logarithmic profile at
-  `roughness_length` and the non-iterative Li et al. mapping, with one Stanton law. The
-  surface saturation humidity is at the SST in both (SAM at the lowest-level pressure).
+- `law = :breeze`: Breeze's `PolynomialCoefficient` with the Large & Yeager (2009) neutral
+  polynomials for drag, sensible and latent heat, Li et al. (2010) stability mapping,
+  `gustiness` added in quadrature to the wind.
+- `law = :sam_oceflx`: SAM's `oceflx.f90` itself ([`sam_ocean_fluxes`](@ref) through
+  [`SAMOceanSurfaceFlux`](@ref)), per column as SAM's `surface.f90` calls it with
+  `UNIFORM_SFC_FLX = .false.`: Large & Pond neutral 10-m laws with the stable/unstable
+  Stanton branches, two Monin–Obukhov iterations, `umin = 1` m s⁻¹ and no gustiness. Needs
+  `microphysics` and `thermodynamic_constants` (the model's) and `surface_density`, SAM's
+  `rhow(1)` ([`sam_surface_interface_density`](@ref)). See `docs/cases/sam_oceflx_parity.md`.
+- `law = :sam_oceflx_fitted`: the earlier approximation, SAM's neutral laws fitted to Breeze's
+  polynomial form ([`sam_oceflx_neutral_polynomials`](@ref)) with Breeze's log-profile height
+  shift and Li et al. stability, `minimum_wind_speed = 1`, no gustiness.
 
 Returns `(boundary_conditions, record)`; `record` names the law and its coefficients.
 """
 function bulk_surface_flux_boundary_conditions(grid, surface_temperature; moisture_name, law = :breeze,
-                                               roughness_length = 1.5e-4, gustiness = 0.1)
-    if law === :breeze
+                                               roughness_length = 1.5e-4, gustiness = 0.1,
+                                               microphysics = nothing, thermodynamic_constants = nothing,
+                                               surface_density = nothing)
+    if law === :sam_oceflx
+        (isnothing(thermodynamic_constants) || isnothing(surface_density)) &&
+            throw(ArgumentError("law = :sam_oceflx needs the model's thermodynamic_constants (and microphysics) and surface_density"))
+        bcs = sam_ocean_surface_flux_boundary_conditions(grid, surface_temperature; moisture_name, microphysics,
+                                                         thermodynamic_constants, surface_density)
+        record = (; surface_flux_law = "sam_oceflx (SAM oceflx.f90 per column: Large & Pond neutral 10-m laws, stable/unstable Stanton branches, two Monin-Obukhov iterations, umin = 1 m/s, no gustiness)",
+                    gustiness = 0.0, minimum_wind_speed = 1.0, surface_interface_density = Float64(surface_density))
+        return bcs, record
+    elseif law === :breeze
         polynomials = (; drag = nothing, sensible = nothing, latent = nothing)   # Breeze fills Large & Yeager
         minimum_wind_speed = 0.1
         record = (; surface_flux_law = "breeze (Large & Yeager 2009 polynomials, Li et al. 2010 stability)",
                     gustiness, roughness_length, minimum_wind_speed)
-    elseif law === :sam_oceflx
+    elseif law === :sam_oceflx_fitted
         laws = sam_oceflx_neutral_polynomials()
         polynomials = (; drag = laws.drag, sensible = laws.sensible, latent = laws.latent)
         minimum_wind_speed = 1.0
         gustiness = 0.0
-        record = (; surface_flux_law = "sam_oceflx (Large & Pond drag, fitted 0.0327√cdn Stanton and 0.0346√cdn Dalton, umin = 1 m/s; Breeze log-profile height shift and Li et al. stability instead of SAM's two MO iterations and stable Stanton branch)",
+        record = (; surface_flux_law = "sam_oceflx_fitted (Large & Pond drag, fitted 0.0327√cdn Stanton and 0.0346√cdn Dalton, umin = 1 m/s; Breeze log-profile height shift and Li et al. stability instead of SAM's two MO iterations and stable Stanton branch)",
                     gustiness, roughness_length, minimum_wind_speed,
                     sensible_polynomial = laws.sensible, latent_polynomial = laws.latent, fit_error = laws.fit_error)
     else
-        throw(ArgumentError("surface flux law must be :breeze or :sam_oceflx, got $law"))
+        throw(ArgumentError("surface flux law must be :breeze, :sam_oceflx or :sam_oceflx_fitted, got $law"))
     end
     coefficient(transfer) = PolynomialCoefficient(; polynomial = polynomials[transfer], roughness_length, minimum_wind_speed)
     ρu_bc = BulkDrag(; coefficient = coefficient(:drag), gustiness, surface_temperature)
@@ -257,5 +268,6 @@ function (updater::SeaSurfaceTemperatureUpdater)(simulation)
     t = simulation.model.clock.time
     sst = interpolate_time_series(updater.times, updater.values, t)
     set!(updater.surface_temperature, sst)
+    fill_halo_regions!(updater.surface_temperature)   # SAM's oceflx averages the SST onto velocity points
     return nothing
 end

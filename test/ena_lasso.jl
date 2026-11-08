@@ -229,7 +229,7 @@ end
     @test Set(case.config.overrides) == Set(["Nx", "Ny", "Lx", "Ly", "stop_time", "microphysics", "radiation"])
     @test startswith(case.config.surface_flux_law, "sam_oceflx") && case.config.coriolis_parameter_source == "2Ω sin(latitude)"
     @test case.config.coriolis_parameter ≈ FPlane(Float64; latitude=39.0916).f rtol=1e-6    # 2Ω sin φ, sidereal Ω
-    @test case.config.minimum_wind_speed == 1.0 && case.config.gustiness == 0.0 && case.config.fit_error < 0.01
+    @test case.config.minimum_wind_speed == 1.0 && case.config.gustiness == 0.0 && case.config.surface_interface_density > 1
     @test case.config.surface_emissivity == 0.95 && case.config.liquid_effective_radius == 14e-6
     @test case.config.member == LASSO_MEMBER && occursin("member $LASSO_MEMBER", case.config.label)
     @test case.config.bundle.member.aerosol == "aer2"
@@ -400,14 +400,79 @@ end
     @test ev(laws.sensible, 7.0) > ev((1.28e-4, 6.8e-5, 2.43e-3), 7.0) * 1.05
     grid = test_grid(; Nz=8, Lz=400)
     Tₛ = Field{Center, Center, Nothing}(grid); set!(Tₛ, 295.0)
-    bcs, record = bulk_surface_flux_boundary_conditions(grid, Tₛ; moisture_name=:qᵛ, law=:sam_oceflx)
-    @test record.minimum_wind_speed == 1.0 && record.gustiness == 0.0 && startswith(record.surface_flux_law, "sam_oceflx")
+    bcs, record = bulk_surface_flux_boundary_conditions(grid, Tₛ; moisture_name=:qᵛ, law=:sam_oceflx_fitted)
+    @test record.minimum_wind_speed == 1.0 && record.gustiness == 0.0 && startswith(record.surface_flux_law, "sam_oceflx_fitted")
     @test bcs.ρE.bottom.condition.coefficient.polynomial == laws.sensible
     @test bcs.ρqᵛ.bottom.condition.coefficient.polynomial == laws.latent
     @test bcs.ρu.bottom.condition.coefficient.polynomial == laws.drag
     bcs_b, record_b = bulk_surface_flux_boundary_conditions(grid, Tₛ; moisture_name=:qᵛ)
     @test record_b.gustiness == 0.1 && bcs_b.ρE.bottom.condition.coefficient.polynomial == (1.28e-4, 6.8e-5, 2.43e-3)   # Breeze fills Large & Yeager
     @test_throws ArgumentError bulk_surface_flux_boundary_conditions(grid, Tₛ; moisture_name=:qᵛ, law=:other)
+    @test_throws ArgumentError bulk_surface_flux_boundary_conditions(grid, Tₛ; moisture_name=:qᵛ, law=:sam_oceflx)
+end
+
+@testset "SAM oceflx surface law: parity with oceflx.f90" begin
+    # Rows of SAM's oceflx.f90 (lasso_sam_sbm/SRC, unchanged) compiled with gfortran -fdefault-real-8
+    # behind a driver (~/ena-les/lasso/oceflx_parity): inputs (p [mb], u, v, tbot, qbot, thbot, zbot, ts)
+    # then outputs (shf [K m/s], lhf [m/s], taux, tauy [N/m²], ssq). They cover the 1 m/s wind floor,
+    # unstable, stable, strong-wind and qsati (ts < 271 K) branches.
+    references = [
+        (1.01500000000000000e3, 4.09576022144496066e-1, -2.86788218175522802e-1, 2.79902290836653378e2, 3.65479184904137552e-3, 2.80000000000000000e2, 1.00000000000000000e1, 2.85000000000000000e2, 1.57649207731676740e-2, 1.70238409705719579e-5, -2.26879567848646980e-3, 1.58862783673383717e-3, 8.62230750358701850e-3),
+        (1.01500000000000000e3, 3.27660817715596853e0, -2.29430574540418242e0, 2.87706872509960135e2, 9.80166361118906503e-3, 2.88000000000000000e2, 3.00000000000000000e1, 2.85000000000000000e2, -2.42277346533203335e-3, -1.36537919001351080e-6, -5.10069940837205252e-3, 3.57154817588391368e-3, 8.62230750358701850e-3),
+        (1.01500000000000000e3, 8.19152044288992087e0, -5.73576436351045604e0, 2.91402290836653378e2, 7.86818341221226167e-3, 2.91500000000000000e2, 1.00000000000000000e1, 2.92000000000000000e2, 5.88895897167146607e-3, 7.18668221624847595e-5, -1.21572263987068954e-1, 8.51258156809664018e-2, 1.36248918529633875e-2),
+        (1.01500000000000000e3, 1.63830408857798417e1, -1.14715287270209121e1, 2.93804581673306757e2, 1.22233570616113660e-2, 2.94000000000000000e2, 2.00000000000000000e1, 2.92000000000000000e2, -2.66822606084624082e-2, 3.48868721484332030e-5, -5.79013018935009449e-1, 4.05429280579854556e-1, 1.36248918529633875e-2),
+        (1.01500000000000000e3, 1.63830408857798426e0, -1.14715287270209121e0, 2.71402290836653378e2, 1.98673931001091706e-3, 2.71500000000000000e2, 1.00000000000000000e1, 2.69500000000000000e2, -1.83065034416931552e-3, 1.19014195012864056e-6, -4.04423143070636176e-3, 2.83180133404523039e-3, 2.77162223652930141e-3),
+        (1.01500000000000000e3, 1.06489765757568975e1, -7.45649367256359241e0, 2.70206872509960135e2, 3.02929827778735923e-3, 2.70500000000000000e2, 3.00000000000000000e1, 2.69500000000000000e2, -7.01575198183563686e-3, -3.30293984505685854e-6, -1.82958369447460328e-1, 1.28108829465668594e-1, 2.77162223652930141e-3)]
+    for r in references
+        f = sam_ocean_fluxes(r[1:8]...)
+        @test f.sensible ≈ r[9] rtol=1e-12
+        @test f.vapor ≈ r[10] rtol=1e-12
+        @test f.τˣ ≈ r[11] rtol=1e-12
+        @test f.τʸ ≈ r[12] rtol=1e-12
+        @test f.surface_humidity ≈ r[13] rtol=1e-12
+        @test sam_surface_saturation_specific_humidity(r[8], r[1]) ≈ r[13] rtol=1e-12
+        f32 = sam_ocean_fluxes(Float32.(r[1:8])...)                 # SAM's default single precision
+        @test f32.sensible isa Float32
+        @test f32.sensible ≈ r[9] rtol=1e-4
+    end
+    @test sam_surface_interface_density([1000.0, 900.0, 810.0], [5.0, 15.0, 25.0], 10.0) == 2 * 1.0 - 0.9
+
+    # Per-column boundary conditions in a P3 model: SAM's inputs from the model state
+    grid = test_grid(; Nz=8, Lz=400)
+    constants = ThermodynamicConstants(Float64)
+    reference_state = ReferenceState(grid, constants; base_pressure=101500, potential_temperature=z -> 290 + 0.004z)
+    dynamics = AnelasticDynamics(reference_state)
+    zc = Array(znodes(grid, Center()))
+    pᵣ = Array(interior(reference_state.pressure, 1, 1, :))
+    ρʷ = sam_surface_interface_density(pᵣ, zc, constants.gravitational_acceleration)
+    @test ρʷ ≈ Array(interior(reference_state.density, 1, 1, :))[1] rtol=0.01
+    Tₛ = Field{Center, Center, Nothing}(grid); set!(Tₛ, 292.0); Oceananigans.BoundaryConditions.fill_halo_regions!(Tₛ)
+    p3 = P3Microphysics(Float64; cloud=CloudDroplets(Float64; number_concentration=75e6))
+    bcs, record = bulk_surface_flux_boundary_conditions(grid, Tₛ; moisture_name=:qᵛ, law=:sam_oceflx, microphysics=p3,
+                                                        thermodynamic_constants=constants, surface_density=ρʷ)
+    @test startswith(record.surface_flux_law, "sam_oceflx (SAM oceflx.f90") && record.surface_interface_density == ρʷ
+    model = AtmosphereModel(grid; formulation=:LiquidIcePotentialTemperature, dynamics, microphysics=p3,
+                            thermodynamic_constants=constants, boundary_conditions=bcs)
+    set!(model; T=289.0, qᵛ=9e-3, qᶜˡ=2e-4, u=7.0, v=-4.0)
+    Oceananigans.TimeSteppers.update_state!(model)
+    clock, fields, dynamics_fields = Oceananigans.Models.boundary_condition_args(model)
+    T₁ = fields.T[3, 3, 1]; qᵛ₁ = fields.qᵛ[3, 3, 1]; qˡ₁ = fields.qᶜˡ[3, 3, 1]
+    t₁ = T₁ + 9.81 / 1004 * zc[1] - 2.5104e6 / 1004 * qˡ₁                         # SAM's t (liquid-ice static energy / cₚ)
+    expected = sam_ocean_fluxes(pᵣ[1] / 100, 7.0, -4.0, t₁ - 9.81 / 1004 * zc[1], qᵛ₁, t₁, zc[1], 292.0)
+    @test expected.sensible > 0 && expected.vapor > 0
+    prognostic = Oceananigans.prognostic_fields(model)
+    bottom(name) = Oceananigans.BoundaryConditions.getbc(Oceananigans.boundary_conditions(prognostic[name]).bottom,
+                                                         3, 3, grid, clock, fields, dynamics_fields)
+    ρθ_condition = Oceananigans.boundary_conditions(prognostic.ρθ).bottom.condition
+    @test ρθ_condition isa Breeze.BoundaryConditions.EnergyFluxBoundaryConditionFunction
+    𝒬 = Oceananigans.BoundaryConditions.getbc(ρθ_condition.condition, 3, 3, grid, clock, fields, dynamics_fields)
+    q₁ = MoistureMassFractions(qᵛ₁, qˡ₁, 0.0)
+    @test 𝒬 ≈ mixture_heat_capacity(q₁, constants) * ρʷ * expected.sensible rtol=1e-10
+    @test bottom(:ρqᵛ) ≈ ρʷ * expected.vapor rtol=1e-10
+    @test bottom(:ρu) ≈ expected.τˣ rtol=1e-10
+    @test bottom(:ρv) ≈ expected.τʸ rtol=1e-10
+    time_step!(model, 1)
+    @test all(isfinite, interior(model.momentum.ρu)) && all(isfinite, interior(prognostic.ρθ))
 end
 
 @testset "ena_lasso constructor wrapper" begin

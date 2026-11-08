@@ -326,9 +326,13 @@ function ena_lasso(; member = DEFAULT_LASSO_MEMBER,
     surface_series = surface_time_series(grid, sfc, day0)
     Tₛ = Field{Center, Center, Nothing}(grid)
     set!(Tₛ, FT(sfc.sst[1]))
+    fill_halo_regions!(Tₛ)
     sst_updater = SeaSurfaceTemperatureUpdater(Tₛ, surface_series.times, FT.(sfc.sst))
+    surface_density = sam_surface_interface_density(pᵣ, z_centers, constants.gravitational_acceleration)
     boundary_conditions, surface_record = bulk_surface_flux_boundary_conditions(grid, Tₛ; moisture_name,
-                                                                               law = surface_flux_law)
+                                                                               law = surface_flux_law, microphysics,
+                                                                               thermodynamic_constants = constants,
+                                                                               surface_density)
 
     #####
     ##### Radiation: RRTMGP or ecCKD (NumericalRadiation) all-sky LW+SW every nrad × dt

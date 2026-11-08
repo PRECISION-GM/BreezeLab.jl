@@ -452,7 +452,7 @@ function inspect_lasso_bundle(directory; member=nothing, dimensions=nothing, epo
                     "; Breeze uses Smagorinsky–Lilly")
     push!(warnings, uniform_sfc_flx ?
           "UNIFORM_SFC_FLX = .true.: SAM computes one domain-mean oceflx flux per step; Breeze's bulk fluxes are per column (departure recorded)" :
-          "UNIFORM_SFC_FLX = .false.: SAM computes oceflx per column (surface.f90 CEM branch), as Breeze does; the adapter uses the sam_oceflx law (Large & Pond drag, fitted Stanton/Dalton, umin = 1 m/s) with Breeze's log-profile shift and Li et al. stability instead of SAM's two Monin–Obukhov iterations and stable Stanton branch")
+          "UNIFORM_SFC_FLX = .false.: SAM computes oceflx per column (surface.f90 CEM branch); the adapter's sam_oceflx law evaluates oceflx.f90 itself per column with SAM's inputs and staggering (docs/cases/sam_oceflx_parity.md)")
     push!(warnings, "aerosol activation: Breeze's Morrison–Grabowski scheme has no supersaturation cap; the adapter scales the LASSO modes to the fraction activatable below the SBM ss_max = 0.3 % (aerosol_supersaturation_cap = 0.003, recorded)")
     push!(warnings, compute_reffc ?
           "compute_reffc = .true.: SAM diagnoses the liquid effective radius from the SBM spectrum (2.5–60 μm); Breeze prescribes a constant radius" :
