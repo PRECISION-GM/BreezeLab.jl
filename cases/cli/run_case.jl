@@ -13,7 +13,7 @@
 # <output>/provenance.toml (inputs + checksums + configuration).
 
 using BreezeLab, Breeze, Oceananigans, Oceananigans.Units, CUDA, Dates
-using Breeze.Microphysics.PredictedParticleProperties: CloudDroplets
+using Breeze.Microphysics.PredictedParticleProperties: CloudDroplets, ProcessRate
 
 function parse_args(args)
     opts = Dict{String, String}()
@@ -35,7 +35,7 @@ allowed = Set(["data", "protocol", "arch", "float", "seed", "epoch", "member", "
                "resolution", "Nx", "Ny", "Nz", "Lx", "Ly", "hours", "checkpoint_interval", "pickup",
                "process_rates", "process_rate_interval", "prandtl", "scalar_advection_order", "reference_extension", "lw_F0", "dynamic_averaging", "advection_order", "microphysics_advection_order", "cfl", "dt", "max_dt", "lasso_grid", "grid", "initialization", "closure",
                "profile_interval", "slice_interval", "liquid_reff", "radiation", "nudging", "surface_flux_law", "output",
-               "nudging_tq", "nudging_z", "nudging_uv"])
+               "nudging_tq", "nudging_z", "nudging_uv", "p3_scale"])
 unknown = setdiff(Set(keys(opts)), allowed)
 isempty(unknown) || error("unknown options: $(join(sort!(collect(unknown)), ", "))")
 
@@ -52,22 +52,42 @@ arch = getopt("arch", "cpu") == "gpu" ? GPU() : CPU()
 vertical_grid = get(opts, "grid", getopt("lasso_grid", "false") == "true" ? "lasso" : "protocol")
 z_faces = vertical_grid == "protocol" ? nothing : ena_vertical_faces(vertical_grid)
 
+# --p3_scale name=factor,...: multiply P3 warm-rain process-rate parameters by the given factors
+# (autoconversion_coefficient, accretion_coefficient, rain_self_collection_coefficient,
+# initial_rain_drop_mass; e.g. initial_rain_drop_mass=4.096 is a 40 µm rather than 25 µm seed drop).
+# Every other process-rate parameter keeps its default.
+const P3_SCALABLE = ("autoconversion_coefficient", "accretion_coefficient",
+                     "rain_self_collection_coefficient", "initial_rain_drop_mass")
+
+function p3_process_rates(spec)
+    isnothing(spec) && return nothing
+    defaults = ProcessRate()
+    scaled = Dict{Symbol, Any}()
+    for entry in split(spec, ',')
+        name, factor = split(entry, '=')
+        name in P3_SCALABLE || error("--p3_scale: $name is not one of $(join(P3_SCALABLE, ", "))")
+        scaled[Symbol(name)] = getproperty(defaults, Symbol(name)) * parse(Float64, factor)
+    end
+    return ProcessRate(; scaled...)
+end
+
 # --microphysics: the members of the ENA campaigns as Breeze objects. The aerosol members convert
 # LASSO's per-cm³ numbers with the case's first-level reference density.
-function microphysics_member(name; data, z_faces, cap)
+function microphysics_member(name; data, z_faces, cap, process_rates = nothing)
     cloud = CloudDroplets(; number_concentration = 75e6)
+    !isnothing(process_rates) && !startswith(name, "p3_") && error("--p3_scale needs P3 microphysics")
     name == "one_moment" && return Base.get_extension(Breeze, :BreezeCloudMicrophysicsExt).OneMomentCloudMicrophysics(;
                                        cloud_formation = SaturationAdjustment(; equilibrium = WarmPhaseEquilibrium()))
-    name == "p3_n75" && return P3Microphysics(; cloud)
+    name == "p3_n75" && return P3Microphysics(; cloud, process_rates)
     # p3_n<N>: P3 with a prescribed droplet number of N cm⁻³ (p3_n50, p3_n100, ...), as p3_n75
     m = match(r"^p3_n(\d+)$", name)
-    isnothing(m) || return P3Microphysics(; cloud = CloudDroplets(; number_concentration = parse(Int, m.captures[1]) * 1e6))
+    isnothing(m) || return P3Microphysics(; cloud = CloudDroplets(; number_concentration = parse(Int, m.captures[1]) * 1e6), process_rates)
     reference_density = first_level_reference_density(data, z_faces)
     if name in ("p3_aer1", "p3_aer2", "p3_aer3")
         aerosol = lasso_aerosol(; setting = Symbol(name[4:end]), reference_density, maximum_supersaturation = cap)
-        return P3Microphysics(; cloud, aerosol)
+        return P3Microphysics(; cloud, aerosol, process_rates)
     elseif name == "p3_covert_n75"
-        return P3Microphysics(; cloud, aerosol = covert_aerosol(; reference_density, maximum_supersaturation = something(cap, 0.003)))
+        return P3Microphysics(; cloud, aerosol = covert_aerosol(; reference_density, maximum_supersaturation = something(cap, 0.003)), process_rates)
     end
     error("--microphysics must be one_moment, p3_n75 (or p3_n<N> for N cm⁻³), p3_aer1, p3_aer2, p3_aer3 or p3_covert_n75")
 end
@@ -144,7 +164,8 @@ if protocol === :covert_public_bin
     end
     member_name = getopt("microphysics", "p3_n75")
     faces = something(z_faces, covert_public_bin_vertical_faces(; Nz = get(kw, :Nz, 192)))
-    microphysics = microphysics_member(member_name; data, z_faces = faces, cap)
+    microphysics = microphysics_member(member_name; data, z_faces = faces, cap,
+                                      process_rates = p3_process_rates(get(opts, "p3_scale", nothing)))
     output_dir = getopt("output", "output/covert_public_bin_$(getopt("microphysics", "p3_n75"))")
     @info "Building the Covert case on $(typeof(arch)) with $(Oceananigans.defaults.FloatType)" opts
     # --radiation simple (protocol rad_simple, default) | rrtmgp_longwave (RRTMGP LW-only sensitivity)
@@ -170,7 +191,7 @@ if protocol === :covert_public_bin
                         perturbation = InitialPerturbation(; seed), kw...)
 else
     for option in ("process_rates", "process_rate_interval", "pickup", "scalar_advection_order",
-                   "microphysics_advection_order", "reference_extension", "lw_F0", "nudging_tq", "nudging_z", "nudging_uv")
+                   "microphysics_advection_order", "reference_extension", "lw_F0", "nudging_tq", "nudging_z", "nudging_uv", "p3_scale")
         haskey(opts, option) && error("--$option applies to --protocol covert_public_bin only")
     end
     haskey(opts, "member") || error("--member <LASSO run ID> is required with --protocol lasso_ena_official")
