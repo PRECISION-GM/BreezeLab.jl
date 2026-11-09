@@ -12,6 +12,7 @@
 #####
 
 using Adapt: Adapt, adapt
+using Oceananigans.Architectures: architecture, on_architecture
 using Oceananigans.BoundaryConditions: BoundaryConditions as OceananigansBC, BoundaryCondition, Flux
 using Oceananigans.Grids: AbstractGrid, Center, znode
 using Oceananigans.Operators: ℑxᶜᵃᵃ, ℑyᵃᶜᵃ, ℑxᶠᵃᵃ, ℑyᵃᶠᵃ, ℑxyᶠᶜᵃ, ℑxyᶜᶠᵃ
@@ -304,6 +305,9 @@ function sam_ocean_surface_flux_boundary_conditions(grid, surface_temperature; m
                                                     thermodynamic_constants, surface_density)
     FT = eltype(grid)
     ρʷ = convert(FT, surface_density)
+    # The model moves its microphysics (P3 lookup tables) to the device only when it is built; this copy
+    # lives in the boundary condition, so it must be on the grid's architecture before kernels adapt it.
+    microphysics = on_architecture(architecture(grid), microphysics)
     condition(component) = BoundaryCondition(Flux(), SAMOceanSurfaceFlux(component, surface_temperature, microphysics,
                                                                          thermodynamic_constants, ρʷ))
     bcs = (; ρu = FieldBoundaryConditions(bottom=condition(SAMXStress())),
