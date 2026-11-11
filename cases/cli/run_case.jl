@@ -35,7 +35,7 @@ allowed = Set(["data", "protocol", "arch", "float", "seed", "epoch", "member", "
                "resolution", "Nx", "Ny", "Nz", "Lx", "Ly", "hours", "checkpoint_interval", "pickup",
                "process_rates", "process_rate_interval", "prandtl", "scalar_advection_order", "reference_extension", "lw_F0", "dynamic_averaging", "advection_order", "microphysics_advection_order", "cfl", "dt", "max_dt", "lasso_grid", "grid", "initialization", "closure",
                "profile_interval", "slice_interval", "liquid_reff", "radiation", "nudging", "surface_flux_law", "output",
-               "nudging_tq", "nudging_z", "nudging_uv", "nudging_snd", "p3_scale"])
+               "nudging_tq", "nudging_z", "nudging_uv", "nudging_snd", "p3_scale", "z_faces_file"])
 unknown = setdiff(Set(keys(opts)), allowed)
 isempty(unknown) || error("unknown options: $(join(sort!(collect(unknown)), ", "))")
 
@@ -51,6 +51,14 @@ arch = getopt("arch", "cpu") == "gpu" ? GPU() : CPU()
 # --lasso_grid true is the older spelling of --grid lasso. Without either the protocol's own grid is used.
 vertical_grid = get(opts, "grid", getopt("lasso_grid", "false") == "true" ? "lasso" : "protocol")
 z_faces = vertical_grid == "protocol" ? nothing : ena_vertical_faces(vertical_grid)
+# --z_faces_file <path>: explicit cell interfaces [m], one per line from 0 to the top (resolution/domain studies);
+# recorded in provenance as `vertical_grid = "file:<path> sha256:<digest>"`
+if haskey(opts, "z_faces_file")
+    (haskey(opts, "grid") || haskey(opts, "lasso_grid")) && error("--z_faces_file and --grid are exclusive")
+    z_faces = parse.(Float64, filter(!isempty, strip.(readlines(opts["z_faces_file"]))))
+    first(z_faces) == 0 && issorted(z_faces; lt = <=) || error("--z_faces_file must increase strictly from 0")
+    vertical_grid = "file:$(abspath(opts["z_faces_file"])) sha256:$(BreezeLab.file_sha256(opts["z_faces_file"]))"
+end
 
 # --p3_scale name=factor,...: multiply P3 warm-rain process-rate parameters by the given factors
 # (autoconversion_coefficient, accretion_coefficient, rain_self_collection_coefficient,
